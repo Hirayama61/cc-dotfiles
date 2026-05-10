@@ -2,16 +2,14 @@
 """Claude Code ステータスライン - Braille Dotsスタイル
 
 stdinからJSONを受け取り、Braille文字のプログレスバーで
-モデル名・コンテキスト使用率・レートリミット・行数変更・gitブランチを表示する。
+モデル名・コンテキスト使用率・レートリミット・gitブランチを表示する。
 """
 
 import json
 import os
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
-from typing import Optional
 
 # ---------- 定数 ----------
 # Braille文字セット（8段階: 空→満）
@@ -116,103 +114,6 @@ def time_until(resets_at) -> str:
         return f"{minutes}m"
 
 
-def write_tmux_session(
-    pane_id: str,
-    cwd: str,
-    model_name: str,
-    ctx_pct: float,
-    rl_5h: Optional[float] = None,
-    rl_7d: Optional[float] = None,
-) -> None:
-    """tmux監視用のセッション情報をJSONファイルに書き出す
-
-    TMUX_PANE環境変数がある場合のみ動作し、
-    /tmp/claude-sessions/{safe_pane_id}.json に書き出す。
-    notification-tracker.shが書き込むidle/waiting状態を尊重し、
-    コンテキスト使用率に変化がない場合はstateを上書きしない。
-    """
-    safe_id = pane_id.replace("%", "pct")
-    mon_dir = "/tmp/claude-sessions"
-    mon_file = os.path.join(mon_dir, f"{safe_id}.json")
-
-    os.makedirs(mon_dir, exist_ok=True)
-
-    # tmux情報取得
-    try:
-        tmux_info = subprocess.run(
-            [
-                "tmux",
-                "display-message",
-                "-t",
-                pane_id,
-                "-p",
-                "#{window_name}||#{window_index}||#{session_name}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        if tmux_info.returncode != 0 or not tmux_info.stdout.strip():
-            return
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return
-
-    parts = tmux_info.stdout.strip().split("||")
-    if len(parts) != 3:
-        return
-
-    win_name, win_idx, sess_name = parts
-
-    # 既存のstate判定: idle/waitingはコンテキスト変化がなければ保持する
-    state = "active"
-    try:
-        with open(mon_file, "r") as f:
-            existing = json.load(f)
-        existing_state = existing.get("state", "active")
-        if existing_state in ("idle", "waiting"):
-            # コンテキスト使用率の変化で処理再開を検出する
-            prev_ctx = existing.get("context_pct_raw", -1)
-            if abs(ctx_pct - prev_ctx) < 0.01:
-                # 変化なし → idle/waitingを保持
-                state = existing_state
-            # 変化あり → activeにリセット（デフォルト値のまま）
-    except (OSError, json.JSONDecodeError, TypeError, KeyError):
-        # ファイル不在・破損時はactiveにフォールバック
-        pass
-
-    data = {
-        "pane_id": pane_id,
-        "state": state,
-        "window_name": win_name,
-        "window_index": win_idx,
-        "session_name": sess_name,
-        "pane_path": cwd,
-        "model": model_name,
-        "context_pct": int(round(ctx_pct)),
-        "context_pct_raw": ctx_pct,
-        "timestamp": int(time.time()),
-    }
-
-    # レートリミット情報を追加
-    if rl_5h is not None:
-        data["rl_5h"] = round(rl_5h, 1)
-    if rl_7d is not None:
-        data["rl_7d"] = round(rl_7d, 1)
-
-    # アトミック書き込み（tmp→mv）
-    tmp_file = f"{mon_file}.tmp.{os.getpid()}"
-    try:
-        with open(tmp_file, "w") as f:
-            json.dump(data, f)
-        os.replace(tmp_file, mon_file)
-    except OSError:
-        # 書き込み失敗は無視（ステータスライン表示に影響させない）
-        try:
-            os.unlink(tmp_file)
-        except OSError:
-            pass
-
-
 def main():
     # ---------- stdinからJSON読み込み ----------
     try:
@@ -226,8 +127,6 @@ def main():
     model_name = data.get("model", {}).get("display_name", "Unknown")
     used_pct = data.get("context_window", {}).get("used_percentage", 0) or 0
     cwd = data.get("cwd", "")
-    lines_added = data.get("cost", {}).get("total_lines_added", 0) or 0
-    lines_removed = data.get("cost", {}).get("total_lines_removed", 0) or 0
     rate_limits = data.get("rate_limits")
 
     ctx_pct = float(used_pct)
@@ -262,48 +161,25 @@ def main():
             pass
 
     # ---------- セクション組み立て ----------
-    sep = f" {DIM}\u2502{RESET} "
+    sep = f" {DIM}│{RESET} "
     sections = []
 
     # モデル名
     sections.append(model_name)
 
-    # コンテキスト使用率（常に表示）
+    # コンテキスト使用率
     sections.append(fmt("ctx", ctx_pct))
 
-    # 5時間レートリミット（常に表示）
-    reset_str = ""
-    if rl_5h_resets:
-        reset_str = time_until(rl_5h_resets)
+    # 5時間レートリミット
+    reset_str = time_until(rl_5h_resets) if rl_5h_resets else ""
     sections.append(fmt("5h", float(rl_5h_pct or 0), reset_str))
 
-    # 7日間レートリミット（常に表示）
-    reset_str = ""
-    if rl_7d_resets:
-        reset_str = time_until(rl_7d_resets)
+    # 7日間レートリミット
+    reset_str = time_until(rl_7d_resets) if rl_7d_resets else ""
     sections.append(fmt("7d", float(rl_7d_pct or 0), reset_str))
 
-    # 行数変更（常に表示）
-    sections.append(f"{DIM}±{RESET} +{lines_added}/-{lines_removed}")
-
-    # gitブランチ（常に表示）
+    # gitブランチ
     sections.append(f"{DIM}⎇{RESET} {git_branch or '-'}")
-
-    # ---------- tmux監視JSON書き出し ----------
-    tmux_pane = os.environ.get("TMUX_PANE")
-    if tmux_pane:
-        try:
-            write_tmux_session(
-                pane_id=tmux_pane,
-                cwd=cwd,
-                model_name=model_name,
-                ctx_pct=ctx_pct,
-                rl_5h=rl_5h_pct,
-                rl_7d=rl_7d_pct,
-            )
-        except Exception:
-            # tmux監視の失敗はステータスライン表示に影響させない
-            pass
 
     # ---------- 出力 ----------
     print(sep.join(sections), end="")
