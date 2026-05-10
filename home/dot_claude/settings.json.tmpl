@@ -4,5 +4,8 @@
   "statusLine": {
     "type": "command",
     "command": "python3 {{ .chezmoi.homeDir }}/.claude/statusline-command.py"
+  },
+  "permissions": {
+    "allow": {{ .claude.permissions.allow | toJson }}
   }
 }

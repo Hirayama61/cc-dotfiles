@@ -1,0 +1,34 @@
+# Claude Code 用 chezmoi テンプレートデータ
+#
+# 役割: settings.json.tmpl から `{{ .claude.* }}` で参照する変数群。
+# このファイル自体は $HOME に展開されない(chezmoi 制御ファイル)。
+# 編集後は `mise run apply:cc-dotfiles` で反映。
+
+claude:
+  permissions:
+    # 「Claude が頻繁に叩く」コマンドのみ列挙する。
+    # 散発的な利用のものはここに入れず、都度プロンプトで承認する方針。
+    allow:
+      # ----- Navigation / inspection -----
+      - Bash(ls:*)
+      - Bash(pwd:*)
+      - Bash(cd:*)
+      - Bash(echo:*)
+
+      # ----- Git (read-only) -----
+      - Bash(git status:*)
+      - Bash(git log:*)
+      - Bash(git diff:*)
+
+      # ----- dotfiles workflow -----
+      - Bash(mise run:*)
+      - Bash(chezmoi diff:*)
+      - Bash(chezmoi managed:*)
+
+      # ----- gh (PR ワークフロー) -----
+      - Bash(gh pr view:*)
+      - Bash(gh pr list:*)
+      - Bash(gh pr create:*)
+
+      # ----- Claude Code 内部ツール -----
+      - Skill
