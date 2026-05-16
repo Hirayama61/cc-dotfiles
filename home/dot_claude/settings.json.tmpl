@@ -63,6 +63,15 @@
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-test-deletion.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/inject-coding-standards.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
