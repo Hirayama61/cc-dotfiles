@@ -19,11 +19,11 @@ BRAILLE = " ⣀⣄⣤⣦⣶⣷⣿"
 DIM = "\033[2m"
 RESET = "\033[0m"
 
-# グラデーションの色定義
-COLOR_GREEN = (151, 201, 195)
-COLOR_YELLOW = (229, 192, 123)
-COLOR_RED = (224, 108, 117)
-COLOR_DEEP_RED = (192, 64, 64)
+# グラデーションの色定義(Panda Syntax パレットに統一)
+COLOR_GREEN = (25, 249, 216)   # mint   #19f9d8 低使用率
+COLOR_YELLOW = (255, 184, 108)  # orange #ffb86c 中
+COLOR_RED = (255, 75, 130)    # red    #ff4b82 高
+COLOR_DEEP_RED = (255, 44, 109)   # deep   #ff2c6d 危険
 
 
 def _lerp(a: tuple, b: tuple, t: float) -> tuple:
