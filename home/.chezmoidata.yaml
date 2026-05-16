@@ -37,6 +37,8 @@ claude:
       - Bash(command -v:*)
       - Bash(nvim --version)
       - Bash(claude --version)
+      - Bash(claude plugin --help)
+      - Bash(claude plugin list:*)
       - Bash(jq:*)
 
       # ----- Filesystem (非破壊なローカル作成/変更。削除・権限変更は含めない) -----
@@ -48,6 +50,7 @@ claude:
 
       # ----- Docs / web (参照のみ) -----
       - Bash(curl -sL https://code.claude.com/docs/llms.txt)
+      - Bash(curl -sL https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md:*)
       - WebFetch(domain:zenn.dev)
       - WebFetch(domain:docs.claude.com)
 
