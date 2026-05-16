@@ -14,16 +14,34 @@ claude:
       - Bash(pwd:*)
       - Bash(cd:*)
       - Bash(echo:*)
+      - Bash(grep:*)
+      - Bash(rg:*)
 
       # ----- Git (read-only) -----
       - Bash(git status:*)
       - Bash(git log:*)
       - Bash(git diff:*)
 
+      # ----- Git (write・ローカル限定。push/merge は都度承認) -----
+      - Bash(git add:*)
+      - Bash(git commit -m:*)
+
       # ----- dotfiles workflow -----
       - Bash(mise run:*)
       - Bash(chezmoi diff:*)
       - Bash(chezmoi managed:*)
+
+      # ----- Inspection / tooling (read-only) -----
+      - Bash(mise registry:*)
+      - Bash(brew search:*)
+      - Bash(command -v:*)
+      - Bash(nvim --version)
+      - Bash(claude --version)
+
+      # ----- Docs / web (参照のみ) -----
+      - Bash(curl -sL https://code.claude.com/docs/llms.txt)
+      - WebFetch(domain:zenn.dev)
+      - WebFetch(domain:docs.claude.com)
 
       # ----- gh (PR ワークフロー) -----
       - Bash(gh pr view:*)
