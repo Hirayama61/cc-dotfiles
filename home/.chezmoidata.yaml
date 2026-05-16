@@ -37,6 +37,14 @@ claude:
       - Bash(command -v:*)
       - Bash(nvim --version)
       - Bash(claude --version)
+      - Bash(jq:*)
+
+      # ----- Filesystem (非破壊なローカル作成/変更。削除・権限変更は含めない) -----
+      - Bash(mkdir:*)
+      - Bash(touch:*)
+      - Bash(cp:*)
+      - Bash(mv:*)
+      - Bash(ln:*)
 
       # ----- Docs / web (参照のみ) -----
       - Bash(curl -sL https://code.claude.com/docs/llms.txt)
