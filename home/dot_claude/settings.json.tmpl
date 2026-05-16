@@ -7,5 +7,16 @@
   },
   "permissions": {
     "allow": {{ .claude.permissions.allow | toJson }}
+  },
+  "extraKnownMarketplaces": {
+    "dotfiles-lsp": {
+      "source": {
+        "source": "directory",
+        "path": "{{ .chezmoi.homeDir }}/.claude/lsp-marketplace"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "dotfiles-lsp@dotfiles-lsp": true
   }
 }

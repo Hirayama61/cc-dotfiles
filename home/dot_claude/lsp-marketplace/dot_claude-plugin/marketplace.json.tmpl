@@ -1,0 +1,74 @@
+{
+  "name": "dotfiles-lsp",
+  "description": "cc-dotfiles が管理するローカル LSP マーケットプレース。command は mise shims の絶対パスを指すため PATH 非依存(Claude Code の非対話 spawn でも解決)。バイナリ実体は dotfiles 側 mise (~/.config/mise/config.toml) が供給し Neovim と共有。",
+  "owner": {
+    "name": "Hirayama61"
+  },
+  "plugins": [
+    {
+      "name": "dotfiles-lsp",
+      "description": "TypeScript(vtsls) / Lua / Markdown / JSON / CSS / HTML language servers",
+      "version": "1.0.0",
+      "author": {
+        "name": "Hirayama61"
+      },
+      "source": "./plugins/dotfiles-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "typescript": {
+          "command": "{{ .chezmoi.homeDir }}/.local/share/mise/shims/vtsls",
+          "args": ["--stdio"],
+          "extensionToLanguage": {
+            ".ts": "typescript",
+            ".tsx": "typescriptreact",
+            ".js": "javascript",
+            ".jsx": "javascriptreact",
+            ".mts": "typescript",
+            ".cts": "typescript",
+            ".mjs": "javascript",
+            ".cjs": "javascript"
+          }
+        },
+        "lua": {
+          "command": "{{ .chezmoi.homeDir }}/.local/share/mise/shims/lua-language-server",
+          "extensionToLanguage": {
+            ".lua": "lua"
+          }
+        },
+        "markdown": {
+          "command": "{{ .chezmoi.homeDir }}/.local/share/mise/shims/marksman",
+          "args": ["server"],
+          "extensionToLanguage": {
+            ".md": "markdown",
+            ".markdown": "markdown"
+          }
+        },
+        "json": {
+          "command": "{{ .chezmoi.homeDir }}/.local/share/mise/shims/vscode-json-language-server",
+          "args": ["--stdio"],
+          "extensionToLanguage": {
+            ".json": "json",
+            ".jsonc": "jsonc"
+          }
+        },
+        "css": {
+          "command": "{{ .chezmoi.homeDir }}/.local/share/mise/shims/vscode-css-language-server",
+          "args": ["--stdio"],
+          "extensionToLanguage": {
+            ".css": "css",
+            ".scss": "scss",
+            ".less": "less"
+          }
+        },
+        "html": {
+          "command": "{{ .chezmoi.homeDir }}/.local/share/mise/shims/vscode-html-language-server",
+          "args": ["--stdio"],
+          "extensionToLanguage": {
+            ".html": "html"
+          }
+        }
+      }
+    }
+  ]
+}
