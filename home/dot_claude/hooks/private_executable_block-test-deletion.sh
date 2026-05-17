@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Bash|Edit): AI によるテストファイル/テストコードの削除を
 # ブロックする。根拠: AI がテストを削除してテストを通す傾向がある。
-# 出典: prior dotfiles。安全側設計: jq 無しなら exit 0。
+# 安全側設計: jq 無しなら exit 0。
 set -euo pipefail
 
 if ! command -v jq &>/dev/null; then

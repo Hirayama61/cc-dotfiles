@@ -2,7 +2,7 @@
 # block-secret-files.sh — PreToolUse hook (Read matcher)
 #
 # 秘密情報ファイルの読み込みをブロックする(Claude がコンテキストに
-# 秘密を吸い込む事故を防ぐ)。出典: prior dotfiles。
+# 秘密を吸い込む事故を防ぐ)。
 #
 # ブロック対象:
 #   .env, .env.* / *.pem,*.key,*.p12,*.pfx / *.secret,*.secrets
