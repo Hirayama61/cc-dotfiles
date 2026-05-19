@@ -72,6 +72,15 @@
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/inject-coding-standards.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/pre-edit-guard.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
