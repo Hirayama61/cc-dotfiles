@@ -2,8 +2,8 @@
 # inject-coding-standards.sh — PreToolUse hook (Edit|Write|MultiEdit|NotebookEdit)
 #
 # コード編集の瞬間に正典のコーディング規約を additionalContext として注入する。
-# 正典は ~/.claude/coding-standards.md(cc-dotfiles が単一ソースとして所有)。
-# 出典: 自リポ設計。additionalContext の出力形は pipe-stage-permissions.sh を流用。
+# 正典は ~/.claude/coding-standards.md。
+# additionalContext の出力形は pipe-stage-permissions.sh を流用。
 #
 # 安全側設計: 注入の失敗で編集をブロックしない。jq 不在 / 規約ファイル不在 /
 # 想定外のエラーはすべて exit 0 で素通り(コンテキスト注入は best-effort)。

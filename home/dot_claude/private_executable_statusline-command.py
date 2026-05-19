@@ -60,7 +60,6 @@ def braille_bar(pct: float, width: int = 8) -> str:
     filled = pct / 100.0 * total
     chars = []
     for i in range(width):
-        # この文字位置に割り当てられるレベル
         level = filled - i * steps
         if level >= steps:
             chars.append(BRAILLE[steps])  # 満杯: ⣿
