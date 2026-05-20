@@ -18,11 +18,20 @@
         "source": "directory",
         "path": "{{ .chezmoi.homeDir }}/.claude/lsp-marketplace"
       }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
     }
   },
   "enabledPlugins": {
-    "dotfiles-lsp@dotfiles-lsp": true
+    "dotfiles-lsp@dotfiles-lsp": true,
+    "context7@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true
   },
+  "skipAutoPermissionPrompt": true,
   "hooks": {
     "PreToolUse": [
       {
