@@ -30,8 +30,8 @@ MOC="$INDEX_DIR/MOC.md"
 mkdir -p "$INDEX_DIR"
 {
   echo "# MOC(自動生成 / $(date +%F)) — Tier1 本文は Grep/Glob + [[wikilink]] で必要分だけ読む"
-  # mistakes.md は除外: Tier0 で tail -n 200 により全文ロード済みのため MOC では重複・ノイズ
-  find "$VAULT/Knowledge" "$VAULT/Decisions" "$VAULT/Projects" -name '*.md' ! -name 'mistakes.md' -type f 2>/dev/null |
+  # 除外: mistakes.md(Tier0 で全文ロード済み)/ _README.md(フォルダ説明の足場でノイズ)
+  find "$VAULT/Knowledge" "$VAULT/Decisions" "$VAULT/Projects" -name '*.md' ! -name 'mistakes.md' ! -name '_README.md' -type f 2>/dev/null |
     sort | while IFS= read -r f; do
     rel="${f#"$VAULT"/}"
     # title = 本文1行目見出し → 無ければ空 / meta = frontmatter tags+project を1行圧縮
@@ -45,7 +45,8 @@ mkdir -p "$INDEX_DIR"
 BODY="$(
   echo "# 永続記憶(外部脳)Tier0 — 自動ロード。読込手順は hook が代行済み"
   echo "## Preferences(好み・作業スタイル)"
-  cat "$VAULT"/Preferences/*.md 2>/dev/null || true
+  # _README.md は除外: フォルダ説明の足場であり毎セッション注入する価値がない
+  find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f -exec cat {} + 2>/dev/null || true
   echo
   echo "## 行動ルール / AI のミス記録(mistakes.md)"
   tail -n "$MIST_MAX" "$VAULT/Knowledge/mistakes.md" 2>/dev/null || true
