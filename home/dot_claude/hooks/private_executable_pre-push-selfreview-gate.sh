@@ -18,7 +18,7 @@ branch="$(git branch --show-current 2>/dev/null || echo "")"
 
 # 保護ブランチは block-protected-branch-push.sh が専任。ここでは二重メッセージを避け通す
 case "$branch" in
-  main|master|develop|epic/*) exit 0 ;;
+main | master | develop | epic/*) exit 0 ;;
 esac
 
 safe_branch="$(echo "$branch" | tr '/' '-')"
@@ -27,7 +27,7 @@ flag_file="${flag_dir}/review-passed-${safe_branch}"
 mkdir -p "$flag_dir"
 
 if [[ ! -f "$flag_file" ]]; then
-  echo "ブロック: ブランチ(${branch})はセルフレビュー未通過。push 前に /self-review を実施すること(通過でゲート解除。新規コミットで再レビュー必須)。" >&2
+  echo "ブロック: ブランチ(${branch})は /self-review 未通過。push 前に /self-review を実施すること(通過でゲート解除。新規コミットで再レビュー必須)。" >&2
   exit 2
 fi
 

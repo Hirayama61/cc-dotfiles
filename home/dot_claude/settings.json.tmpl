@@ -1,7 +1,9 @@
 {
+  "autoMemoryEnabled": false,
   "env": {
     "CLAUDE_CODE_ENABLE_TASKS": "1",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
   },
   "theme": "custom:panda",
   "language": "日本語",
@@ -29,7 +31,8 @@
   "enabledPlugins": {
     "dotfiles-lsp@dotfiles-lsp": true,
     "context7@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true
+    "playwright@claude-plugins-official": true,
+    "coderabbit@claude-plugins-official": true
   },
   "skipAutoPermissionPrompt": true,
   "hooks": {
