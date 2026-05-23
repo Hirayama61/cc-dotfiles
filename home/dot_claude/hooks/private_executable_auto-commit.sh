@@ -19,6 +19,13 @@ input="$(cat)"
 # git リポでなければ何もしない(プロセス cwd 前提。既存 hook と同様)。
 git rev-parse --is-inside-work-tree &>/dev/null 2>&1 || exit 0
 
+# 保護ブランチ / ブランチ不明では wip を作らない。block-protected-branch-push.sh が
+# 保護ブランチへの push を禁じるため、ここで wip を作ると送れず溜まる一方になる。
+branch="$(git branch --show-current 2>/dev/null || echo "")"
+case "$branch" in
+"" | main | master | develop | epic/*) exit 0 ;;
+esac
+
 # tracked の変更(working tree / index)が無ければ無動作。
 if git diff --quiet && git diff --cached --quiet; then
   exit 0
