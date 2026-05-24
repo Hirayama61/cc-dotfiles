@@ -108,6 +108,15 @@
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/postcommit-invalidate-review.sh"
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/capture-decision.sh"
+          }
+        ]
       }
     ],
     "SessionStart": [

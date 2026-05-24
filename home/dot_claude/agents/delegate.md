@@ -5,7 +5,7 @@ description: >-
   移譲する先。着手前にプランを出し、独立コンテキストで遂行し、深い結果は成果物
   ファイルに書き、親へはファイルパス + 3〜5行要約のみ返す。非自明な作業単位は
   すべてこれに委譲し、メインのコンテキストを対話と判断に保つために使う。
-tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
+tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, Skill
 ---
 
 # delegate — 単一タスク実行エージェント
@@ -31,3 +31,45 @@ tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
    他作業との統合は親の責務であり、ここでは行わない。
 
 詳細プロトコルはグローバル `~/.claude/CLAUDE.md`「オーケストレーション」節に従う。
+
+## 外部脳(Obsidian)への書き戻し
+
+タスクで得た知見は `docs/tasks/...` で閉じず、**再利用可能なものは Obsidian Vault
+(`~/obsidian/brain`)へ書き戻す**。これが知見蓄積の発生源。
+
+### result.md 末尾に `## 外部脳候補`(全タスク必須)
+
+result.md の末尾に必ず `## 外部脳候補` セクションを置く。形式:
+
+- `- [folder] タイトル — 1行要約`(folder は `Knowledge` / `Decisions` / `Projects` /
+  `Preferences` のいずれか)の箇条書き、
+- 候補が無ければ `- なし` の1行のみ(`なし` が最も安いデフォルト回答。迷ったらこれ)。
+
+品質バー: **再利用可能 / 非自明 / 次回また調べ直すのを防ぐ** ものだけを候補にする。
+作業ログ(「ファイル X を触った」「テストを通した」式)は候補にしない。
+
+### 値する候補は自分で書く
+
+品質バーを満たす候補は、delegate 自身が **`Skill` ツールで `obsidian-memory` を
+発火して書く**(書込先フォルダ・命名・frontmatter は skill の規約に従う)。OFM 記法
+(wikilink / callout / properties)の正確さは **`obsidian-markdown` skill** に従う。
+
+- **1知見 = 1ファイル**。並列 background delegate の同時書込衝突を避けるため、
+  `Knowledge/` `Decisions/` の新規ノートで衝突しうるものはファイル名に時刻を含める
+  (例 既存は `topic-subtopic.md` / `YYYY-MM-DD-topic.md` だが、衝突しうる新規は
+  `YYYY-MM-DD-HHMMSS-topic.md` のように時刻を付すか、親への書き戻し委譲に回す)。
+- 共有ファイルへの追記(`mistakes.md` 等)は避ける(macOS に `flock` 無し。複数行の
+  read-modify-write はロストアップデートしうる)。共有追記が要るものは親に委ねる。
+- 直書きした新規ノートは **同セッション中は `.index/MOC.md` に乗らない**。MOC 再生成は
+  SessionStart hook の専管で、**次回 SessionStart で索引化**される(直書き直後に同
+  セッションで MOC 経由参照しない限り実害なし)。
+
+## 外部脳からの読み(参考ノート + 非破壊の鮮度メンテ)
+
+- 親から「参考ノート」(Vault の関連既存ノート)を渡されたら、それを調査の**出発点**
+  に使う(重複調査を避ける)。
+- 一次情報(実コード / git ログ / 公式ドキュメント)と参考ノートが**矛盾(陳腐化)**
+  していると気づいたら、**初回の調査報告で flag する**。
+- 既存ノートを**直接上書き(Edit で書き換え)しない**(破壊操作。鉄則4=破壊的操作は
+  エスカレーション)。訂正は callout 追記(`> [!warning] YYYY-MM-DD 時点で X は陳腐化、
+  正は Y`)で原文を残すか、親への申告に留める。

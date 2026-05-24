@@ -24,6 +24,18 @@
 - **計画**: 複数ステップ依頼はメインが Plan モードを通してから委譲。
 - **完了通知**: background 完了イベントで人間との判断やりとりを中断しない。
   安全な切れ目でまとめて reconcile する。
+- **委譲前の外部脳検索(種渡し)**: 委譲前にメインが `~/obsidian/brain` を
+  Grep/Glob で keyword 検索し、ヒットした関連ノートを delegate プロンプトに
+  「既知の前提(参考ノート)」として種渡しする。重複調査を構造的に潰す。
+- **外部脳への reconcile**: delegate から `外部脳候補` / 鮮度 flag を受けたら、
+  安全な切れ目で reconcile する(値する候補を obsidian-memory で書き戻し / 陳腐化
+  ノートは非破壊で訂正 = callout 追記 or 人間へ申告)。書き戻し完了まで reconcile を
+  閉じない。
+- **判断の記録(AskUserQuestion → Decisions)**: 重要な二者択一はメインが
+  AskUserQuestion を積極利用する。確定後、PostToolUse hook(`capture-decision.sh`)が
+  リマインドを注入するので、安全な切れ目で **obsidian-memory を使い理由・文脈付きの
+  Decisions ノートを書く**。timing とファイル分割はメイン判断(セッション単位の
+  寄せ集めも質問単位のファイル乱造も避ける)。
 
 ## 調査と実装の規律
 
