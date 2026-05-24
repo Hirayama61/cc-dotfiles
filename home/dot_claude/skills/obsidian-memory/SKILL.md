@@ -15,8 +15,8 @@ allowed-tools: Read, Write, Edit, Grep, Glob
 
 > 翻案注記(原本からの差分): 原本「1.読み取り」は MCP でセッション開始時に毎回
 > 読む前提だが、本 skill では **SessionStart hook が Tier0(Preferences 全文 +
-> mistakes.md 末尾 + 自動生成 MOC)を自動注入**する方式に置換した。関連する Tier1
-> 本文は **Grep/Glob + [[wikilink]] でオンデマンド取得**する(MCP は使わず直接 FS
+> 自動生成 MOC)を自動注入**する方式に置換した。関連する Tier1 本文(Mistakes/ 含む)
+> は **Grep/Glob + [[wikilink]] でオンデマンド取得**する(MCP は使わず直接 FS
 > アクセス)。本 skill が担うのは **書込**(原本「2〜7」)。
 
 ## 0. 前提: vault が無ければ
@@ -33,10 +33,13 @@ allowed-tools: Read, Write, Edit, Grep, Glob
 - `Decisions/` ← 複数選択肢から1つを選んだ判断(A vs B、なぜ A か)/ 設計・方針の決定
 - `Projects/` ← プロジェクトの状態・バージョン・概要が変わった
 - `Preferences/` ← ユーザーの好み・作業スタイルを新たに発見
+- `Mistakes/` ← ミスの観測ログ(1ミス1ファイル)。防止の実装先ではなく、溜めた
+  ログから人間/レビュー工程が CLAUDE.md / hook の防止ルールへ昇華する**材料**。
+  1回目から軽量に記録してよい(詳細 §4)
 
 ## 2. 書込フォーマット(必ず YAML frontmatter)
 
-`templates/{knowledge,decision,project,preference}.md` を雛形に使う。
+`templates/{knowledge,decision,project,preference,mistake}.md` を雛形に使う。
 
 ```
 ---
@@ -51,30 +54,52 @@ related: [[Other Note]]
 
 ## 3. 命名規則
 
-- `Knowledge/` = `topic-subtopic.md`(例 `nextjs-auth-cookie.md`)
-- `Decisions/` = `YYYY-MM-DD-topic.md`(例 `2026-05-16-database-choice.md`)
-- `Preferences/` = `category.md`(例 `coding-style.md`)
-- `Projects/` = `project-name.md`
+ファイル名は**日本語**にする。グラフビューのノードラベルはファイル名のベース名
+そのもの(frontmatter の title/エイリアスはグラフに反映されない)なので、内容が
+一目で分かるよう日本語化する。
+
+- `Knowledge/` = `日本語トピック.md`(例 `macOSのbashに連想配列が無い.md`)
+- `Decisions/` = `YYYY-MM-DD-日本語トピック.md`(日付接頭辞は維持しソート性を残す。
+  例 `2026-05-23-Obsidian外部脳アーキテクチャ.md`)
+- `Preferences/` = `日本語カテゴリ.md`(例 `コーディングスタイル.md`)
+- `Projects/` = `プロジェクト名.md`(プロジェクト名は実体に合わせ英語可)
+- `Mistakes/` = `YYYY-MM-DD-日本語トピック.md`(時系列ログなので日付接頭辞。並列
+  background で同日衝突しうるなら `YYYY-MM-DD-HHMMSS-...` で時刻も付す)
 
 書く前に Grep/Glob で同主題ノートの有無を確認し、あれば追記(Edit)、無ければ
 新規(Write)。
 
-## 4. mistakes.md 追記(3条件 AND を満たす時のみ)
+> [!note] macOS は日本語ファイル名を NFD 正規化しがちで、NFC/NFD 不一致の落とし穴が
+> ある(同じ見た目の名前が別物になる等)。詳細は Knowledge ノート
+> `macOS日本語ファイル名のNFC-NFD正規化` を参照。
 
-次の **3つを全て満たす時のみ** `Knowledge/mistakes.md` に追記する:
+## 4. Mistakes/ への記録(観測ログ)
 
-1. ユーザーからの明示的訂正である(自分の気づきでない)
-2. 繰り返し起こり得るパターンである(偶発でない)
-3. 具体的な「する / しない」で書ける
+ミスは **防ぐ場所ではなく溜める場所**。ここはあくまで観測ログで、防止ルールの実装先は
+CLAUDE.md と hook。溜めたログを人間/レビュー工程が見て、複数回発生したものを CLAUDE.md /
+hook の防止ルールへ昇華する。**Tier0 への毎セッション自動注入はしない**(過去ミスは MOC
+索引からオンデマンドで辿る)。
 
-形式:
+記録基準は緩い:
 
-```
-YYYY-MM-DD: [一言で何を間違えたか]
-**NG Action**: 実際にやってしまった間違い
-**Correct Action**: 次回からの正しい対応
-**Trigger**: このルールが適用される状況
-```
+- **1回目から記録してよい**。「複数回発生」かどうかは溜めたログを見て人間が判断するもので、
+  記録段階で抑制しない。迷ったら書く。
+- 旧「3条件 AND(明示的訂正 / 反復性 / する・しない断定)」は **撤廃**。する/しない断定は
+  ルール昇華工程の仕事であって、記録時に求めない。
+
+配置・命名:
+
+- トップレベル `Mistakes/` に **1ミス1ファイル**。
+- ファイル名 `YYYY-MM-DD-日本語トピック.md`(§3 参照。NFC 統一・並列衝突時は時刻付与)。
+- frontmatter は他ノート同様必須。`templates/mistake.md` を雛形に使う。
+
+軽量フォーマット(素早く残せることを優先):
+
+- **状況(Trigger)**: どういう作業・文脈で起きたか
+- **何が起きたか**: 実際のミス(NG/Correct の断定は不要)
+- **推測原因(任意)**: 分かれば。不明なら省略可
+
+関連する既存ミスや昇華先(CLAUDE.md/hook の議論)があれば [[wikilink]] で繋ぐ。
 
 ## 5. 報告(サイレント禁止)
 
@@ -82,6 +107,7 @@ YYYY-MM-DD: [一言で何を間違えたか]
 
 - `Obsidian: Knowledge/xxx.md を読みました`
 - `Obsidian: Knowledge/xxx.md に書き込みました`
+- `Obsidian: Mistakes/YYYY-MM-DD-xxx.md に記録しました`
 
 ## 6. 作業スタイル
 
