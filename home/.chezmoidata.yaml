@@ -41,7 +41,8 @@ claude:
       - Bash(claude plugin list:*)
       - Bash(jq:*)
 
-      # ----- Filesystem (非破壊なローカル作成/変更。削除・権限変更は含めない) -----
+      # ----- Filesystem (ローカルの作成/コピー/移動/リンク。rm・chmod 等の -----
+      #       削除・権限変更は含めない。cp/mv は既存ファイルを上書きしうる点に留意 -----
       - Bash(mkdir:*)
       - Bash(touch:*)
       - Bash(cp:*)

@@ -64,7 +64,7 @@ def braille_bar(pct: float, width: int = 8) -> str:
         if level >= steps:
             chars.append(BRAILLE[steps])  # 満杯: ⣿
         elif level <= 0:
-            chars.append(BRAILLE[0])  # 空: スペース→⣀の前の空
+            chars.append(BRAILLE[0])  # 空セル
         else:
             chars.append(BRAILLE[int(level)])
     return "".join(chars)

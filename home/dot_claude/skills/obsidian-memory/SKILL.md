@@ -92,4 +92,5 @@ YYYY-MM-DD: [一言で何を間違えたか]
 ## 7. 形式の正しさ(skill 間連携)
 
 wikilink / callout / properties など Obsidian ネイティブ記法の正確さは、
-ext-sync で配置される kepano の `obsidian-markdown` 等の skill に従う。
+ext-skills マニフェスト(`mise run skills:sync`)で配置される kepano の
+`obsidian-markdown` 等の skill に従う。
