@@ -41,23 +41,27 @@
 
 複数の Claude を並行させる際の挙動の核。判断軸は「案件」ではなく**ブランチ**。
 gwq 導入手順やディレクトリ構成の詳細はプロジェクト側に置き、ここでは守らせる
-判断だけ書く。
+判断だけ書く。人間も Claude も**同一規約**に従う。
 
+- **既定 = モデルB(ディスパッチャ型)**: main Claude が worktree を用意し、実作業は
+  `delegate`(`isolation:"worktree"`)/ `gwq exec` / `git -C <path>` に振る。
+  main は自分の作業ツリーを汚さず指揮に徹する。人間が手で worktree を作って各々に
+  Claude を常駐させる運用も同じ規約の下で残す。
+- **worktree 作成は必ず `bin/wt.sh <branch> [base]` 経由**: 正規パスは
+  `~/ghq/github.com/Hirayama61/dotfiles/bin/wt.sh`(どのリポからでもこの絶対パスで
+  呼べる)。worktree の絶対パスを stdout に返すので `cd "$(~/ghq/.../bin/wt.sh feature/x)"`
+  の形で使う。フラット配置・正しい checkout・ネスト/二重 checkout 拒否はスクリプトが
+  保証する。**素手の `git worktree add` / `gwq add` / `claude --worktree` はしない
+  (hook でブロックされる)**。
 - **1 worktree = 1 ブランチ**: 同じブランチの続きは既存 worktree を使い、別
   ブランチを切るなら新しい worktree を作る。同一ブランチを2つの worktree で
-  同時に開かない(Claude が新規作業を始める前にこの分岐をまず判断する)。
+  同時に開かない(新規作業を始める前にこの分岐をまず判断する)。`wt.sh` は冪等なので
+  既存ブランチには既存 worktree のパスを返す。
 - **フラット配置・ネスト禁止**: worktree は `~/worktrees/host/owner/repo/branch`
-  にフラットに並べる(メイン clone は `~/ghq/...` に温存)。**案件 worktree の中で
-  `claude --worktree` を実行してネストさせない**。worktree 内では素の `claude` を
-  使う。
-- **モデルA(Claude が自動並列)**: 1案件内の下位タスクは、メインが `delegate`
-  (`isolation:"worktree"`)に委譲して並列化する(既存のオーケストレーション規約で
-  実現済み)。ここで作る worktree は一時的(自動マージ/削除)で、人間の常設 worktree
-  とは別物。
-- **モデルB(人間が並列化)**: 独立した別案件は、人間が案件ごとに常設 worktree を
-  作りそれぞれに Claude を1つ常駐させる。派生元は案件ごとに異なってよい(develop /
-  epic / PR)。各 Claude は**自分の worktree 内に閉じて**作業し、他案件の worktree に
-  踏み込まない。
+  にフラットに並ぶ(メイン clone は `~/ghq/...` に温存)。**案件 worktree の中で
+  `claude --worktree` を実行してネストさせない**。worktree 内では素の `claude` を使う。
+- **案件 = Epic 配下の複数タスク**: 1案件で複数ブランチが要るなら、同じ clone から
+  epic ブランチを派生させ、その下にタスクごとの worktree を `wt.sh` で並べる。
 - **並列は2〜3が現実的上限**: 増やしすぎない。「今どの案件がどこで動いているか」の
   真実の源は `gwq status` / `gwq list`(手で cd して探さない)。
 - **ローカル vs クラウドの住み分け**: 今この手で進める実装/レビューはローカル
