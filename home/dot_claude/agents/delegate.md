@@ -15,12 +15,12 @@ tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
 ## 鉄則
 
 1. **二段階(プラン → 承認 → 実行)**: 非自明タスクは、まず手順・影響範囲・
-   未確定の判断点を `docs/tasks/<task-id>/plan.md` に書き、**実行せず**親へ
-   「plan.md パス + 3〜5行要約 + 要判断点」を返して止まる。親のレビュー/人間
-   判断を経た指示が来てから実行に移る。些細なタスクは一段で良い。
-2. **成果物ファイル必須**: 調査・分析・実装の詳細は必ず
-   `docs/tasks/<task-id>/`(`plan.md` / `research.md` / `result.md`)に書く。
-   親への戻り値にチャットで垂れ流さない。
+   未確定の判断点を `plan.md`(置き場所は下記「作業ファイルの置き場所」)に書き、
+   **実行せず**親へ「plan.md パス + 3〜5行要約 + 要判断点」を返して止まる。親の
+   レビュー/人間判断を経た指示が来てから実行に移る。些細なタスクは一段で良い。
+2. **成果物ファイル必須**: 調査・分析・実装の詳細は必ず作業ファイル
+   (`plan.md` / `research.md` / `result.md`、置き場所は下記「作業ファイルの
+   置き場所」)に書く。親への戻り値にチャットで垂れ流さない。
 3. **戻り値は最小**: 親へは「成果物ファイルのパス + 3〜5行要約 + 次に必要な
    判断/依頼」だけ。生ログ・全文・思考過程は返さない(親コンテキスト保護)。
 4. **判断はエスカレーション**: 業務決定・曖昧点・破壊的/外向き操作は自分で
@@ -32,10 +32,30 @@ tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
 
 詳細プロトコルはグローバル `~/.claude/CLAUDE.md`「オーケストレーション」節に従う。
 
+## 作業ファイルの置き場所
+
+作業ファイル(`plan.md` / `research.md` / `result.md`)は **作業リポには一切置かず**、
+Obsidian Vault 内に書く:
+
+```
+~/obsidian/brain/Tasks/YYYY-MM-DD-<日本語トピック>/{plan,research,result}.md
+```
+
+- ディレクトリ名 = **日付プレフィックス + 日本語トピック**(例
+  `2026-05-24-作業ログをvaultへ移行`)。一覧が時系列の作業ログになる。
+- **全部残す**(完了後も削除しない。全セッション横断の時系列ログとして保持)。
+- macOS の日本語ファイル名は **NFC に統一**(`mv` 後に
+  `python3 -c "import unicodedata"` で検証。NFD なら NFC 名へ付け直す)。
+- `Tasks/` は MOC / Obsidian グラフ / 全文検索から **隔離済み**(SessionStart hook の
+  MOC 生成対象外 + vault 設定で除外)。だから作業ログをいくら溜めても Claude の
+  コンテキストにも知識グラフにも載らない。再利用価値のある知見は従来どおり
+  `Knowledge/` `Decisions/` 等へ昇華する(下記)。
+
 ## 外部脳(Obsidian)への書き戻し
 
-タスクで得た知見は `docs/tasks/...` で閉じず、**再利用可能なものは Obsidian Vault
-(`~/obsidian/brain`)へ書き戻す**。これが知見蓄積の発生源。
+タスクで得た知見は `Tasks/` の作業ログで閉じず、**再利用可能なものは Obsidian Vault
+(`~/obsidian/brain`)の `Knowledge/` `Decisions/` 等へ書き戻す**。これが知見蓄積の
+発生源。
 
 ### result.md 末尾に `## 外部脳候補`(全タスク必須)
 

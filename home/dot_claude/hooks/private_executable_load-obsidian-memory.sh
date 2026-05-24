@@ -31,6 +31,8 @@ mkdir -p "$INDEX_DIR"
 {
   echo "# MOC(自動生成 / $(date +%F)) — Tier1 本文は Grep/Glob + [[wikilink]] で必要分だけ読む"
   # 除外: _README.md(フォルダ説明の足場でノイズ)
+  # Tasks/(delegate の作業ログ)は意図的に対象外 = MOC 非掲載 → Claude のコンテキストに
+  # 載せない。時系列ログとして全部残すが、ノイズ源なので Tier0/グラフ/検索から隔離する。
   find "$VAULT/Knowledge" "$VAULT/Decisions" "$VAULT/Projects" "$VAULT/Mistakes" -name '*.md' ! -name '_README.md' -type f 2>/dev/null |
     sort | while IFS= read -r f; do
     rel="${f#"$VAULT"/}"
