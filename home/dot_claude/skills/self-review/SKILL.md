@@ -71,14 +71,14 @@ Codex CLI を**まとめて**発火する(逐次にしない)。各 reviewer に
   ```bash
   if command -v codex >/dev/null 2>&1; then
     git diff "${base_ref}...HEAD" \
-      | codex exec --sandbox read-only - <<'EOF' 2>/dev/null
-  次の git diff をコードレビューせよ。実装意図は与えない。
-  重大/改善/情報の3段階で、各指摘にファイル:行と理由を付けて出力せよ。
-  EOF
+      | codex exec --sandbox read-only \
+          "次の git diff をコードレビューせよ。実装意図は与えない。重大/改善/情報の3段階で、各指摘にファイル:行と理由を付けて出力せよ。" 2>/dev/null
   else
     echo "Codex: skip(未導入)"
   fi
   ```
+  diff を stdin・指示を引数で渡す(`codex exec` は両方を同時に受ける)。heredoc を
+  使わないのは markdown リスト内のインデントで終端 `EOF` が壊れる罠を避けるため。
   未導入・未認証・ネットワーク不可なら `Codex: skip(理由)` と明示して続行する
   (**ブロックしない**)。`base_ref` には手順 1 で決めた base ref を設定してから呼ぶ。
   コンテキスト隔離の原則どおり diff のみ渡し、実装意図は与えない。

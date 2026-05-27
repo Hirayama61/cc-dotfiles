@@ -46,14 +46,19 @@ fi
 
 ### 3. Codex に渡す
 
+手順 2 で編んだ長文プロンプトを一時ファイルに書き、stdin にリダイレクトして渡す:
+
 ```bash
-codex exec --sandbox read-only - <<'EOF' 2>/dev/null
-（ここに 2 で編んだ相談プロンプト）
-EOF
+prompt_file="$(mktemp)"
+# 手順 2 で編んだ相談プロンプトを $prompt_file に書く
+codex exec --sandbox read-only - < "$prompt_file" 2>/dev/null
+rm -f "$prompt_file"
 ```
 
+- 一時ファイル経由にするのは、文脈を盛った長文を heredoc で直書きすると markdown
+  リスト内のインデントで終端 `EOF` が壊れる罠を避けるため(self-review は短い指示を
+  引数で渡すが、こちらは長文なので stdin が要る)。
 - `--sandbox read-only` で書込はさせない(相談のみ。コードは Claude 側で書く)。
-- heredoc + `-` で stdin 一括渡し(self-review の Codex ブロックと同方式)。
 - 応答が空 / エラーなら、認証(`codex login`)・ネットワークを疑い、その旨を人間に伝える。
 
 ### 4. 応答を統合して人間に提示
