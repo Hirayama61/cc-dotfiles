@@ -2,7 +2,7 @@
 name: self-review
 description: >-
   push 前の汎用品質レビュー隊。push 対象 diff を code-reviewer・security-reviewer
-  の 2 Agent + CodeRabbit CLI で並列検査し、severity 順に人間へ提示してトリアージを
+  の 2 Agent + CodeRabbit CLI + Codex CLI で並列検査し、severity 順に人間へ提示してトリアージを
   促す。「セルフレビューして」「push 前に確認」、`/self-review [effort]` での起動、
   またはオーケストレータが push 直前に実行する。レビュー実施 + 人間トリアージ
   済を確認した時だけ push ゲートのフラグを立てる。指摘ゼロは強制しない。
@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Grep, Glob, Agent, AskUserQuestion
 # self-review
 
 push 前の汎用レビュー隊。code-reviewer / security-reviewer の 2 Agent と
-CodeRabbit CLI を**並列**で走らせ、指摘を 3 段階(重大/改善/情報)に正規化・統合し、
+CodeRabbit CLI / Codex CLI を**並列**で走らせ、指摘を 3 段階(重大/改善/情報)に正規化・統合し、
 人間がトリアージできる状態にして push を解禁する。
 
 ## コンテキスト隔離の原則(必読)
@@ -45,9 +45,10 @@ VCSDD の Adversary 設計に倣い、reviewer には**コンテキスト隔離*
 
 ### 2. reviewer 群を 1 レスポンスで並列起動
 
-**同一アシスタントターン(1 レスポンス)の中で**、以下の 2 Agent と CodeRabbit CLI を
-**まとめて**発火する(逐次にしない)。各 reviewer には上記「コンテキスト隔離の原則」
-どおり差分 + 変更ファイル一覧 + コーディング規約のみを渡す。
+**同一アシスタントターン(1 レスポンス)の中で**、以下の 2 Agent と CodeRabbit CLI /
+Codex CLI を**まとめて**発火する(逐次にしない)。各 reviewer には上記「コンテキスト隔離の原則」
+どおり差分 + 変更ファイル一覧 + コーディング規約のみを渡す。Agent 群は 1 レスポンスで
+並列起動し、CLI 2 本(CodeRabbit / Codex)は Bash で続けて発火する。
 
 - `Agent(subagent_type: "code-reviewer")` — 品質・保守性・パフォーマンス +
   AI スロップを検査。**effort をプロンプト引数として渡す**(`/self-review [effort]`
@@ -65,8 +66,24 @@ VCSDD の Adversary 設計に倣い、reviewer には**コンテキスト隔離*
   ```
   未導入・未認証・ネットワーク不可なら `CodeRabbit: skip(理由)` と明示して続行する
   (**ブロックしない**)。`base_ref` には手順 1 で決めた base ref を設定してから呼ぶ。
+- Codex も **Bash で CLI を直叩き**する(CodeRabbit と同方式。別モデルの目を
+  毎回並列参加させる。名前衝突を避けるため CLI 固定):
+  ```bash
+  if command -v codex >/dev/null 2>&1; then
+    git diff "${base_ref}...HEAD" \
+      | codex exec --sandbox read-only - <<'EOF' 2>/dev/null
+  次の git diff をコードレビューせよ。実装意図は与えない。
+  重大/改善/情報の3段階で、各指摘にファイル:行と理由を付けて出力せよ。
+  EOF
+  else
+    echo "Codex: skip(未導入)"
+  fi
+  ```
+  未導入・未認証・ネットワーク不可なら `Codex: skip(理由)` と明示して続行する
+  (**ブロックしない**)。`base_ref` には手順 1 で決めた base ref を設定してから呼ぶ。
+  コンテキスト隔離の原則どおり diff のみ渡し、実装意図は与えない。
 
-全 reviewer(2 Agent + CLI)の完了を待ってから次へ進む。
+全 reviewer(2 Agent + CLI 2 本)の完了を待ってから次へ進む。
 
 > [!note] 将来の並列スロット(P2 完了後)
 > P2(外部脳ハイブリッド再編)完了後、ここに **obsidian-reviewer**(差分を過去
@@ -90,6 +107,7 @@ severity 正規化対応表(各 reviewer の語彙がばらつくため統合層
 | CodeRabbit の critical/error | 重大 |
 | CodeRabbit の warning/suggestion | 改善 |
 | CodeRabbit の nit/info | 情報 |
+| Codex の 重大/改善/情報 | そのまま 重大/改善/情報 |
 
 統合ルール:
 
@@ -133,7 +151,7 @@ ID を指定したときにフル詳細をオンデマンドで出す。
 ## レビュー結果サマリー
 対象: {ブランチ} / 変更 {N} ファイル
 重大 {N} / 改善 {N} / 情報 {N}
-reviewer: code-reviewer / security-reviewer / CodeRabbit({実施 or skip 理由})
+reviewer: code-reviewer / security-reviewer / CodeRabbit({実施 or skip 理由}) / Codex({実施 or skip 理由})
 
 ### 重大
 | ID | cat | 場所 | 概要 | 判断 |
@@ -210,3 +228,7 @@ reviewer: code-reviewer / security-reviewer / CodeRabbit({実施 or skip 理由}
   -t committed`)。公式プラグインの skill(`coderabbit:code-review` 等)は
   このスキルからは呼ばない(bare 名衝突の根を断つ)。CLI の前提は
   `coderabbit auth login`。
+- Codex も **CLI 専用に固定**(`codex exec --sandbox read-only -` に diff を stdin で
+  渡す)。CodeRabbit と同じく skill/Agent を経由しない。個人PC専用のオプトイン導入
+  (`mise run setup:codex`)+ `codex login`(ChatGPT サブスク)が前提で、未導入環境では
+  `Codex: skip(...)` で素通しする(レビューをブロックしない)。
