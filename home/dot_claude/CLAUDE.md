@@ -36,6 +36,12 @@
   リマインドを注入するので、安全な切れ目で **obsidian-memory を使い理由・文脈付きの
   Decisions ノートを書く**。timing とファイル分割はメイン判断(セッション単位の
   寄せ集めも質問単位のファイル乱造も避ける)。
+- **doc-gravity(生成ドキュメントは外部脳へ)**: Claude が生成する作業ドキュメント
+  (plan/report/findings 等)は全て `~/obsidian/brain/Tasks/<repo>/` に書く(`<repo>` は
+  `resolve-repo-key.sh` で導出)。リポ作業ツリー配下の**新規 .md は PreToolUse(Write) hook が
+  ブロック**する(dev doc 許可リスト=README/CONTRIBUTING/CHANGELOG/LICENSE/CLAUDE/AGENTS/
+  SECURITY・docs/**・.github/**、既存 .md 編集、`.claude/**`・chezmoi ソース `home/dot_*` は
+  除外)。これは hook の強制そのものではなく**書込先の方針**(hook は最後の砦)なので明記する。
 
 ## worktree 並行作業(1 worktree = 1 ブランチ)
 

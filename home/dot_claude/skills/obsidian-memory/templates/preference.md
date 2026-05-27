@@ -2,7 +2,7 @@
 date: YYYY-MM-DD
 tags: [preference, relevant, tags]
 project: project-name
-related: [[Other Note]]
+related: ["[[bare-note-name]]"]
 ---
 # 好み / 作業スタイル: category
 

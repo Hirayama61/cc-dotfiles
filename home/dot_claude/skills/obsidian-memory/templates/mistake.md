@@ -2,9 +2,11 @@
 date: YYYY-MM-DD
 tags: [mistake, relevant, tags]
 project: project-name
-related: [[Other Note]]
+related: ["[[bare-note-name]]"]
 ---
 # ミス: 一言で何を間違えたか(YYYY-MM-DD-topic)
+
+<!-- 配置: repo 固有は Mistakes/<repo>/、横断は Mistakes/_shared/(SKILL.md §1)。 -->
 
 ## 状況(Trigger)
 

@@ -35,14 +35,22 @@ tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
 ## 作業ファイルの置き場所
 
 作業ファイル(`plan.md` / `research.md` / `result.md`)は **作業リポには一切置かず**、
-Obsidian Vault 内に書く:
+Obsidian Vault 内の **repo スコープ Tasks** に書く:
 
-```
-~/obsidian/brain/Tasks/YYYY-MM-DD-<日本語トピック>/{plan,research,result}.md
+```text
+~/obsidian/brain/Tasks/<repo>/YYYY-MM-DD-<日本語トピック>/{plan,research,result}.md
 ```
 
-- ディレクトリ名 = **日付プレフィックス + 日本語トピック**(例
-  `2026-05-24-作業ログをvaultへ移行`)。一覧が時系列の作業ログになる。
+- `<repo>` = **現在の作業 repo の論理キー**(git toplevel の basename)。単一情報源
+  `~/.claude/hooks/lib/resolve-repo-key.sh "$PWD"` で導出する(doc-gravity hook /
+  SessionStart MOC / obsidian-reviewer と同じ写像)。リゾルバが空を返す(非 git の
+  vault 直編集中等)時だけ `Tasks/_misc/` に退避する。
+- サブディレクトリ名 = **日付プレフィックス + 日本語トピック**(例
+  `2026-05-24-作業ログをvaultへ移行`)。一覧が repo ごとの時系列作業ログになる。
+- リポ作業ツリー配下の新規 .md は PreToolUse(Write) hook がブロックする。作業
+  ドキュメント(plan/report/findings 等)は必ずこの `Tasks/<repo>/` 配下へ書く
+  (README/CONTRIBUTING/CHANGELOG/LICENSE/CLAUDE/AGENTS/SECURITY・docs/**・.github/**
+  の dev doc と既存 .md 編集だけは hook 例外で許可)。
 - **全部残す**(完了後も削除しない。全セッション横断の時系列ログとして保持)。
 - macOS の日本語ファイル名は **NFC に統一**(`mv` 後に
   `python3 -c "import unicodedata"` で検証。NFD なら NFC 名へ付け直す)。

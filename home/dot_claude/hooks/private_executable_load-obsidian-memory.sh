@@ -13,8 +13,15 @@ set -euo pipefail
 
 command -v jq &>/dev/null || exit 0
 
-# SessionStart 入力 JSON(cwd/source)は使わないので読み捨てる。
-cat >/dev/null || true
+# cwd から現在 repo の論理キーを導出し、MOC を現在 repo スコープへ絞る。
+# 空(repo 外 / vault 直編集中)なら全 repo フォールバック(REPO_KEY="")。
+input="$(cat)" || true
+cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)"
+REPO_KEY=""
+RESOLVER="$HOME/.claude/hooks/lib/resolve-repo-key.sh"
+if [[ -n "$cwd" && -x "$RESOLVER" ]]; then
+  REPO_KEY="$("$RESOLVER" "$cwd" 2>/dev/null || true)"
+fi
 
 VAULT="$HOME/obsidian/brain" # 全 PC 共通の固定パス
 [[ -d "$VAULT" ]] || exit 0  # 未存在(業務 PC 等)→ 無音で素通り
@@ -29,17 +36,35 @@ INDEX_DIR="$VAULT/.index"
 MOC="$INDEX_DIR/MOC.md"
 mkdir -p "$INDEX_DIR"
 {
-  echo "# MOC(自動生成 / $(date +%F)) — Tier1 本文は Grep/Glob + [[wikilink]] で必要分だけ読む"
+  echo "# MOC(自動生成 / $(date +%F)${REPO_KEY:+ / repo=$REPO_KEY}) — Tier1 本文は Grep/Glob + [[wikilink]] で必要分だけ読む"
   # 除外: _README.md(フォルダ説明の足場でノイズ)
   # Tasks/(delegate の作業ログ)は意図的に対象外 = MOC 非掲載 → Claude のコンテキストに
   # 載せない。時系列ログとして全部残すが、ノイズ源なので Tier0/グラフ/検索から隔離する。
-  find "$VAULT/Knowledge" "$VAULT/Decisions" "$VAULT/Projects" "$VAULT/Mistakes" -name '*.md' ! -name '_README.md' -type f 2>/dev/null |
+  #
+  # repo スコープフィルタ: Decisions/Mistakes は <type>/<repo>/ サブに住むため、現在 repo
+  # セグメント or _shared のみ採用(他 repo は除外しノイズを減らす)。Knowledge/Preferences/
+  # Projects は共有 flat なので常に採用。REPO_KEY 空(repo 外)なら全件採用(フォールバック)。
+  # リンクは戦略X(bare basename・vault 全体一意前提)で出力 → ディレクトリ移動に強い。
+  # find producer は || true でガードする。vault サブディレクトリの欠損/不可読で find が
+  # 非ゼロ終了すると pipefail でパイプライン全体が落ち best-effort 起動が壊れるため。
+  { find "$VAULT/Knowledge" "$VAULT/Decisions" "$VAULT/Projects" "$VAULT/Mistakes" -name '*.md' ! -name '_README.md' -type f 2>/dev/null || true; } |
     sort | while IFS= read -r f; do
     rel="${f#"$VAULT"/}"
+    case "$rel" in
+    Decisions/*/* | Mistakes/*/*)
+      seg="${rel#*/}"
+      seg="${seg%%/*}"
+      if [[ -n "$REPO_KEY" && "$seg" != "$REPO_KEY" && "$seg" != "_shared" ]]; then
+        continue
+      fi
+      ;;
+    esac
+    name="$(basename -- "$rel")"
+    name="${name%.md}"
     # title = 本文1行目見出し → 無ければ空 / meta = frontmatter tags+project を1行圧縮
     title="$(awk '/^# /{sub(/^# /,"");print;exit}' "$f")"
     meta="$(awk -F': ' '/^tags:|^project:/{printf "%s ",$2}' "$f")"
-    printf -- "- [[%s]] %s%s\n" "$rel" "${title:+$title }" "${meta:+($meta)}"
+    printf -- "- [[%s]] %s%s\n" "$name" "${title:+$title }" "${meta:+($meta)}"
   done
 } | awk -v max="$MOC_MAX" 'NR<=max' >"$MOC" # 生成側を制限(head 不使用で SIGPIPE 回避)
 

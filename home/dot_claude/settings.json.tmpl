@@ -101,6 +101,15 @@
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/pre-edit-guard.sh"
           }
         ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-repo-doc.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
