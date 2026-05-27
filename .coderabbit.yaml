@@ -1,0 +1,32 @@
+# .coderabbit.yaml — この cc-dotfiles リポの CodeRabbit AI レビュー設定。
+#
+# 設定の参照元は dotfiles リポ(Hirayama61/dotfiles)の .coderabbit.yaml。
+# あちらで実運用しながら育てた設定をここへ移植する。
+# 各キーの公式リファレンス: https://docs.coderabbit.ai/reference/configuration
+
+language: "ja"
+
+reviews:
+  # tone(辛口度)。assertive = 指摘多め・踏み込んだ指摘。控えめにするなら chill。
+  profile: assertive
+
+  # walkthrough 末尾の poem(自動生成の詩)を出さない。
+  poem: false
+
+  auto_review:
+    enabled: true
+
+    # draft PR もレビュー対象に含める。
+    drafts: true
+
+    # base_branches 未指定だと既定ブランチ(main)への PR しか自動レビューされない。
+    # 全ブランチを base 対象にするため ".*" を指定(epic ブランチ向け feature PR 等も拾う)。
+    # 絞りたい場合はここを正規表現リストに変える(例: - "main" / - "epic/.*")。
+    base_branches:
+      - ".*"
+
+# 他リポの知見を横断参照させたい場合に有効化(item キーは repository。name は無効)。
+# knowledge_base:
+#   linked_repositories:
+#     - repository: "Hirayama61/dotfiles"
+#       instructions: "端末・開発環境の dotfiles リポ。共通の運用方針やレビュー観点を参照する。"
