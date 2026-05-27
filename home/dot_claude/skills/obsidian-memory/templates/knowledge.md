@@ -2,7 +2,7 @@
 date: YYYY-MM-DD
 tags: [relevant, tags]
 project: project-name
-related: [[Other Note]]
+related: ["[[bare-note-name]]"]
 ---
 # タイトル(topic-subtopic)
 

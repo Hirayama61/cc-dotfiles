@@ -2,7 +2,7 @@
 date: YYYY-MM-DD
 tags: [project, relevant, tags]
 project: project-name
-related: [[Other Note]]
+related: ["[[bare-note-name]]"]
 ---
 # プロジェクト: project-name
 
