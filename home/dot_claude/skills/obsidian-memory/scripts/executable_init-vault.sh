@@ -11,7 +11,7 @@ set -euo pipefail
 
 VAULT="$HOME/obsidian/brain"
 
-mkdir -p "$VAULT"/{Knowledge,Decisions,Mistakes,Projects,Preferences,.index}
+mkdir -p "$VAULT"/{Knowledge,Decisions,Mistakes,Projects,Preferences,Tasks,.index}
 
 write_readme_if_absent() {
   local path="$1"
@@ -58,6 +58,40 @@ write_readme_if_absent "$VAULT/Preferences/_README.md" \
   "" \
   "最初に profile.md に自己紹介・前提・よく使うスタックを書いておくと良い。"
 
+write_readme_if_absent "$VAULT/Tasks/_README.md" \
+  "# Tasks — delegate/Claude の作業ドキュメント隔離先" \
+  "" \
+  "delegate/Claude が生成する作業ドキュメント(plan/report/findings 等)の置き場所。" \
+  "1 repo 1サブディレクトリ(Tasks/<repo>/、書込時に mkdir で生やす)で時系列ログとして全部残す。" \
+  "doc-gravity hook(block-repo-doc.sh)がリポ配下の新規 .md をブロックしてここへ誘導する正式な書込先。" \
+  "" \
+  "意図的に Tier0/MOC/グラフ/Obsidian 検索から除外している(load-obsidian-memory.sh は MOC 非掲載、" \
+  ".obsidian の userIgnoreFilters で検索/グラフから隔離)。作業ログはノイズ源なので知識レイヤーと混ぜない。" \
+  "再利用価値のある知見は Knowledge/ Decisions/ 等へ昇華する。"
+
+# Tasks/ を Obsidian の検索/グラフから隔離する設定を新 PC へ携帯化する。
+# jq 不在/失敗時は best-effort で素通り(scaffold 自体は成功させる)。
+inject_tasks_ignore_filter() {
+  local app_json="$VAULT/.obsidian/app.json"
+  mkdir -p "$VAULT/.obsidian"
+  if [[ ! -e "$app_json" ]]; then
+    printf '%s\n' '{"userIgnoreFilters":["Tasks/"]}' >"$app_json"
+    return 0
+  fi
+  command -v jq >/dev/null 2>&1 || return 0
+  local tmp
+  # temp は置換先と同一 FS(.obsidian 内)に作る。既定 TMPDIR だとクロス FS で
+  # mv が rename にならずコピーになり atomic 性が落ちるため。
+  tmp="$(mktemp "$VAULT/.obsidian/app.json.tmp.XXXXXX")" || return 0
+  if jq '.userIgnoreFilters = ((.userIgnoreFilters // []) + ["Tasks/"] | unique)' \
+    "$app_json" >"$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$app_json" || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
+}
+inject_tasks_ignore_filter || true
+
 cat <<EOF
 Obsidian 永続記憶 vault を初期化しました: $VAULT
 
@@ -67,6 +101,7 @@ Obsidian 永続記憶 vault を初期化しました: $VAULT
   Mistakes/     ミスの観測ログ(repo 固有は <repo>/、横断は _shared/)
   Projects/     進行中プロジェクトの状態(1 repo 1ファイル)
   Preferences/  好み・作業スタイル(共有・flat)
+  Tasks/        delegate/Claude の作業ドキュメント隔離先(<repo>/ サブ、Tier0/MOC/検索から除外)
   .index/       MOC(索引)自動生成先(SessionStart hook が更新)
 
 <type>/<repo>/ と <type>/_shared/ のサブディレクトリは書込時に mkdir -p で生やします
