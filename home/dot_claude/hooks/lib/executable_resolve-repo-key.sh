@@ -21,7 +21,10 @@
 # 使い方:
 #   source .../resolve-repo-key.sh && resolve_repo_key "/path/or/cwd"
 #   または直接実行: resolve-repo-key.sh "/path/or/cwd"
-set -euo pipefail
+#
+# set -euo pipefail はトップレベルに置かない(source 時に呼び出し元シェルの set 状態を
+# 汚染するため)。関数は呼び出し元が非 strict でも安全に動く(|| true / 空ガード /
+# 2>/dev/null で自衛済み)。strict 化は直接実行ガード内でのみ行う。
 
 # キーを macOS ディレクトリ名で安全な形へ正規化する。
 #   - 前後空白除去 → 内部空白をハイフン化
@@ -108,9 +111,10 @@ resolve_repo_key() {
   _normalize_repo_key "$key"
 }
 
-# 直接実行されたとき(source ではないとき)だけ引数で実行する。
+# 直接実行されたとき(source ではないとき)だけ strict 化して実行する。
 # set -u 下で source されても落ちないよう BASH_SOURCE 参照に既定値を与える。
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
+  set -euo pipefail
   resolve_repo_key "${1:-$PWD}"
   printf '\n'
 fi

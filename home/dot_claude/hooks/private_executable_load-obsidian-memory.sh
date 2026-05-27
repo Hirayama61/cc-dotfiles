@@ -45,7 +45,9 @@ mkdir -p "$INDEX_DIR"
   # セグメント or _shared のみ採用(他 repo は除外しノイズを減らす)。Knowledge/Preferences/
   # Projects は共有 flat なので常に採用。REPO_KEY 空(repo 外)なら全件採用(フォールバック)。
   # リンクは戦略X(bare basename・vault 全体一意前提)で出力 → ディレクトリ移動に強い。
-  find "$VAULT/Knowledge" "$VAULT/Decisions" "$VAULT/Projects" "$VAULT/Mistakes" -name '*.md' ! -name '_README.md' -type f 2>/dev/null |
+  # find producer は || true でガードする。vault サブディレクトリの欠損/不可読で find が
+  # 非ゼロ終了すると pipefail でパイプライン全体が落ち best-effort 起動が壊れるため。
+  { find "$VAULT/Knowledge" "$VAULT/Decisions" "$VAULT/Projects" "$VAULT/Mistakes" -name '*.md' ! -name '_README.md' -type f 2>/dev/null || true; } |
     sort | while IFS= read -r f; do
     rel="${f#"$VAULT"/}"
     case "$rel" in

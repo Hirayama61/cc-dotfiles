@@ -37,7 +37,7 @@ tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
 作業ファイル(`plan.md` / `research.md` / `result.md`)は **作業リポには一切置かず**、
 Obsidian Vault 内の **repo スコープ Tasks** に書く:
 
-```
+```text
 ~/obsidian/brain/Tasks/<repo>/YYYY-MM-DD-<日本語トピック>/{plan,research,result}.md
 ```
 
