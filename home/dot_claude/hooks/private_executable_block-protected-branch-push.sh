@@ -1,35 +1,57 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash): 保護ブランチ(main/master/develop/epic/**)への
 # push / merge を物理的にブロックする。人間の許可なき不可逆操作を防ぐ。
+#
+# 判定対象は hook プロセスの cwd ではなく、コマンドが実際に操作する working dir。
+# `cd <wt> && git push` / `git -C <wt> push` の実対象を resolve-git-target.sh で
+# 解決し、その dir の現在ブランチで判定する(dispatcher 型運用での cross-repo /
+# 別 worktree push 誤ブロック対策。RCA: Knowledge/pushゲートフックがプライマリ
+# repo結合でcross-repo-push誤判定.md)。保護判定は現在ブランチ基準のみ・refspec は見ない。
+#
 # 安全側設計: jq 無し / git 外 / ブランチ不明なら exit 0(通す)。
+# 検知は best-effort(難読化は素通る)であり敵対防御ではない。
 set -euo pipefail
 
 command -v jq &>/dev/null || exit 0
 input="$(cat)"
 cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
 [[ -z "$cmd" ]] && exit 0
+cwd="$(echo "$input" | jq -r '.cwd // empty')"
+[[ -z "$cwd" ]] && cwd="$PWD"
 
-# git push / git merge を含まなければ対象外(チェイン対応で行頭アンカーなし)。
-# 末尾は (\s|$) で区切り、merge-base/merge-tree/merge-file 等 read-only
-# plumbing(直後が `-`)を \b の単語境界で誤ブロックしないようにする。
-echo "$cmd" | grep -qE '\bgit\s+(push|merge)(\s|$)' || exit 0
+LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB"
 
-git rev-parse --is-inside-work-tree &>/dev/null 2>&1 || exit 0
-branch="$(git branch --show-current 2>/dev/null || echo "")"
+# セグメント分割 + サブコマンド厳密一致で push / merge を検出。
+# merge-base/merge-tree/merge-file や `git log | grep push` 等の誤爆を避ける。
+has_push=0
+has_merge=0
+while IFS= read -r seg; do
+  [[ -z "$seg" ]] && continue
+  case "$(git_subcommand_of_segment "$seg")" in
+  push) has_push=1 ;;
+  merge) has_merge=1 ;;
+  esac
+done < <(split_git_segments "$cmd")
+[[ "$has_push" -eq 0 && "$has_merge" -eq 0 ]] && exit 0
+
+target_dir="$(resolve_git_target_dir "$cmd" "$cwd")"
+git -C "$target_dir" rev-parse --is-inside-work-tree &>/dev/null || exit 0
+branch="$(git -C "$target_dir" branch --show-current 2>/dev/null || echo "")"
 [[ -z "$branch" ]] && exit 0
 
 is_protected() {
   [[ "$1" == "main" || "$1" == "master" || "$1" == "develop" || "$1" == epic/* ]]
 }
 
-# push: 現在のブランチが保護対象なら拒否
-if echo "$cmd" | grep -qE '\bgit\s+push(\s|$)' && is_protected "$branch"; then
+if [[ "$has_push" -eq 1 ]] && is_protected "$branch"; then
   echo "ブロック: 保護ブランチ(${branch})への push は禁止。feature ブランチから人間が PR を作成すること。" >&2
   exit 2
 fi
 
-# merge: 保護ブランチ上での merge(= 保護ブランチへのマージ)を拒否
-if echo "$cmd" | grep -qE '\bgit\s+merge(\s|$)' && is_protected "$branch"; then
+if [[ "$has_merge" -eq 1 ]] && is_protected "$branch"; then
   echo "ブロック: 保護ブランチ(${branch})への merge は禁止。人間の判断を経ること。" >&2
   exit 2
 fi
