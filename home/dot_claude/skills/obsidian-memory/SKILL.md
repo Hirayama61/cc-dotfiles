@@ -68,9 +68,10 @@ related: [[Other Note]]
 ```
 
 作業成果物(plan / research / result 等の作業ログ)の既定書込先は
-`~/obsidian/brain/Tasks/<repo>/`(repo スコープ。`<repo>` は §1 のリゾルバで導出)。
-リポ作業ツリー配下の新規 .md は PreToolUse(Write) hook がブロックするので、作業
-ドキュメントは Tasks へ書く(詳細は delegate 規約)。
+`~/obsidian/brain/Tasks/<repo>/`(repo スコープ。`<repo>` は §1 のリゾルバで導出。
+リゾルバが空を返す非 git 文脈でだけ `Tasks/_misc/` に退避)。リポ作業ツリー配下の
+新規 .md は PreToolUse(Write) hook がブロックするので、作業ドキュメントは Tasks へ
+書く(詳細は delegate 規約)。
 
 ## 3. 命名規則
 

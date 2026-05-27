@@ -42,6 +42,11 @@ _normalize_repo_key() {
   if command -v tr >/dev/null 2>&1; then
     key="$(printf '%s' "$key" | tr -d '[:cntrl:]')"
   fi
+  # パストラバーサル防御: キーは Tasks/<repo>・Decisions/<repo> の実ディレクトリ生成に
+  # 使われるため `..` と先頭ドットを無害化する(`/` は上で除去済みだが `..` や `.foo`・
+  # `..` 単体は残りうる)。extglob 非依存にするため先頭ドットはループで剥がす。
+  key="${key//../_}"
+  while [[ "$key" == .* ]]; do key="${key#.}"; done
   # NFC 正規化(python3 があれば)
   if [[ -n "$key" ]] && command -v python3 >/dev/null 2>&1; then
     key="$(python3 -c 'import sys,unicodedata; sys.stdout.write(unicodedata.normalize("NFC", sys.argv[1]))' "$key" 2>/dev/null || printf '%s' "$key")"
@@ -80,9 +85,9 @@ resolve_repo_key() {
     case "$base" in
     "$HOME"/ghq/*)
       local rel="${base#"$HOME"/ghq/}"
-      # rel = <host>/<owner>/<repo>[/...]。owner/repo を取り出す。
+      # rel = <host>/<owner>/<repo>[/...]。先頭 host を落とし owner/repo を取る。
       local owner repo
-      # 先頭の host を落として owner/repo を取る
+      local -a _segs
       IFS='/' read -r -a _segs <<<"$rel"
       if [[ ${#_segs[@]} -ge 3 ]]; then
         owner="${_segs[1]}"
@@ -104,7 +109,8 @@ resolve_repo_key() {
 }
 
 # 直接実行されたとき(source ではないとき)だけ引数で実行する。
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# set -u 下で source されても落ちないよう BASH_SOURCE 参照に既定値を与える。
+if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   resolve_repo_key "${1:-$PWD}"
   printf '\n'
 fi

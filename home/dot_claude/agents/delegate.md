@@ -43,8 +43,8 @@ Obsidian Vault 内の **repo スコープ Tasks** に書く:
 
 - `<repo>` = **現在の作業 repo の論理キー**(git toplevel の basename)。単一情報源
   `~/.claude/hooks/lib/resolve-repo-key.sh "$PWD"` で導出する(doc-gravity hook /
-  SessionStart MOC / obsidian-reviewer と同じ写像)。repo 外(vault 直編集中等)で
-  キーが空なら `Tasks/_misc/` 等の任意キーに退避してよい。
+  SessionStart MOC / obsidian-reviewer と同じ写像)。リゾルバが空を返す(非 git の
+  vault 直編集中等)時だけ `Tasks/_misc/` に退避する。
 - サブディレクトリ名 = **日付プレフィックス + 日本語トピック**(例
   `2026-05-24-作業ログをvaultへ移行`)。一覧が repo ごとの時系列作業ログになる。
 - リポ作業ツリー配下の新規 .md は PreToolUse(Write) hook がブロックする。作業
