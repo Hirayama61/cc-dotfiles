@@ -80,10 +80,12 @@ inject_tasks_ignore_filter() {
   fi
   command -v jq >/dev/null 2>&1 || return 0
   local tmp
-  tmp="$(mktemp)" || return 0
+  # temp は置換先と同一 FS(.obsidian 内)に作る。既定 TMPDIR だとクロス FS で
+  # mv が rename にならずコピーになり atomic 性が落ちるため。
+  tmp="$(mktemp "$VAULT/.obsidian/app.json.tmp.XXXXXX")" || return 0
   if jq '.userIgnoreFilters = ((.userIgnoreFilters // []) + ["Tasks/"] | unique)' \
     "$app_json" >"$tmp" 2>/dev/null; then
-    mv "$tmp" "$app_json"
+    mv -f "$tmp" "$app_json" || rm -f "$tmp"
   else
     rm -f "$tmp"
   fi
