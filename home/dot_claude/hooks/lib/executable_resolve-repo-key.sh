@@ -78,7 +78,8 @@ resolve_repo_key() {
     *) common_dir="$base/$common_dir" ;;
     esac
     local repo_root
-    repo_root="$(cd "$common_dir/.." 2>/dev/null && pwd || true)"
+    # pwd -P で物理パス化(symlink 経由 checkout でも同一物理リポは同一キーにする)。
+    repo_root="$(cd "$common_dir/.." 2>/dev/null && pwd -P || true)"
     [[ -n "$repo_root" ]] && key="$(basename -- "$repo_root")"
   fi
 
