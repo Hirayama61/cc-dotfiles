@@ -11,7 +11,7 @@ set -euo pipefail
 
 command -v jq &>/dev/null || exit 0
 input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
+cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || true)"
 [[ -z "$cmd" ]] && exit 0
 
 # gh pr create、または gh pr edit に body 系フラグ(--body / -b / --body-file /
