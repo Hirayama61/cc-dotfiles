@@ -35,6 +35,9 @@
     "coderabbit@claude-plugins-official": true
   },
   "skipAutoPermissionPrompt": true,
+  "worktree": {
+    "bgIsolation": "none"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -99,6 +102,10 @@
           {
             "type": "command",
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/pre-edit-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-main-clone-edit.sh"
           }
         ]
       },
