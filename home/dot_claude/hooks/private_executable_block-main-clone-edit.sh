@@ -22,6 +22,11 @@
 #   許可してしまうと決定 B(ソース編集も worktree でやれ)に反するため除外しない。
 set -euo pipefail
 
+# git 判定の核(--git-dir / --git-common-dir)を環境変数注入で狂わされないよう無効化する。
+# 混線したシェルや export が GIT_DIR 等を持ち込むと、main clone 本体の編集を linked worktree と
+# 誤判定してブロックをすり抜けられる(bgIsolation:none 下で本 hook が混線防止の最後の砦になるため)。
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 input="$(cat)"
@@ -48,10 +53,16 @@ esac
 # ~/ghq 配下でも、ブロックするのは *プライマリ作業ツリー(main clone 本体)* のみ。
 # linked worktree(--git-dir != --git-common-dir)は per-branch 隔離されているので許可する。
 # 非 git ディレクトリ(main clone ではない)も許可。比較は cd+pwd -P で絶対化し相対表記/version 差を避ける。
-git -C "$cdir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
-gd="$(cd "$cdir" && cd "$(git rev-parse --git-dir 2>/dev/null)" 2>/dev/null && pwd -P || true)"
-gcd="$(cd "$cdir" && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P || true)"
-[[ -z "$gd" || "$gd" != "$gcd" ]] && exit 0
+# --is-inside-work-tree は work-tree 外(例 .git/ 配下)でも exit 0 + 出力 "false" を返すので
+# exit code でなく出力 == true を見る。git-dir/common-dir が空だと cd "" で cwd 据え置き →
+# 誤一致(誤ブロック)になるため空を明示的に弾く。
+[[ "$(git -C "$cdir" rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] || exit 0
+rel_gd="$(git -C "$cdir" rev-parse --git-dir 2>/dev/null || true)"
+rel_gcd="$(git -C "$cdir" rev-parse --git-common-dir 2>/dev/null || true)"
+[[ -z "$rel_gd" || -z "$rel_gcd" ]] && exit 0
+gd="$(cd "$cdir" && cd "$rel_gd" 2>/dev/null && pwd -P || true)"
+gcd="$(cd "$cdir" && cd "$rel_gcd" 2>/dev/null && pwd -P || true)"
+[[ -z "$gd" || -z "$gcd" || "$gd" != "$gcd" ]] && exit 0
 
 {
   echo "ブロック: main clone(~/ghq/... のプライマリ作業ツリー)のファイルは Claude から編集できません: $cfp"
