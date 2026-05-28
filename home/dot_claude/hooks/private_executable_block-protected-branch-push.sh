@@ -6,7 +6,12 @@
 # `cd <wt> && git push` / `git -C <wt> push` の実対象を resolve-git-target.sh で
 # 解決し、その dir の現在ブランチで判定する(dispatcher 型運用での cross-repo /
 # 別 worktree push 誤ブロック対策。RCA: Knowledge/pushゲートフックがプライマリ
-# repo結合でcross-repo-push誤判定.md)。保護判定は現在ブランチ基準のみ・refspec は見ない。
+# repo結合でcross-repo-push誤判定.md)。保護判定は現在ブランチ基準のみ。
+#
+# 既知の限界(意図的・CodeRabbit PR #4 で再提起したが現状維持を選択): `git push origin
+# HEAD:main` 等の明示 refspec で宛先の保護ブランチを更新する経路は検知しない。自分の
+# Claude を縛る best-effort ゲートであり、refspec(src:dst / refs/heads/* / --delete)解析の
+# 誤爆・漏れリスクを避けるため受容する。
 #
 # 安全側設計: jq 無し / git 外 / ブランチ不明なら exit 0(通す)。
 # 検知は best-effort(難読化は素通る)であり敵対防御ではない。

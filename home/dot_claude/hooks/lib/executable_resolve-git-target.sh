@@ -165,19 +165,28 @@ resolve_git_target_dir() {
     esac
   done < <(split_git_segments "$cmd")
 
-  # 2) コマンド全体で最初に現れる先頭 `cd <dir>`。
+  # 2) `git -C` 無しなら、セグメント順に `cd` を畳んだ仮想 cwd を更新し、
+  #    push/merge/commit 到達時点の cwd を採用する。`cd a && cd b && git push` で
+  #    最初の `cd a` ではなく実際の到達先 b を返す(連鎖 cd の取り違え防止)。
+  local current="$cwd"
   while IFS= read -r seg; do
     [[ -z "$seg" ]] && continue
     cdir="$(_leading_cd_dir_of_segment "$seg")"
     if [[ -n "$cdir" ]]; then
-      target="$(_abs_dir "$cdir" "$cwd")"
-      [[ -n "$target" ]] && { printf '%s' "$target"; return 0; }
-      break
+      target="$(_abs_dir "$cdir" "$current")"
+      [[ -n "$target" ]] && current="$target"
+      continue
     fi
+    case "$(git_subcommand_of_segment "$seg")" in
+    push | merge | commit)
+      printf '%s' "$current"
+      return 0
+      ;;
+    esac
   done < <(split_git_segments "$cmd")
 
-  # 3) フォールバック = cwd(既存挙動)。
-  printf '%s' "$cwd"
+  # 3) フォールバック = cd を畳んだ最終 cwd(git action 無しなら cwd のまま)。
+  printf '%s' "$current"
 }
 
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
