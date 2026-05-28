@@ -66,6 +66,10 @@
           {
             "type": "command",
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/pre-push-wip-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-gh-mutations.sh"
           }
         ]
       },
