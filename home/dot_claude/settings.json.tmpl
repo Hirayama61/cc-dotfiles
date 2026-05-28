@@ -149,6 +149,17 @@
           }
         ]
       }
+    ],
+    "WorktreeCreate": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/create-worktree.sh"
+          }
+        ]
+      }
     ]
   }
 }
