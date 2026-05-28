@@ -90,7 +90,8 @@ Codex CLI を**まとめて**発火する(逐次にしない)。各 reviewer に
 > Decision / Mistakes / Knowledge gotcha と照合する Agent)を 3 つ目の並列スロット
 > として追加する予定。現時点では obsidian-reviewer の実体 Agent は存在しないため
 > **起動しない**(存在しない subagent_type を Agent 起動すると壊れる)。今回実際に
-> 並列起動するのは code-reviewer・security-reviewer の 2 Agent + CodeRabbit CLI のみ。
+> 並列起動するのは code-reviewer・security-reviewer の 2 Agent + CodeRabbit CLI /
+> Codex CLI のみ。
 
 ### 3. 結果統合と優先度付け
 
