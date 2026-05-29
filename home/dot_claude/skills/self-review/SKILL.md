@@ -70,19 +70,24 @@ Codex CLI を**まとめて**発火する(逐次にしない)。各 reviewer に
   毎回並列参加させる。名前衝突を避けるため CLI 固定):
   ```bash
   if command -v codex >/dev/null 2>&1; then
-    git diff "${base_ref}...HEAD" \
+    codex_out="$(git diff "${base_ref}...HEAD" \
       | codex exec --sandbox read-only \
-          "次の git diff をコードレビューせよ。実装意図は与えない。重大/改善/情報の3段階で、各指摘にファイル:行と理由を付けて出力せよ。" 2>/dev/null \
-      || echo "Codex: skip(実行失敗 — 未認証/レート制限/ネットワーク不可等)"
+          "次の git diff をコードレビューせよ。実装意図は与えない。重大/改善/情報の3段階で、各指摘にファイル:行と理由を付けて出力せよ。" 2>/dev/null)"
+    if [ -n "$codex_out" ]; then
+      printf '%s\n' "$codex_out"
+    else
+      echo "Codex: skip(空応答 — 未認証/レート制限/ネットワーク疑い)"
+    fi
   else
     echo "Codex: skip(未導入)"
   fi
   ```
   diff を stdin・指示を引数で渡す(`codex exec` は両方を同時に受ける)。heredoc を
   使わないのは markdown リスト内のインデントで終端 `EOF` が壊れる罠を避けるため。
-  未導入・実行失敗(未認証/レート制限/ネットワーク不可)とも `Codex: skip(理由)` と
-  明示して続行する(**ブロックしない**)。`base_ref` には手順 1 で決めた base ref を
-  設定してから呼ぶ。
+  出力をキャプチャするのは、exit 0 でも空応答(認証/レート制限/ネットワーク起因で
+  本文が返らない)を skip 扱いにするため(`||` だけでは exit 0 の空応答を拾えない)。
+  未導入・実行失敗・空応答とも `Codex: skip(理由)` と明示して続行する
+  (**ブロックしない**)。`base_ref` には手順 1 で決めた base ref を設定してから呼ぶ。
   コンテキスト隔離の原則どおり diff のみ渡し、実装意図は与えない。
 
 全 reviewer(2 Agent + CLI 2 本)の完了を待ってから次へ進む。
@@ -231,7 +236,10 @@ reviewer: code-reviewer / security-reviewer / CodeRabbit({実施 or skip 理由}
   -t committed`)。公式プラグインの skill(`coderabbit:code-review` 等)は
   このスキルからは呼ばない(bare 名衝突の根を断つ)。CLI の前提は
   `coderabbit auth login`。
-- Codex も **CLI 専用に固定**(`codex exec --sandbox read-only -` に diff を stdin で
-  渡す)。CodeRabbit と同じく skill/Agent を経由しない。個人PC専用のオプトイン導入
+- Codex も **CLI 専用に固定**(`diff | codex exec --sandbox read-only "指示"` =
+  指示を引数 PROMPT、diff を stdin で渡す。`codex exec` は stdin が piped かつ PROMPT
+  引数ありの時、stdin を `<stdin>` ブロックとして指示に追記する。`-` は付けない
+  =`-` は stdin 全体を PROMPT として読む別用途で、指示と diff を分ける用に反する)。
+  CodeRabbit と同じく skill/Agent を経由しない。個人PC専用のオプトイン導入
   (`mise run setup:codex`)+ `codex login`(ChatGPT サブスク)が前提で、未導入環境では
   `Codex: skip(...)` で素通しする(レビューをブロックしない)。

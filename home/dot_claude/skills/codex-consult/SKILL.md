@@ -28,6 +28,7 @@ self-review(レビュア)は**コンテキスト隔離**が品質の核 = 差分
 ```bash
 if ! command -v codex >/dev/null 2>&1; then
   echo "Codex 未導入のため相談不可(個人PC専用: mise run setup:codex)"
+  exit 0
 fi
 ```
 
@@ -50,14 +51,16 @@ fi
 
 ```bash
 prompt_file="$(mktemp)"
+trap 'rm -f "$prompt_file"' EXIT
 # 手順 2 で編んだ相談プロンプトを $prompt_file に書く
 codex exec --sandbox read-only - < "$prompt_file" 2>/dev/null
-rm -f "$prompt_file"
 ```
 
 - 一時ファイル経由にするのは、文脈を盛った長文を heredoc で直書きすると markdown
   リスト内のインデントで終端 `EOF` が壊れる罠を避けるため(self-review は短い指示を
   引数で渡すが、こちらは長文なので stdin が要る)。
+- `trap ... EXIT` で削除するのは、codex 失敗・中断時も機密を含みうる一時ファイルを
+  残さないため(末尾の `rm` だけだと異常終了で残る)。
 - `--sandbox read-only` で書込はさせない(相談のみ。コードは Claude 側で書く)。
 - 応答が空 / エラーなら、認証(`codex login`)・ネットワークを疑い、その旨を人間に伝える。
 
