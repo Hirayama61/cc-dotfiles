@@ -27,7 +27,7 @@ self-review(レビュア)は**コンテキスト隔離**が品質の核 = 差分
 
 ```bash
 if ! command -v codex >/dev/null 2>&1; then
-  echo "Codex 未導入のため相談不可(個人PC専用: mise run setup:codex)"
+  echo "Codex 未導入のため相談不可"
   exit 0
 fi
 ```
