@@ -42,6 +42,22 @@
   ブロック**する(dev doc 許可リスト=README/CONTRIBUTING/CHANGELOG/LICENSE/CLAUDE/AGENTS/
   SECURITY・docs/**・.github/**、既存 .md 編集、`.claude/**`・chezmoi ソース `home/dot_*` は
   除外)。これは hook の強制そのものではなく**書込先の方針**(hook は最後の砦)なので明記する。
+- **grill-with-docs の Obsidian 振替(doc-gravity の個別適用)**: ext-skill
+  `grill-with-docs` は本来 CONTEXT.md(用語集)を repo 直下に、ADR を `docs/adr/` に
+  生成するが、本環境では出力先を Obsidian に振り替える(スキル本体は upstream symlink
+  ゆえ不可侵。この指示が skill の default を OVERRIDE する)。
+  - **用語集** = `~/obsidian/brain/Tasks/<repo>/CONTEXT.md`(`<repo>` は
+    `resolve-repo-key.sh` 導出。空を返す非 git 文脈では `Tasks/_misc/CONTEXT.md` に退避)に
+    read/write。repo 配下に CONTEXT.md/CONTEXT-MAP.md を作らない(hook が新規 .md を
+    ブロックするので本来そもそも生成されない)。
+  - **探索の短絡**: セッション開始時に repo を CONTEXT.md/CONTEXT-MAP.md/`docs/adr` で
+    走査しない。`~/obsidian/brain/Tasks/<repo>/CONTEXT.md` の1パスだけ確認し、
+    無ければ最初の用語確定時に lazy 作成する(毎回の空振り探索を構造的に潰す)。
+  - **ADR**: in-repo `docs/adr/` を新設せず、ADR 相当(Hard to reverse ∧ Surprising ∧
+    実トレードオフ)は上の「判断の記録」と同じ Decisions ノート(obsidian-memory)へ合流させる
+    (`docs/adr/**` は doc-gravity hook の `docs/**` 許可を素通りするので、これは hook 強制で
+    なく規約遵守で担保する点に注意)。
+  - 個人リポは単一コンテキスト前提。複数コンテキストが要れば1ノート内を見出しで分割する。
 
 ## worktree 並行作業(1 worktree = 1 ブランチ)
 
