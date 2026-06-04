@@ -6,10 +6,12 @@
 # cc-dotfiles/2026-06-04-force-pushとpush済amendをhookでブロック)。
 #
 # 判定対象は hook プロセスの cwd ではなく、コマンドが実際に操作する working dir。
-# `cd <wt> && git commit --amend` / `git -C <wt> commit --amend` の実対象を
-# resolve-git-target.sh で解決し、その dir の HEAD で push 済判定する(dispatcher 型運用での
-# cross-repo / 別 worktree 誤判定対策。Knowledge/pushゲートフックがプライマリrepo結合で
-# cross-repo-push誤判定)。push 済判定は `git branch -r --contains HEAD` が非空か。
+# `cd <wt> && git commit --amend` / `git -C <wt> commit --amend` の実対象を resolve-git-target.sh
+# のプリミティブで解決し、その dir の HEAD で push 済判定する(dispatcher 型運用での cross-repo /
+# 別 worktree 誤判定対策。Knowledge/pushゲートフックがプライマリrepo結合でcross-repo-push誤判定)。
+# 解決は cmd 全体ではなく「amend を含む commit セグメント単位」で行う(F-002): 複数 git commit
+# が別 repo/worktree を指す場合に取り違えないため、cd を畳んだ仮想 cwd を per-amend に適用する。
+# push 済判定は `git branch -r --contains HEAD` が非空か。
 #
 # 既知の限界(意図的に受容・best-effort で敵対防御ではない):
 # - remote 未 fetch だと push 済を取りこぼしうる(安全側 = 不明なら通す。人間が ! で対応可)。
@@ -39,25 +41,51 @@ LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
 # shellcheck source=/dev/null
 . "$LIB"
 
-has_amend=0
+# 当該セグメントの HEAD が push 済(remote 到達)なら 0 を返す(= block すべき)。
+# git 外 / unborn HEAD / 解決不能は非 0(= このセグメントは skip)。
+amend_segment_is_pushed() {
+  local dir="${1:-}"
+  [[ -z "$dir" ]] && return 1
+  git -C "$dir" rev-parse --is-inside-work-tree &>/dev/null || return 1
+  # unborn HEAD(コミット皆無)では branch -r --contains がエラーになるので先にガード。
+  git -C "$dir" rev-parse --verify -q HEAD >/dev/null 2>&1 || return 1
+  local remote_branches
+  remote_branches="$(git -C "$dir" branch -r --contains HEAD 2>/dev/null || echo "")"
+  [[ -n "$remote_branches" ]]
+}
+
+# amend dir は cmd 全体ではなく「amend を含む commit セグメント単位」で解決する(F-002)。
+# 複数 git commit(別 repo/worktree)の取り違えを防ぐため、resolve_git_target_dir の
+# cd 畳み込み(rule 2)を per-amend に展開: セグメントを順に走査し cd で仮想 cwd を更新、
+# amend を含む commit セグメントは「segment 内 git -C があればそれ、無ければ畳んだ cwd」で
+# 判定する。いずれかの amend セグメントが push 済なら block。
+current="$cwd"
 while IFS= read -r seg; do
   [[ -z "$seg" ]] && continue
+
+  cdir="$(_leading_cd_dir_of_segment "$seg")"
+  if [[ -n "$cdir" ]]; then
+    abs="$(_abs_dir "$cdir" "$current")"
+    [[ -n "$abs" ]] && current="$abs"
+    continue
+  fi
+
   [[ "$(git_subcommand_of_segment "$seg")" == "commit" ]] || continue
-  if echo "$seg" | grep -qE '(^|[[:space:]])--amend([[:space:]]|$)'; then
-    has_amend=1
+  # クォート付き素通り対策(F-001): 語境界の文字クラスに " ' を含める。
+  echo "$seg" | grep -qE '(^|[[:space:]"'\''])--amend([[:space:]"'\'']|$)' || continue
+
+  seg_cdir="$(_git_c_dir_of_segment "$seg")"
+  if [[ -n "$seg_cdir" ]]; then
+    amend_dir="$(_abs_dir "$seg_cdir" "$current")"
+    [[ -z "$amend_dir" ]] && amend_dir="$current"
+  else
+    amend_dir="$current"
+  fi
+
+  if amend_segment_is_pushed "$amend_dir"; then
+    echo "ブロック: push 済コミットの amend は force-push を誘発する履歴書換のため禁止。新しい append-commit で修正すること。どうしても必要なら人間が ! プレフィックスで実行すること。" >&2
+    exit 2
   fi
 done < <(split_git_segments "$cmd")
-[[ "$has_amend" -eq 0 ]] && exit 0
-
-target_dir="$(resolve_git_target_dir "$cmd" "$cwd")"
-git -C "$target_dir" rev-parse --is-inside-work-tree &>/dev/null || exit 0
-# unborn HEAD(コミット皆無)では branch -r --contains がエラーになるので先にガード。
-git -C "$target_dir" rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 0
-
-remote_branches="$(git -C "$target_dir" branch -r --contains HEAD 2>/dev/null || echo "")"
-if [[ -n "$remote_branches" ]]; then
-  echo "ブロック: push 済コミットの amend は force-push を誘発する履歴書換のため禁止。新しい append-commit で修正すること。どうしても必要なら人間が ! プレフィックスで実行すること。" >&2
-  exit 2
-fi
 
 exit 0

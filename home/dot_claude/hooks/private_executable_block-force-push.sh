@@ -24,7 +24,7 @@
 #   (push に -m は無いので実質起きにくい)。
 #
 # bash 3.2 / BSD grep 互換: \b / \s / grep -P / 連想配列 / ${var,,} を使わない。語境界は
-# 行頭行末・空白(と = )で表現する(block-no-verify と同作法)。
+# 行頭行末・空白・クォート文字(" ')・= で表現する(block-no-verify と同作法 + クォート対応)。
 # 安全側設計: jq 無し / 空コマンド / lib 不在なら exit 0(通す)。
 set -euo pipefail
 
@@ -43,7 +43,10 @@ while IFS= read -r seg; do
   [[ "$(git_subcommand_of_segment "$seg")" == "push" ]] || continue
   # push セグメント内の force 系。各ロングオプションは末尾境界を分けて誤マッチを防ぐ。
   # 短縮は -f を含むフラグ束(-uf / -fu 等)を捕捉する(block-no-verify の -n 検出と同型)。
-  if echo "$seg" | grep -qE '(^|[[:space:]])--force([[:space:]]|$)|(^|[[:space:]])--force-with-lease([[:space:]]|=|$)|(^|[[:space:]])--force-if-includes([[:space:]]|$)|(^|[[:space:]])-[a-eg-zA-Z]*f[a-zA-Z]*([[:space:]]|$)'; then
+  # 語境界の文字クラスにクォート文字 " ' を含め、`git push "--force"` / '--force' /
+  # "-f" のクォート付き素通りを塞ぐ(F-001)。`--force` 後境界に = も許し `--force=値` を
+  # 捕捉(F-005)。シェル単引用符内なので ' は '\'' でエスケープして埋める。
+  if echo "$seg" | grep -qE '(^|[[:space:]"'\''])--force([[:space:]"'\'']|=|$)|(^|[[:space:]"'\''])--force-with-lease([[:space:]"'\'']|=|$)|(^|[[:space:]"'\''])--force-if-includes([[:space:]"'\'']|$)|(^|[[:space:]"'\''])-[a-eg-zA-Z]*f[a-zA-Z]*([[:space:]"'\'']|$)'; then
     echo "ブロック: force-push は remote 履歴を書き換える不可逆操作のため禁止。Claude は append / 通常 push のみ。どうしても必要なら人間が ! プレフィックスで実行すること。" >&2
     exit 2
   fi
