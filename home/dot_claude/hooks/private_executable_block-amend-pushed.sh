@@ -24,8 +24,8 @@
 #   (Knowledge/pushゲートはgit-Cの変数を解決できず別ブランチへフォールバック誤ブロックする)。
 #   リテラル絶対パス運用が安全。
 #
-# bash 3.2 / BSD grep 互換: \b / \s / grep -P / 連想配列 / ${var,,} を使わない。語境界は
-# 行頭行末・空白で表現する(block-no-verify と同作法)。
+# bash 3.2 / BSD grep 互換: \b / \s / grep -P / 連想配列 / ${var,,} を使わない(--amend 検出は
+# lib の segment_has_option に委譲。トークン分割 + クォート1段除去で語境界ハックを廃した)。
 # 安全側設計: jq 無し / 空コマンド / lib 不在 / git 外 / HEAD 不明なら exit 0(通す)。
 set -euo pipefail
 
@@ -71,8 +71,8 @@ while IFS= read -r seg; do
   fi
 
   [[ "$(git_subcommand_of_segment "$seg")" == "commit" ]] || continue
-  # クォート付き素通り対策(F-001): 語境界の文字クラスに " ' を含める。
-  echo "$seg" | grep -qE '(^|[[:space:]"'\''])--amend([[:space:]"'\'']|$)' || continue
+  # --amend 検出は lib の quote-aware ヘルパに委譲(`git commit "--amend"` の素通りも塞ぐ)。
+  segment_has_option "$seg" --amend || continue
 
   seg_cdir="$(_git_c_dir_of_segment "$seg")"
   if [[ -n "$seg_cdir" ]]; then

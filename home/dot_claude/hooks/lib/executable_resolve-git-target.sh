@@ -46,10 +46,17 @@ split_git_segments() {
 # オプションは値も飛ばす。サブコマンドが無ければ空を返す。
 # 用途: `push`/`merge`/`commit` の厳密一致判定。`merge-base`/`merge-tree` や
 # `git log | grep push` のような無関係語の誤爆を防ぐ。
+#
+# quote-aware(2026-06): 判定に使う各トークンを `_strip_one_quote` で1段除去してから
+# 比較する。これで `git "push"` / `"git" push` / `git "commit" --amend` のクォート付き
+# 素通り(Knowledge/字句grep型hookはクォート付きフラグを取りこぼす の層 (b))を構造的に
+# 塞ぐ。サブコマンド検出に依存する全 hook(protected-branch-push / no-verify / force-push /
+# amend-pushed)へ呼出側無変更で波及する。戻り値の契約(サブコマンド名 or 空)は不変。
+# 二重クォート(`"'push'"`)は1段のみ除去で best-effort(受容)。
 git_subcommand_of_segment() {
   local seg="${1:-}"
   local -a words=()
-  # 単語分割(クォートは考慮しない best-effort)。
+  # 単語分割(クォートは考慮しない best-effort。トークン内のクォート文字は下で1段除去)。
   read -r -a words <<<"$seg"
   local n=${#words[@]}
   [[ $n -eq 0 ]] && return 0
@@ -57,7 +64,7 @@ git_subcommand_of_segment() {
   local i=0
   # 先頭の `git` を見つけるまで進める(`sudo git ...` 等の prefix を許容)。
   while [[ $i -lt $n ]]; do
-    case "${words[$i]}" in
+    case "$(_strip_one_quote "${words[$i]}")" in
     git) i=$((i + 1)); break ;;
     *) i=$((i + 1)) ;;
     esac
@@ -66,7 +73,8 @@ git_subcommand_of_segment() {
 
   # グローバルオプションをスキップして最初のサブコマンドへ。
   while [[ $i -lt $n ]]; do
-    local w="${words[$i]}"
+    local w
+    w="$(_strip_one_quote "${words[$i]}")"
     case "$w" in
     # 値が別語の引数付きグローバルオプション(値も飛ばす)。
     -C | -c | --git-dir | --work-tree | --namespace | --exec-path | --super-prefix)
@@ -104,8 +112,10 @@ _git_c_dir_of_segment() {
   read -r -a words <<<"$seg"
   local n=${#words[@]}
   local i=0
+  # `-C` フラグも quote-aware に探す(`git "-C" /x push` 対応)。git_subcommand_of_segment と
+  # 対称に各トークンを _strip_one_quote してから比較する。dir 値の strip は既存どおり維持。
   while [[ $i -lt $n ]]; do
-    case "${words[$i]}" in
+    case "$(_strip_one_quote "${words[$i]}")" in
     -C)
       if [[ $((i + 1)) -lt $n ]]; then
         _strip_one_quote "${words[$((i + 1))]}"
@@ -128,6 +138,60 @@ _leading_cd_dir_of_segment() {
     _strip_one_quote "${words[1]}"
   fi
   return 0
+}
+
+# セグメント内に指定オプションがあるか quote-aware に判定する(2026-06)。
+# 各トークンを `_strip_one_quote` で1段除去してから比較するため、`git push "--force"` /
+# `git commit '--amend'` のクォート付き素通り(Knowledge/字句grep型hookはクォート付き
+# フラグを取りこぼす の層 (a))を構造的に塞ぐ。grep -E の語境界クラス拡張より頑健。
+#
+# 使い方: segment_has_option <seg> <long-opt> [short-char]
+#   long-opt 完全一致(例 --force / --no-verify / --amend)または `--opt=値`、もしくは
+#   short-char を含む短縮束(例 -f / -uf / -fu / -anm)があれば 0、無ければ 1。
+# 複数の long を見たいときは OR で反復呼出する(案A: API を単純に保つ。force の3枝など)。
+# long を見ないなら "" を渡す(short のみ判定)。
+#
+# 既知の限界(受容): `read -r -a` はクォートを尊重せず空白分割するため、メッセージ本文の
+# `--amend` 様トークン(`git commit -m "fix --amend bug"`)を拾い誤ブロックしうる。これは
+# 既存の grep 方式と同じ受容済み偽陽性であり退行ではない。
+segment_has_option() {
+  local seg="${1:-}" long="${2:-}" shortc="${3:-}"
+  local -a words=()
+  read -r -a words <<<"$seg"
+  [[ ${#words[@]} -eq 0 ]] && return 1
+  local raw w
+  for raw in "${words[@]}"; do
+    w="$(_strip_one_quote "$raw")"
+    if [[ -n "$long" ]]; then
+      [[ "$w" == "$long" ]] && return 0
+      [[ "$w" == "$long="* ]] && return 0
+    fi
+    if [[ -n "$shortc" ]]; then
+      case "$w" in
+      --*) : ;;
+      -*"$shortc"*) return 0 ;;
+      esac
+    fi
+  done
+  return 1
+}
+
+# セグメントを quote-aware に正規化したトークン列(空白1個区切り)を返す(2026-06)。
+# 各トークンを `_strip_one_quote` で1段除去して連結する。`gh pr "merge"` → `gh pr merge`
+# のように、多語サブコマンド(gh pr merge / git worktree add)を検出する hook が、既存の
+# 練られた ERE(BORDER/FLAGS/ENV)を温存したまま正規化後文字列にマッチできるようにする
+# (トークン照合への作り替えは差分・退行リスクが大きいので grep -E 継続を選択)。
+normalized_words_of_segment() {
+  local seg="${1:-}"
+  local -a words=()
+  read -r -a words <<<"$seg"
+  [[ ${#words[@]} -eq 0 ]] && return 0
+  local out="" raw w
+  for raw in "${words[@]}"; do
+    w="$(_strip_one_quote "$raw")"
+    out="${out:+$out }$w"
+  done
+  printf '%s' "$out"
 }
 
 # 相対パスを base(cwd)基準で物理絶対パス化。解決不能なら空を返す。
