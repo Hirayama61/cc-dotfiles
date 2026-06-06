@@ -57,7 +57,8 @@ collect_project_frontmatter() {
 resolve_worktree() {
   local repo="$1" all_paths="$2" path=""
   # repo を grep の ERE に渡す前にメタ文字をエスケープ。文字クラスは先頭 ] が文字どおりの
-  # ']'、末尾 \\ が '\'(repo キーは英数・ハイフン・アンダースコア。例: _shared)。
+  # ']'、末尾 \\ が '\'。repo キーは英数・ハイフン・アンダースコア・ドット(末尾の文字種
+  # フィルタ ^[A-Za-z0-9._-]+$ と一致。ドットは next.js / *.github.io 等の repo 名のため許容)。
   local esc
   esc="$(printf '%s' "$repo" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g')"
   # 同名 basename が別 owner 配下に複数あると head -1 が ghq 列挙順で先頭を黙って選ぶ
