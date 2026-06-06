@@ -26,9 +26,9 @@ LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
 while IFS= read -r seg; do
   [[ -z "$seg" ]] && continue
   [[ "$(git_subcommand_of_segment "$seg")" == "commit" ]] || continue
-  # commit セグメント内の no-verify。短縮形の集合 -n(`-anm` 等の連結含む)も捕捉する。
-  # 単語境界は [[:space:]] / 行頭行末で表現(BSD grep 互換のため \b は使わない)。
-  if echo "$seg" | grep -qE '(^|[[:space:]])--no-verify([[:space:]]|=|$)|(^|[[:space:]])-[a-mo-zA-Z]*n[a-zA-Z]*([[:space:]]|$)'; then
+  # commit セグメント内の no-verify。lib の quote-aware ヘルパで --no-verify と短縮束 -n
+  # (`-anm` 等の連結含む)を判定し、`git commit "--no-verify"` の素通りも塞ぐ。
+  if segment_has_option "$seg" --no-verify n; then
     echo "ブロック: --no-verify は pre-commit フックをバイパスするため禁止。コードを直してフックを通すこと。" >&2
     exit 2
   fi
