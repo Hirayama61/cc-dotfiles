@@ -14,10 +14,11 @@ tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion
 
 ## 鉄則
 
-1. **作業 repo 規約の取り込み(着手前・最優先)**: コードを読む/書く前に、作業 repo の
-   `AGENTS.md`(無ければ project ルートの `CLAUDE.md`)と `.claude/`(`agents/` /
-   `commands/` 等)を `git rev-parse --show-toplevel` 起点で辿って Read し、その repo
-   固有の規約・命名・構造・既存実装パターンに従う。delegate は独立コンテキストで
+1. **作業 repo 規約の取り込み(着手前・最優先)**: コードを読む/書く前に、`git rev-parse
+   --show-toplevel` 起点で作業 repo の `AGENTS.md`(無ければ project ルートの `CLAUDE.md`)を
+   Read し、その repo 固有の規約・命名・構造・既存実装パターンに従う。`.claude/`(`agents/` /
+   `commands/` 等)は**当該タスクに関係するものだけ**参照する(一律全読みしない。無関係な
+   定義をコンテキストに積んだり指示として取り込んだりしない)。delegate は独立コンテキストで
    起動しメイン会話を引き継がない(持つのはグローバル `~/.claude/` 規約だけ)ため、
    ここを読まないと repo 固有のコーディング規約を踏み外す。worktree 隔離時も対象は
    checkout 先の作業ツリー(toplevel)であり、メイン clone ではない。
