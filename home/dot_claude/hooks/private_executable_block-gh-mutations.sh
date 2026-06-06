@@ -38,37 +38,34 @@ FLAGS='(-{1,2}[A-Za-z][A-Za-z0-9-]*(=\S+)?\s+([^-\s]\S*\s+)?)*'
 # 自然に書きうる(ページャ無効化やトークン指定)ため BORDER の素通しを塞ぐ。
 ENV='([A-Za-z_][A-Za-z0-9_]*=\S+\s+)*'
 
-# 2026-06: cmd 全体ではなくセグメント単位で判定する。split_git_segments で `&& || ; | &` を
-# 境界に分割し、各セグメントを normalized_words_of_segment で quote 1段除去・正規化してから
-# 既存 ERE を適用する。これで `gh pr "merge"` / `"gh" pr merge` のクォート付き素通り
-# (Knowledge/字句grep型hookはクォート付きフラグを取りこぼす の層 (b)相当)を塞ぐ。
-# 練られた FLAGS/ENV パターンはトークン照合への作り替えより退行リスクが低いので温存する。
-# セグメント分割後は `;&|` が境界へ抜けるので BORDER は「セグメント先頭 / `(`($( 含む)直後」に
-# 単純化。END もサブコマンド直後の境界(空白 / 末尾 / `)`)に単純化する。
-BORDER='(^|[(])[[:space:]]*'
-END='(\s|$|[)])'
+# 前方は「コマンド開始位置の gh」に限定する: 行頭、または ; & | ( のコマンド区切り
+# 直後(&& || | ( $( の境界を単一文字でカバー)+ 任意空白。これで文字列リテラルや
+# コメント内の gh 言及を誤ブロックしない。末尾 END はサブコマンド名の直後の境界。
+BORDER='(^|[;&|(])[[:space:]]*'
+END='(\s|$|[;&|)])'
 
-gh_seg_matches() {
-  local nseg="${1:-}" sub="${2:-}" verbs="${3:-}"
-  echo "$nseg" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}${sub}\\s+(${verbs})${END}"
-}
+# 2026-06: cmd 全体を normalized_words_of_segment で正規化(read -r -a でトークン化 → 各
+# _strip_one_quote → 単一空白で再結合)してから旧 whole-cmd ERE を適用する。これで
+# `gh pr "merge"` / `"gh" pr merge` のクォート付き素通り(Knowledge/字句grep型hookは
+# クォート付きフラグを取りこぼす)を塞ぎつつ、whole-cmd 判定の堅牢性を保つ。
+# split_git_segments への作り替えは `FOO='a&b' gh pr merge` のように env 値内の `&;|` を
+# クォート無視で誤分割し検出漏れを起こす(self-review R-1)。トークン化は env 値を1トークンに
+# 保つので非分割でよい。練られた FLAGS/ENV パターンは温存する。
+normalized="$(normalized_words_of_segment "$cmd")"
 
-while IFS= read -r seg; do
-  [[ -z "$seg" ]] && continue
-  nseg="$(normalized_words_of_segment "$seg")"
+if echo "$normalized" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}pr\\s+(ready|merge|close|reopen)${END}"; then
+  echo "ブロック: gh pr の ready/merge/close/reopen は不可逆な PR 状態変更のため禁止。人間が判断・実行すること。" >&2
+  exit 2
+fi
 
-  if gh_seg_matches "$nseg" pr 'ready|merge|close|reopen'; then
-    echo "ブロック: gh pr の ready/merge/close/reopen は不可逆な PR 状態変更のため禁止。人間が判断・実行すること。" >&2
-    exit 2
-  fi
-  if gh_seg_matches "$nseg" release 'create|delete|edit|upload'; then
-    echo "ブロック: gh release の create/delete/edit/upload は公開リリースを動かすため禁止。人間が判断・実行すること。" >&2
-    exit 2
-  fi
-  if gh_seg_matches "$nseg" repo 'delete|archive|edit'; then
-    echo "ブロック: gh repo の delete/archive/edit は不可逆なリポ操作のため禁止。人間が判断・実行すること。" >&2
-    exit 2
-  fi
-done < <(split_git_segments "$cmd")
+if echo "$normalized" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}release\\s+(create|delete|edit|upload)${END}"; then
+  echo "ブロック: gh release の create/delete/edit/upload は公開リリースを動かすため禁止。人間が判断・実行すること。" >&2
+  exit 2
+fi
+
+if echo "$normalized" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}repo\\s+(delete|archive|edit)${END}"; then
+  echo "ブロック: gh repo の delete/archive/edit は不可逆なリポ操作のため禁止。人間が判断・実行すること。" >&2
+  exit 2
+fi
 
 exit 0

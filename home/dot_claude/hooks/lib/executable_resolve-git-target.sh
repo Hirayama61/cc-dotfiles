@@ -112,8 +112,10 @@ _git_c_dir_of_segment() {
   read -r -a words <<<"$seg"
   local n=${#words[@]}
   local i=0
+  # `-C` フラグも quote-aware に探す(`git "-C" /x push` 対応)。git_subcommand_of_segment と
+  # 対称に各トークンを _strip_one_quote してから比較する。dir 値の strip は既存どおり維持。
   while [[ $i -lt $n ]]; do
-    case "${words[$i]}" in
+    case "$(_strip_one_quote "${words[$i]}")" in
     -C)
       if [[ $((i + 1)) -lt $n ]]; then
         _strip_one_quote "${words[$((i + 1))]}"
