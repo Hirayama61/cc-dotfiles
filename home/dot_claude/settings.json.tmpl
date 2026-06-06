@@ -68,6 +68,14 @@
           {
             "type": "command",
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-gh-mutations.sh"
+          },
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-force-push.sh"
+          },
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-amend-pushed.sh"
           }
         ]
       },
