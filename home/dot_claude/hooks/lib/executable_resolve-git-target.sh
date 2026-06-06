@@ -77,9 +77,17 @@ git_subcommand_of_segment() {
     w="$(_strip_one_quote "${words[$i]}")"
     case "$w" in
     # 値が別語の引数付きグローバルオプション(値も飛ばす)。
+    # 値がクォートで空白を含む(`-c "k=v with space"`)場合 `read -r -a` がクォートを
+    # 尊重せず空白分割するため、値が複数語に割れる。クォートが閉じるまで読み飛ばし
+    # 続行し、`-c` 値の途中語(`Doe"`)をサブコマンドに取り違えない(M-1)。
     -C | -c | --git-dir | --work-tree | --namespace | --exec-path | --super-prefix)
-      i=$((i + 2)) ;;
-    # `--opt=value` 形式は1語スキップ(-C=/-c= は git が受け付けない形なので扱わない)。
+      i=$((i + 1))
+      i=$(_skip_option_value words "$n" "$i") ;;
+    # glued `-C<path>`(空白なし)は値を内包する1語。`git_subcommand_of_segment` と
+    # `_git_c_dir_of_segment` の glued 扱いを対称化する(M-2)。
+    -C?*)
+      i=$((i + 1)) ;;
+    # `--opt=value` 形式は1語スキップ(-c= は git が受け付けない形なので扱わない)。
     --git-dir=* | --work-tree=* | --namespace=* | --exec-path=*)
       i=$((i + 1)) ;;
     # 値を取らないグローバルフラグ。
@@ -93,6 +101,44 @@ git_subcommand_of_segment() {
     esac
   done
   return 0
+}
+
+# 引数付きグローバルオプションの値(words[start])を飛ばし、次の語の index を返す。
+# 値がクォート(' か ")で開き、その語内で閉じていない場合、クォートが閉じる語まで
+# 読み飛ばしを続ける(`read -r -a` の空白分割で値が複数語に割れた状態の復元)。
+# bash 3.2 互換: 連想配列を使わず name ref 代わりに配列名を間接展開する。
+_skip_option_value() {
+  local _arr="$1" _n="$2" _i="$3"
+  [[ $_i -ge $_n ]] && { printf '%s' "$_i"; return 0; }
+  local first
+  eval "first=\"\${${_arr}[$_i]}\""
+  _i=$((_i + 1))
+  # 値の先頭語がクォートを開いたまま閉じていなければ、閉じる語まで消費する。
+  case "$first" in
+  \"*)
+    case "${first#\"}" in
+    *\"*) : ;; # 同語内で閉じている
+    *)
+      while [[ $_i -lt $_n ]]; do
+        local _w
+        eval "_w=\"\${${_arr}[$_i]}\""
+        _i=$((_i + 1))
+        case "$_w" in *\"*) break ;; esac
+      done ;;
+    esac ;;
+  \'*)
+    case "${first#\'}" in
+    *\'*) : ;;
+    *)
+      while [[ $_i -lt $_n ]]; do
+        local _w
+        eval "_w=\"\${${_arr}[$_i]}\""
+        _i=$((_i + 1))
+        case "$_w" in *\'*) break ;; esac
+      done ;;
+    esac ;;
+  esac
+  printf '%s' "$_i"
 }
 
 # クォート(' か ")を1段剥がす。`'/a/b'` → `/a/b`、`"/a/b"` → `/a/b`。
@@ -115,11 +161,18 @@ _git_c_dir_of_segment() {
   # `-C` フラグも quote-aware に探す(`git "-C" /x push` 対応)。git_subcommand_of_segment と
   # 対称に各トークンを _strip_one_quote してから比較する。dir 値の strip は既存どおり維持。
   while [[ $i -lt $n ]]; do
-    case "$(_strip_one_quote "${words[$i]}")" in
+    local w
+    w="$(_strip_one_quote "${words[$i]}")"
+    case "$w" in
     -C)
       if [[ $((i + 1)) -lt $n ]]; then
         _strip_one_quote "${words[$((i + 1))]}"
       fi
+      return 0
+      ;;
+    # glued `-C<path>`(空白なし)。rest 非空なら即 dir、空(`-C`単独)は上の枝で次語(M-2)。
+    -C?*)
+      printf '%s' "${w#-C}"
       return 0
       ;;
     esac
@@ -129,14 +182,24 @@ _git_c_dir_of_segment() {
 }
 
 # セグメント先頭が `cd <dir>` のとき、その dir を返す(クォート1段除去済み)。無ければ空。
+# `cd -- <dir>` / `cd -L <dir>` / `cd -P <dir>` の先頭フラグは飛ばし最初の非フラグ語を dir
+# とする(dispatcher で `cd -- <wt> && git push` を使う場合の cwd 誤判定対策)。
 _leading_cd_dir_of_segment() {
   local seg="${1:-}"
   local -a words=()
   read -r -a words <<<"$seg"
-  [[ ${#words[@]} -lt 2 ]] && return 0
-  if [[ "${words[0]}" == "cd" ]]; then
-    _strip_one_quote "${words[1]}"
-  fi
+  local n=${#words[@]}
+  [[ $n -lt 2 ]] && return 0
+  [[ "${words[0]}" != "cd" ]] && return 0
+  local i=1
+  while [[ $i -lt $n ]]; do
+    case "$(_strip_one_quote "${words[$i]}")" in
+    --) i=$((i + 1)); break ;;
+    -L | -P) i=$((i + 1)) ;;
+    *) break ;;
+    esac
+  done
+  [[ $i -lt $n ]] && _strip_one_quote "${words[$i]}"
   return 0
 }
 

@@ -20,13 +20,28 @@ input="$(cat)"
 cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
 [ -z "$cmd" ] && exit 0
 
-# `gh pr create` 検知。block-gh-mutations.sh の border/env/flags パターンを流用し、
-# 文字列リテラルやチェイン中の gh も拾いつつ read-only サブコマンドの誤検知を避ける。
+LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[ -r "$LIB" ] || exit 0
+# shellcheck source=/dev/null
+. "$LIB"
+
+# `gh pr create` 検知。block-gh-mutations.sh と同じ border/env/flags ERE を、同じく
+# normalized_words_of_segment で cmd 全体を正規化(トークン化 → 各 _strip_one_quote →
+# 単一空白で再結合)してから適用する。これで `gh pr "create"` / `"gh" pr create` の
+# クォート付き素通り(Knowledge/字句grep型hookはクォート付きフラグを取りこぼす の層 (b))を
+# block-gh-mutations と対称に塞ぐ。
+#
+# 既知の限界(block-gh-mutations と同じ best-effort): 文字列リテラルや heredoc 本文中の
+# `| gh pr create` / 改行直後の `gh pr create` は BORDER がコマンド境界と区別できず誤検知
+# しうる(block-gh-mutations.sh も同入力を同様に誤検知する受容済み限界。トークン化は env 値を
+# 1トークンに保つが、文字列リテラル内の `;&|` 由来の誤 BORDER までは消せない)。pr-create は
+# 自動起動だが下流 poll-checks の atomic mkdir lock で二重 watch にはならないので実害は低い。
 FLAGS='(-{1,2}[A-Za-z][A-Za-z0-9-]*(=\S+)?\s+([^-\s]\S*\s+)?)*'
 ENV='([A-Za-z_][A-Za-z0-9_]*=\S+\s+)*'
 BORDER='(^|[;&|(])[[:space:]]*'
 END='(\s|$|[;&|)])'
-echo "$cmd" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}pr\\s+create${END}" || exit 0
+normalized="$(normalized_words_of_segment "$cmd")"
+echo "$normalized" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}pr\\s+create${END}" || exit 0
 
 # PR 特定は現ブランチ基準(cwd 結合での cross-repo 誤判定を避ける。
 # Knowledge/pushゲートフックがプライマリrepo結合でcross-repo-push誤判定)。

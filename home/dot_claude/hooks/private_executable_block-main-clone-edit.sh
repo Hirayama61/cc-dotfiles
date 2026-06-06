@@ -27,6 +27,31 @@ set -euo pipefail
 # 誤判定してブロックをすり抜けられる(bgIsolation:none 下で本 hook が混線防止の最後の砦になるため)。
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 
+# 親 dir が未存在でも canonical 化する。Write は中間ディレクトリを自動生成するため、
+# 新規サブディレクトリへの新規ファイルを最近接既存祖先まで遡って解決し未存在 tail を再付与する。
+# CANON_DIR=正規化 dir(接頭辞判定用)/ GIT_ANCHOR=git -C 用の実在祖先(未存在 dir を
+# git -C に渡すと fail するため分離)。総失敗時は両方空。
+CANON_DIR=""
+GIT_ANCHOR=""
+canonicalize_dir() {
+  local dir="$1" tail="" base parent
+  while [[ -n "$dir" && ! -d "$dir" ]]; do
+    base="$(basename -- "$dir")"
+    tail="$base${tail:+/$tail}"
+    parent="$(dirname -- "$dir")"
+    [[ "$parent" == "$dir" ]] && break
+    dir="$parent"
+  done
+  [[ -d "$dir" ]] || return 0
+  GIT_ANCHOR="$(cd "$dir" 2>/dev/null && pwd -P || true)"
+  [[ -z "$GIT_ANCHOR" ]] && return 0
+  if [[ -n "$tail" ]]; then
+    CANON_DIR="$GIT_ANCHOR/$tail"
+  else
+    CANON_DIR="$GIT_ANCHOR"
+  fi
+}
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 input="$(cat)"
@@ -37,10 +62,11 @@ fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty')"
 [[ "$fp" = /* ]] || exit 0
 
 # canonical 化(macOS の symlink / /tmp→/private/tmp 等で接頭辞判定が外れるのを防ぐ)。
-# 親 dir が未存在等で canonical 化できなければ安全側で素通し。
+# 最近接既存祖先まで遡れず canonical 化が総失敗した場合のみ安全側で素通し。
 dir="$(dirname -- "$fp")"
 base="$(basename -- "$fp")"
-cdir="$(cd "$dir" 2>/dev/null && pwd -P || true)"
+canonicalize_dir "$dir"
+cdir="$CANON_DIR"
 [[ -z "$cdir" ]] && exit 0
 cfp="$cdir/$base"
 
@@ -56,12 +82,15 @@ esac
 # --is-inside-work-tree は work-tree 外(例 .git/ 配下)でも exit 0 + 出力 "false" を返すので
 # exit code でなく出力 == true を見る。git-dir/common-dir が空だと cd "" で cwd 据え置き →
 # 誤一致(誤ブロック)になるため空を明示的に弾く。
-[[ "$(git -C "$cdir" rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] || exit 0
-rel_gd="$(git -C "$cdir" rev-parse --git-dir 2>/dev/null || true)"
-rel_gcd="$(git -C "$cdir" rev-parse --git-common-dir 2>/dev/null || true)"
+# git 操作には実在祖先(GIT_ANCHOR)を使う。cdir は未存在の新規サブディレクトリを含みうるため
+# (Write が中間 dir を後で生成する)git -C / cd "$cdir" が fail する。git-dir/common-dir の
+# 関係は同一 work-tree 内なら祖先でも同じなので判定は変わらない。
+[[ "$(git -C "$GIT_ANCHOR" rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] || exit 0
+rel_gd="$(git -C "$GIT_ANCHOR" rev-parse --git-dir 2>/dev/null || true)"
+rel_gcd="$(git -C "$GIT_ANCHOR" rev-parse --git-common-dir 2>/dev/null || true)"
 [[ -z "$rel_gd" || -z "$rel_gcd" ]] && exit 0
-gd="$(cd "$cdir" && cd "$rel_gd" 2>/dev/null && pwd -P || true)"
-gcd="$(cd "$cdir" && cd "$rel_gcd" 2>/dev/null && pwd -P || true)"
+gd="$(cd "$GIT_ANCHOR" && cd "$rel_gd" 2>/dev/null && pwd -P || true)"
+gcd="$(cd "$GIT_ANCHOR" && cd "$rel_gcd" 2>/dev/null && pwd -P || true)"
 [[ -z "$gd" || -z "$gcd" || "$gd" != "$gcd" ]] && exit 0
 
 {

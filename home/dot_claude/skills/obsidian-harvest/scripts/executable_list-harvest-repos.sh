@@ -61,10 +61,19 @@ resolve_worktree() {
   # フィルタ ^[A-Za-z0-9._-]+$ と一致。ドットは next.js / *.github.io 等の repo 名のため許容)。
   local esc
   esc="$(printf '%s' "$repo" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g')"
-  # 同名 basename が別 owner 配下に複数あると head -1 が ghq 列挙順で先頭を黙って選ぶ
-  # (現状の repo は衝突なし。衝突時は呼び出し側で要確認)。ghq list は呼び出し側で
-  # 1回だけ取得した結果を all_paths として渡す(repo ごとの再実行を避ける)。
-  path="$(printf '%s\n' "$all_paths" | grep -E "/${esc}\$" | head -1 || true)"
+  # 同名 basename が別 owner 配下に複数あるとどれが正か機械的に決められない。先頭を
+  # 黙って採るのではなく、衝突数を " (ambiguous:N)" サフィックスで出力に残し、下流の
+  # AskUserQuestion が「先頭採用パスは確実でない」と解釈できるようにする(出力契約の
+  # <repo>\t<path> は保つ。path にスペースは入りうるが下流は最初の \t で repo を切る)。
+  # ghq list は呼び出し側で 1回だけ取得した結果を all_paths として渡す(再実行を避ける)。
+  local matches count
+  matches="$(printf '%s\n' "$all_paths" | grep -E "/${esc}\$" || true)"
+  [[ -n "$matches" ]] || { printf '%s' ""; return 0; }
+  count="$(printf '%s\n' "$matches" | grep -c '' )"
+  path="$(printf '%s\n' "$matches" | head -1)"
+  if [[ "$count" -ge 2 ]]; then
+    path="${path} (ambiguous:${count})"
+  fi
   printf '%s' "$path"
 }
 

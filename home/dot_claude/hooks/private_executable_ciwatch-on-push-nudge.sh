@@ -62,7 +62,10 @@ repo_key=""
 [ -n "$repo_key" ] || repo_key="unknown"
 
 state_dir="/tmp/claude-sessions"
-mkdir -p "$state_dir"
+# state_dir が(ファイルとして既存 / 書込不能で)作れないときは set -e で死なせず無音 exit 0。
+# このあと nudge_file も書けないので注入する意味がない(ヘッダの exit 0 契約。create-worktree.sh
+# の mkdir -p ... 2>/dev/null || true と同作法だが、本 hook は失敗時に降りるので || exit 0)。
+mkdir -p "$state_dir" 2>/dev/null || exit 0
 nudge_file="${state_dir}/ci-watch-nudge-${repo_key}-pr${pr}"
 debounce=300
 
@@ -87,6 +90,8 @@ out="$(jq -n --arg body "$NOTE" '{
   hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: $body }
 }')" || exit 0
 printf '%s\n' "$out"
-: >"$nudge_file"
+# 注入は済んでいるので、state_dir 消失レース等で mtime 更新に失敗しても set -e で死なせない
+# (デバウンスが効かず次回再ナッジしうるだけで害は軽微。注入の成功は損なわない)。
+: >"$nudge_file" 2>/dev/null || true
 
 exit 0

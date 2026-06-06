@@ -16,7 +16,7 @@
 #   - CodeRabbit 完了は終了条件にしない(gh pr checks の terminal のみ)。CodeRabbit thread の
 #     有無は起床後に ci-watch 本体が一度だけ確認する(Decisions #6)。
 #
-# 使い方: poll-checks.sh <PR番号> [interval秒=30] [max試行回数=30]  (既定 = 30s×30 = 15分上限)
+# 使い方: poll-checks.sh <PR番号> [owner/repo] [interval秒=30] [max試行回数=30]  (既定 = 30s×30 = 15分上限)
 # 出力: 最終状態(全 check の name/bucket/state)+ 判定行(ALL_TERMINAL / TIMEOUT / NO_CHECKS)。
 set -euo pipefail
 

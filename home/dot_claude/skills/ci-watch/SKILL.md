@@ -100,7 +100,8 @@ primary repo で走り別 repo の同名 PR を誤監視するのを防ぐ。PR 
 - `poll-checks.sh` は同一 PR の二重 watch を atomic lock で防ぐ。`ALREADY_WATCHING` を返したら
   既に別の watch が走っているので二重起動しない。
 - 出力の最終行が判定: `ALL_TERMINAL`(全 check 完了)/ `TIMEOUT`(上限到達・打ち切り)/
-  `NO_CHECKS`(check 0 件 = 非 Actions リポ・CI 失敗 triage 不要)/ `FETCH_ERROR`(取得失敗)。
+  `NO_CHECKS`(check 0 件 = 非 Actions リポ・CI 失敗 triage 不要)/ `FETCH_ERROR`(取得失敗)/
+  `ALREADY_WATCHING`(同一 PR を既に別の watch が監視中 = 二重起動なので何もしない)。
 
 ### 4. 起床後の取得(delegate へ渡す材料収集)
 
