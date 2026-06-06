@@ -7,7 +7,7 @@ description: >-
   アクションを提案する。obsidian-memory(書き)の対になる収穫/昇格(読み→config化)側。
   提案のみ・人間ゲート(適用や自動 commit はしない)。「外部脳を収穫」「ハーベスト」
   「知見を config に昇格」「gap 監査」、`/obsidian-harvest` での起動で発火する。
-  tidy-permissions と同様のユーザー起動・オンデマンド定期メンテ系。
+  ユーザー起動・オンデマンドの定期メンテ系スキル。
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob, Agent, AskUserQuestion
 ---
@@ -139,10 +139,10 @@ frontmatter を OR 合算 → 一意化)。出力は 1 行 1 repo の `<repo>\t<
 
 4 シグナル源から「繰り返す誤挙動」を採掘する(機構は §2 末の注記参照)。
 
-1. **transcript**(機構は tidy-permissions 流用): `~/.claude/projects/<sanitized-cwd>/*.jsonl` の
+1. **transcript**: `~/.claude/projects/<sanitized-cwd>/*.jsonl` の
    直近 ~50 を走査。sanitized-cwd = 作業ツリー絶対パスの `/`→`-` 化(例
-   `-Users-h61-ghq-github-com-Hirayama61-cc-dotfiles`)。採掘対象は tidy の「常用 Bash 集計」とは
-   **目的が違う**: 「**ユーザーからの訂正・やり直し・同種エラーの反復**」を拾う。具体シグナル =
+   `-Users-h61-ghq-github-com-Hirayama61-cc-dotfiles`)。採掘対象は
+   「**ユーザーからの訂正・やり直し・同種エラーの反復**」を拾う。具体シグナル =
    ユーザー turn の訂正語(「違う」「そうじゃない」「やめて」「訂正」「またそれ」)、
    同一 tool_use の失敗 → 再試行ループ、`Edit` の取り消し・revert 連鎖。
 2. **レビュー指摘の履歴**: self-review / CodeRabbit / Codex の指摘が transcript に残る。
@@ -301,5 +301,5 @@ undocumented mistake 採掘(手順 2 トラック②)で「脳がまだ知らな
 - **越境昇格は真の目的の最大化**(全 repo で精度向上)。汎用な学びを個人層 global へ押し上げる。
 - **提案のみ = config は影響大**なので、プランレビューゲート & 作業前エスカレーション規約に従う
   (`allowed-tools` に Write/Edit を入れていないのはこの不変条件の現れ)。
-- このスキルは **tidy-permissions と同様、意図して定期的に回す前提**(自動 hook / scheduled ではない)。
+- このスキルは **意図して定期的に回す前提**(自動 hook / scheduled ではない)。
   昇格済みマーカーが溜まるほど次回の監査が安価になる。
