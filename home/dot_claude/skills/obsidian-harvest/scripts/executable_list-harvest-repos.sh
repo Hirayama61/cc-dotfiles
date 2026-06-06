@@ -55,14 +55,15 @@ collect_project_frontmatter() {
 # ghq の全 repo フルパスから末尾セグメント一致を引く。github.com/ も local/ も拾える。
 # 見つからなければ空(= 作業ツリー無し)を返す。read-only。
 resolve_worktree() {
-  local repo="$1" path=""
+  local repo="$1" all_paths="$2" path=""
   # repo を grep の ERE に渡す前にメタ文字をエスケープ。文字クラスは先頭 ] が文字どおりの
-  # ']'、末尾 \\ が '\'(現状の repo キーは英数とハイフンのみだが防御的に)。
+  # ']'、末尾 \\ が '\'(repo キーは英数・ハイフン・アンダースコア。例: _shared)。
   local esc
   esc="$(printf '%s' "$repo" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g')"
   # 同名 basename が別 owner 配下に複数あると head -1 が ghq 列挙順で先頭を黙って選ぶ
-  # (現状の repo は衝突なし。衝突時は呼び出し側で要確認)。
-  path="$(ghq list --full-path 2>/dev/null | grep -E "/${esc}\$" | head -1 || true)"
+  # (現状の repo は衝突なし。衝突時は呼び出し側で要確認)。ghq list は呼び出し側で
+  # 1回だけ取得した結果を all_paths として渡す(repo ごとの再実行を避ける)。
+  path="$(printf '%s\n' "$all_paths" | grep -E "/${esc}\$" | head -1 || true)"
   printf '%s' "$path"
 }
 
@@ -85,6 +86,10 @@ all_keys="$(
 with_tree=""
 without_tree=""
 
+# ghq の全 repo フルパスはループ前に1回だけ取得し、各 repo の解決へ使い回す
+# (repo ごとに ghq を再起動しない。多数 repo 時の無駄なサブプロセスを避ける)。
+ghq_paths="$(ghq list --full-path 2>/dev/null || true)"
+
 while IFS= read -r key; do
   [[ -n "$key" ]] || continue
   if [[ "$key" == "_shared" ]]; then
@@ -92,7 +97,7 @@ while IFS= read -r key; do
     without_tree+="${key}"$'\t'"(no-worktree)"$'\n'
     continue
   fi
-  wt="$(resolve_worktree "$key")"
+  wt="$(resolve_worktree "$key" "$ghq_paths")"
   if [[ -n "$wt" ]]; then
     with_tree+="${key}"$'\t'"${wt}"$'\n'
   else
