@@ -15,6 +15,40 @@
 #   rel 算出 → home/dot_* 除外(rel アンカー)→ 許可リスト/docs/.github → else exit2。
 set -euo pipefail
 
+# 絶対パスの `.`/`..` セグメントを純シェルで論理正規化する(bash 3.2 互換・symlink 非解決)。
+# 未存在の中間 dir + `..`(例 `docs/x/../../../evil/EVIL.md`、x 未存在)は cd+pwd -P で
+# 物理化できず tail に `..` が残り、rel が `docs/x/../../../evil/...` のまま許可リスト
+# `docs/*` に前方一致して doc-gravity を素通る(F-001)。canonical 化前に `..` を畳んで防ぐ。
+# `/` で分割し位置パラメータをスタックに使う。`.`/空は捨て、`..` は1つ pop。ルートを越える
+# `..`(`/..`)は安全側で捨てる(= `/`)。block-main-clone-edit / pre-edit-guard と同一実装。
+_normalize_path() {
+  local p="$1"
+  case "$p" in /*) ;; *) printf '%s' "$p"; return 0 ;; esac
+  local oldifs="$IFS" seg _noglob=0
+  local -a stack=()
+  IFS='/'
+  case $- in *f*) _noglob=1 ;; esac
+  set -f
+  # IFS='/' で意図的に単語分割してセグメント化する(quote すると分割されない)。set -f は
+  # パス内の glob メタ文字(* ? [ ])が分割と同時に展開され正規化結果が cwd 依存になるのを
+  # 防ぐ(Next.js の [id] 等。SEC-2)。元の glob 状態を保存して復元する。
+  # shellcheck disable=SC2086
+  set -- $p
+  [[ $_noglob -eq 0 ]] && set +f
+  IFS="$oldifs"
+  for seg in "$@"; do
+    case "$seg" in
+    '' | .) ;;
+    ..) [[ ${#stack[@]} -gt 0 ]] && unset 'stack[${#stack[@]}-1]' ;;
+    *) stack[${#stack[@]}]="$seg" ;;
+    esac
+  done
+  [[ ${#stack[@]} -eq 0 ]] && { printf '/'; return 0; }
+  local out=""
+  for seg in "${stack[@]}"; do out="$out/$seg"; done
+  printf '%s' "$out"
+}
+
 # 親 dir が未存在でも canonical 化する。Write は中間ディレクトリを自動生成するため、
 # 新規サブディレクトリへの新規 .md(reports/x.md 等)を素通ししないよう最近接既存祖先まで
 # 遡って解決し未存在の tail を再付与する。CANON_DIR=正規化 dir / GIT_ANCHOR=git -C 用の
@@ -22,7 +56,8 @@ set -euo pipefail
 CANON_DIR=""
 GIT_ANCHOR=""
 canonicalize_dir() {
-  local dir="$1" tail="" base parent
+  local dir tail="" base parent
+  dir="$(_normalize_path "$1")"
   while [[ -n "$dir" && ! -d "$dir" ]]; do
     base="$(basename -- "$dir")"
     tail="$base${tail:+/$tail}"

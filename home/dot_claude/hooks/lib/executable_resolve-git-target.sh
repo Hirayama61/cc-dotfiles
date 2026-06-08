@@ -77,9 +77,10 @@ git_subcommand_of_segment() {
     w="$(_strip_one_quote "${words[$i]}")"
     case "$w" in
     # 値が別語の引数付きグローバルオプション(値も飛ばす)。
-    # 値がクォートで空白を含む(`-c "k=v with space"`)場合 `read -r -a` がクォートを
-    # 尊重せず空白分割するため、値が複数語に割れる。クォートが閉じるまで読み飛ばし
-    # 続行し、`-c` 値の途中語(`Doe"`)をサブコマンドに取り違えない(M-1)。
+    # 値がクォートで空白を含む場合 `read -r -a` がクォートを尊重せず空白分割するため、
+    # 値が複数語に割れる。クォートは語頭(`-c "k=v with space"`)とは限らず `=` の後
+    # (`-c user.name="John Doe"`)にも来るため、語のどこかで未閉じクォートが開いていれば
+    # 閉じ語まで読み飛ばし続け、途中語(`Doe"`)をサブコマンドに取り違えない(M-1/F-002)。
     -C | -c | --git-dir | --work-tree | --namespace | --exec-path | --super-prefix)
       i=$((i + 1))
       i=$(_skip_option_value words "$n" "$i") ;;
@@ -104,8 +105,12 @@ git_subcommand_of_segment() {
 }
 
 # 引数付きグローバルオプションの値(words[start])を飛ばし、次の語の index を返す。
-# 値がクォート(' か ")で開き、その語内で閉じていない場合、クォートが閉じる語まで
-# 読み飛ばしを続ける(`read -r -a` の空白分割で値が複数語に割れた状態の復元)。
+# 値のどこかでクォート(' か ")が開き、その語内で閉じていない場合、クォートが閉じる
+# 語まで読み飛ばしを続ける(`read -r -a` の空白分割で値が複数語に割れた状態の復元)。
+# クォートは語頭(`-c "k=v with space"`)とは限らず `=` の後(`-c user.name="John Doe"`)
+# にも来るので、語頭判定ではなく未閉じクォートの有無で判定する。`" 内 ' / ' 内 "` の
+# 混在(`-c a="x'y"`)を `" / '` の独立カウントが誤判定するため、_unclosed_quote の
+# 状態機械で語内に閉じていないクォート文字を求める(F-002 / SEC-1)。
 # bash 3.2 互換: 連想配列を使わず name ref 代わりに配列名を間接展開する。
 _skip_option_value() {
   local _arr="$1" _n="$2" _i="$3"
@@ -113,32 +118,39 @@ _skip_option_value() {
   local first
   eval "first=\"\${${_arr}[$_i]}\""
   _i=$((_i + 1))
-  # 値の先頭語がクォートを開いたまま閉じていなければ、閉じる語まで消費する。
-  case "$first" in
-  \"*)
-    case "${first#\"}" in
-    *\"*) : ;; # 同語内で閉じている
-    *)
-      while [[ $_i -lt $_n ]]; do
-        local _w
-        eval "_w=\"\${${_arr}[$_i]}\""
-        _i=$((_i + 1))
-        case "$_w" in *\"*) break ;; esac
-      done ;;
-    esac ;;
-  \'*)
-    case "${first#\'}" in
-    *\'*) : ;;
-    *)
-      while [[ $_i -lt $_n ]]; do
-        local _w
-        eval "_w=\"\${${_arr}[$_i]}\""
-        _i=$((_i + 1))
-        case "$_w" in *\'*) break ;; esac
-      done ;;
-    esac ;;
-  esac
+  # 先頭語に未閉じクォートがあれば、それが閉じる語まで消費する(`read -r -a` の空白分割で
+  # 値が複数語に割れた状態の復元)。語を左から走査して語内で閉じていないクォート文字を求める。
+  local _q
+  _q="$(_unclosed_quote "$first")"
+  if [[ -n "$_q" ]]; then
+    while [[ $_i -lt $_n ]]; do
+      local _w
+      eval "_w=\"\${${_arr}[$_i]}\""
+      _i=$((_i + 1))
+      case "$_w" in *"$_q"*) break ;; esac
+    done
+  fi
   printf '%s' "$_i"
+}
+
+# 文字列 s を左から走査し、語内で閉じていないクォート文字(" か ')を返す。閉じていれば空。
+# " の中の ' / ' の中の " は文字どおり扱う(独立カウントだと a="x'y" 等の混在を誤判定する)。
+# bash 3.2 互換(${s:i:1} で1文字ずつ走査)。
+_unclosed_quote() {
+  local _s="$1" _len=${#1} _i=0 _ch _state=""
+  while [[ $_i -lt $_len ]]; do
+    _ch="${_s:$_i:1}"
+    if [[ -z "$_state" ]]; then
+      case "$_ch" in
+      '"') _state='"' ;;
+      \') _state="'" ;;
+      esac
+    elif [[ "$_ch" == "$_state" ]]; then
+      _state=""
+    fi
+    _i=$((_i + 1))
+  done
+  printf '%s' "$_state"
 }
 
 # クォート(' か ")を1段剥がす。`'/a/b'` → `/a/b`、`"/a/b"` → `/a/b`。

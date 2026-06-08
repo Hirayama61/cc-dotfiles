@@ -13,6 +13,9 @@
 #
 # 出力(stdout)= 1 行 1 repo: "<repo>\t<作業ツリーパス or (no-worktree)>"(タブ区切り)。
 # AskUserQuestion 用の「作業ツリー有/無」ラベルにそのまま使える。
+# 同名 basename が複数 owner 配下に衝突する repo は head -1 の実在パスを右列に保ったまま、
+# 第3列 "\t(ambiguous:N)" と stderr 警告で曖昧性を示す(右列は常に valid path = 下流の
+# cd 先 / AskUserQuestion ラベル契約を壊さない。F-003)。
 #
 # read-only 厳守: Vault も ghq も**一切書かない**。env OBSIDIAN_VAULT で vault パス上書き可。
 
@@ -53,7 +56,9 @@ collect_project_frontmatter() {
 
 # repo キー → 作業ツリーパス逆解決(resolve-repo-key.sh の逆。SKILL.md 手順1)。
 # ghq の全 repo フルパスから末尾セグメント一致を引く。github.com/ も local/ も拾える。
-# 見つからなければ空(= 作業ツリー無し)を返す。read-only。
+# stdout = "<head -1 の実在パス>\t<衝突数>"(見つからなければ空)。path にタブは入らないので
+# 呼び出し側は read で 2 値に分解できる。衝突数を別フィールドで返すのは、command 置換が
+# subshell で走り global 変数を親へ伝播できないため(F-003。右列の path は常に valid に保つ)。
 resolve_worktree() {
   local repo="$1" all_paths="$2" path=""
   # repo を grep の ERE に渡す前にメタ文字をエスケープ。文字クラスは先頭 ] が文字どおりの
@@ -61,20 +66,17 @@ resolve_worktree() {
   # フィルタ ^[A-Za-z0-9._-]+$ と一致。ドットは next.js / *.github.io 等の repo 名のため許容)。
   local esc
   esc="$(printf '%s' "$repo" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g')"
-  # 同名 basename が別 owner 配下に複数あるとどれが正か機械的に決められない。先頭を
-  # 黙って採るのではなく、衝突数を " (ambiguous:N)" サフィックスで出力に残し、下流の
-  # AskUserQuestion が「先頭採用パスは確実でない」と解釈できるようにする(出力契約の
-  # <repo>\t<path> は保つ。path にスペースは入りうるが下流は最初の \t で repo を切る)。
+  # 同名 basename が別 owner 配下に複数あるとどれが正か機械的に決められない。先頭採用は
+  # 維持しつつ衝突数を返し、下流(AskUserQuestion / cd 先)が「先頭採用パスは確実でない」と
+  # 解釈できるようにする。右列(path)は常に valid path に保ち、曖昧シグナルは衝突数として
+  # 呼び出し側へ渡す(右列を作業ツリーパスとして使う出力契約を壊さない)。
   # ghq list は呼び出し側で 1回だけ取得した結果を all_paths として渡す(再実行を避ける)。
   local matches count
   matches="$(printf '%s\n' "$all_paths" | grep -E "/${esc}\$" || true)"
-  [[ -n "$matches" ]] || { printf '%s' ""; return 0; }
-  count="$(printf '%s\n' "$matches" | grep -c '' )"
+  [[ -n "$matches" ]] || return 0
+  count="$(printf '%s\n' "$matches" | grep -c '')"
   path="$(printf '%s\n' "$matches" | head -1)"
-  if [[ "$count" -ge 2 ]]; then
-    path="${path} (ambiguous:${count})"
-  fi
-  printf '%s' "$path"
+  printf '%s\t%s' "$path" "$count"
 }
 
 # --- 合算 → 一意化。`_shared`・論理プロジェクトを末尾へ --------------------------
@@ -107,9 +109,14 @@ while IFS= read -r key; do
     without_tree+="${key}"$'\t'"(no-worktree)"$'\n'
     continue
   fi
-  wt="$(resolve_worktree "$key" "$ghq_paths")"
+  IFS=$'\t' read -r wt count <<<"$(resolve_worktree "$key" "$ghq_paths")"
   if [[ -n "$wt" ]]; then
-    with_tree+="${key}"$'\t'"${wt}"$'\n'
+    if [[ "${count:-0}" -ge 2 ]]; then
+      with_tree+="${key}"$'\t'"${wt}"$'\t'"(ambiguous:${count})"$'\n'
+      echo "list-harvest-repos: warn: '${key}' は同名 repo が ${count} 件衝突。先頭採用 = ${wt}(要確認)" >&2
+    else
+      with_tree+="${key}"$'\t'"${wt}"$'\n'
+    fi
   else
     without_tree+="${key}"$'\t'"(no-worktree)"$'\n'
   fi
