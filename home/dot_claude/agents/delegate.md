@@ -6,6 +6,7 @@ description: >-
   ファイルに書き、親へはファイルパス + 3〜5行要約のみ返す。非自明な作業単位は
   すべてこれに委譲し、メインのコンテキストを対話と判断に保つために使う。
 tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, Skill
+model: sonnet
 ---
 
 # delegate — 単一タスク実行エージェント
