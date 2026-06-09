@@ -2,10 +2,14 @@
 # load-obsidian-memory.sh — SessionStart hook (startup|resume|clear)
 #
 # Obsidian Vault(~/obsidian/brain)の Tier0 を additionalContext として注入する。
-# Tier0 = Preferences/* 全文 + 自動生成 MOC(索引)。
-# Vault 本体はローカル限定・固定パス・どのリポにも入らない。Tier1 本文は注入せず、
-# Claude が MOC を見て Grep/Glob + [[wikilink]] でオンデマンドに読む。
-# Mistakes/(複数回発生ミスの観測ログ)も常時注入はせず MOC 経由のオンデマンド参照。
+# Tier0 = Preferences/* 全文 + 現在 repo の「生きたガイド」(ルートガイド)。
+# Vault 本体はローカル限定・固定パス・どのリポにも入らない。詳細サブノートは注入せず、
+# Claude がガイド内の [[wikilink]] / Grep / Glob でオンデマンドに読む。
+#
+# 経緯: 旧版は自動生成 MOC(Knowledge/Decisions/Projects/Mistakes を1行ずつ列挙した索引)を
+# 注入していたが、ノート増加に比例して索引が肥大し Tier0 が膨らんだ。これを廃し、人手で
+# 育てる repo 単位のルートガイド1枚に置き換える。注入量はガイドのサイズで有界化され、
+# 個々のサブ知見はガイドからのリンクでオンデマンドに辿る(常時注入しない)。
 #
 # 安全側設計: 注入の失敗でセッションを止めない。jq 不在 / vault 不在(業務 PC 等)/
 # 想定外のエラーはすべて exit 0 で素通り(コンテキスト注入は best-effort)。
@@ -13,8 +17,8 @@ set -euo pipefail
 
 command -v jq &>/dev/null || exit 0
 
-# cwd から現在 repo の論理キーを導出し、MOC を現在 repo スコープへ絞る。
-# 空(repo 外 / vault 直編集中)なら全 repo フォールバック(REPO_KEY="")。
+# cwd から現在 repo の論理キーを導出し、注入するルートガイドを現在 repo に対応づける。
+# 空(repo 外 / vault 直編集中)ならガイドは注入せず Preferences のみ(REPO_KEY="")。
 input="$(cat)" || true
 cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)"
 REPO_KEY=""
@@ -26,47 +30,17 @@ fi
 VAULT="$HOME/obsidian/brain" # 全 PC 共通の固定パス
 [[ -d "$VAULT" ]] || exit 0  # 未存在(業務 PC 等)→ 無音で素通り
 
-MOC_MAX=800 # MOC 行数上限。Tier0 を実質定数に丸める
-
-# --- MOC 索引の自動生成(.index/MOC.md) ---
-# 注意: `... | head -n N` は head の早期終了で producer が SIGPIPE を受け、
-# `set -o pipefail` 下では script 全体が落ちうる。これを避けるため生成側を
-# awk で行数制限し、head にパイプしない(best-effort を壊さない)。
-INDEX_DIR="$VAULT/.index"
-MOC="$INDEX_DIR/MOC.md"
-mkdir -p "$INDEX_DIR"
-{
-  echo "# MOC(自動生成 / $(date +%F)${REPO_KEY:+ / repo=$REPO_KEY}) — Tier1 本文は Grep/Glob + [[wikilink]] で必要分だけ読む"
-  # 除外: _README.md(フォルダ説明の足場でノイズ)
-  # Tasks/(delegate の作業ログ)は意図的に対象外 = MOC 非掲載 → Claude のコンテキストに
-  # 載せない。時系列ログとして全部残すが、ノイズ源なので Tier0/グラフ/検索から隔離する。
-  #
-  # repo スコープフィルタ: Decisions/Mistakes は <type>/<repo>/ サブに住むため、現在 repo
-  # セグメント or _shared のみ採用(他 repo は除外しノイズを減らす)。Knowledge/Preferences/
-  # Projects は共有 flat なので常に採用。REPO_KEY 空(repo 外)なら全件採用(フォールバック)。
-  # リンクは戦略X(bare basename・vault 全体一意前提)で出力 → ディレクトリ移動に強い。
-  # find producer は || true でガードする。vault サブディレクトリの欠損/不可読で find が
-  # 非ゼロ終了すると pipefail でパイプライン全体が落ち best-effort 起動が壊れるため。
-  { find "$VAULT/Knowledge" "$VAULT/Decisions" "$VAULT/Projects" "$VAULT/Mistakes" -name '*.md' ! -name '_README.md' -type f 2>/dev/null || true; } |
-    sort | while IFS= read -r f; do
-    rel="${f#"$VAULT"/}"
-    case "$rel" in
-    Decisions/*/* | Mistakes/*/*)
-      seg="${rel#*/}"
-      seg="${seg%%/*}"
-      if [[ -n "$REPO_KEY" && "$seg" != "$REPO_KEY" && "$seg" != "_shared" ]]; then
-        continue
-      fi
-      ;;
-    esac
-    name="$(basename -- "$rel")"
-    name="${name%.md}"
-    # title = 本文1行目見出し → 無ければ空 / meta = frontmatter tags+project を1行圧縮
-    title="$(awk '/^# /{sub(/^# /,"");print;exit}' "$f")"
-    meta="$(awk -F': ' '/^tags:|^project:/{printf "%s ",$2}' "$f")"
-    printf -- "- [[%s]] %s%s\n" "$name" "${title:+$title }" "${meta:+($meta)}"
-  done
-} | awk -v max="$MOC_MAX" 'NR<=max' >"$MOC" # 生成側を制限(head 不使用で SIGPIPE 回避)
+# ルートガイドのパスを決定的に組み立てる($VAULT/Guides/<repo>/<repo>-ガイド.md)。
+# REPO_KEY が非空かつ実在するときのみ注入。無ければ lazy(注入なし)で Preferences のみ。
+# ルートガイドは「実ファイル」に限定する(find -type f は symlink=-type l を除外)。
+# Guides/<repo>/ に貼られた symlink 経由で vault 外(~/.ssh 等)を注入させないため。
+# 日本語名は NFC 前提(guide-capture が NFC で生成)。NFD でディスクに在るとマッチせず
+# 無音 skip する既知の制約。head を使わず pipefail 下の SIGPIPE を避ける。
+GUIDE=""
+if [[ -n "$REPO_KEY" ]]; then
+  GUIDE="$(find "$VAULT/Guides/$REPO_KEY" -maxdepth 1 -type f -name "$REPO_KEY-ガイド.md" 2>/dev/null || true)"
+  GUIDE="${GUIDE%%$'\n'*}"
+fi
 
 # --- Tier0 を additionalContext に注入 ---
 BODY="$(
@@ -74,9 +48,12 @@ BODY="$(
   echo "## Preferences(好み・作業スタイル)"
   # _README.md は除外: フォルダ説明の足場であり毎セッション注入する価値がない
   find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f -exec cat {} + 2>/dev/null || true
-  echo
-  echo "## 索引(MOC) — 本文は未ロード。関連ノートは Grep/Glob + [[wikilink]] で読む"
-  cat "$MOC" 2>/dev/null || true
+  if [[ -n "$GUIDE" ]]; then
+    echo
+    echo "## 生きたガイド($REPO_KEY)— 最新の運用知。詳細サブは [[link]]/Grep でオンデマンド"
+    # 注入量の安全上限。ルートを小さく保つ規律が破れても注入を有界にする。
+    head -c 20000 "$GUIDE" 2>/dev/null || true
+  fi
 )"
 
 jq -n --arg body "$BODY" '{

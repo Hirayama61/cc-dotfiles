@@ -34,12 +34,18 @@
 - **外部脳への reconcile**: delegate から `外部脳候補` / 鮮度 flag を受けたら、
   安全な切れ目で reconcile する(値する候補を obsidian-memory で書き戻し / 陳腐化
   ノートは非破壊で訂正 = callout 追記 or 人間へ申告)。書き戻し完了まで reconcile を
-  閉じない。
+  閉じない。運用知(テスト規約・実装注意点・落とし穴)はガイドへ、判断履歴は Decisions へ。
 - **判断の記録(AskUserQuestion → Decisions)**: 重要な二者択一はメインが
   AskUserQuestion を積極利用する。確定後、PostToolUse hook(`capture-decision.sh`)が
   リマインドを注入するので、安全な切れ目で **obsidian-memory を使い理由・文脈付きの
   Decisions ノートを書く**。timing とファイル分割はメイン判断(セッション単位の
   寄せ集めも質問単位のファイル乱造も避ける)。
+- **生きたガイドへの随時キャプチャ(学び → guide-capture)**: 作業中に
+  **guide-worthy な運用知**(テスト規約・実装の注意点・再発しうる落とし穴)を学んだら、
+  安全な切れ目で **`guide-capture` skill での反映を提案**する(人間ゲート付き)。
+  hook 強制でなく**規律**で持たせる(自己検知で発火)。
+  capture-decision(判断 → Decisions)と対になる「学び → 生きたガイド」の経路。
+  ガイドは current-state のみ。「なぜ=履歴」は従来どおり Decisions へ。
 - **doc-gravity(生成ドキュメントは外部脳へ)**: Claude が生成する作業ドキュメント
   (plan/report/findings 等)は全て `~/obsidian/brain/Tasks/<repo>/` に書く(`<repo>` は
   `resolve-repo-key.sh` で導出)。リポ作業ツリー配下の**新規 .md は PreToolUse(Write) hook が

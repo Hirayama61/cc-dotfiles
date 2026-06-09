@@ -11,7 +11,7 @@ set -euo pipefail
 
 VAULT="$HOME/obsidian/brain"
 
-mkdir -p "$VAULT"/{Knowledge,Decisions,Mistakes,Projects,Preferences,Tasks,.index}
+mkdir -p "$VAULT"/{Knowledge,Decisions,Mistakes,Projects,Preferences,Tasks,.index,Guides,Guides/_topics}
 
 write_readme_if_absent() {
   local path="$1"
@@ -40,7 +40,7 @@ write_readme_if_absent "$VAULT/Mistakes/_README.md" \
   "" \
   "AI のミスを観測ログとして溜める場所(防止ルールの実装先ではない)。溜めたログから" \
   "人間/レビュー工程が CLAUDE.md / hook の防止ルールへ昇華する材料にする。" \
-  "1回目から軽量に記録してよい。Tier0 への毎セッション自動注入はしない(MOC 経由で参照)。" \
+  "1回目から軽量に記録してよい。Tier0 への毎セッション自動注入はしない(Grep/Glob + [[wikilink]] でオンデマンド参照)。" \
   "repo 固有は Mistakes/<repo>/、横断は Mistakes/_shared/(書込時に mkdir)。" \
   "命名: YYYY-MM-DD-日本語トピック.md(並列衝突時は YYYY-MM-DD-HHMMSS-... で時刻付与)。"
 
@@ -58,6 +58,16 @@ write_readme_if_absent "$VAULT/Preferences/_README.md" \
   "" \
   "最初に profile.md に自己紹介・前提・よく使うスタックを書いておくと良い。"
 
+write_readme_if_absent "$VAULT/Guides/_README.md" \
+  "# Guides — 生きたガイド(context ごとの運用知 current-state)" \
+  "" \
+  "context(repo 又は _topics)ごとの運用知を常に最新の状態で保つ場所。" \
+  "ルートガイド \`<repo>/<repo>-ガイド.md\` が SessionStart 注入の対象。" \
+  "サブ doc は分割で創発し [[link]] でルートから接続する(遅延分割・創発グラフ)。" \
+  "横断知は \`_topics/<トピック>.md\` ハブに置き、複数 repo のルートから [[link]] する。" \
+  "書込は guide-capture skill 経由(人間ゲート付き)。自動上書きしない。" \
+  "Decisions(なぜ=append-only 履歴)とは直交し疎結合で並走する。"
+
 write_readme_if_absent "$VAULT/Tasks/_README.md" \
   "# Tasks — delegate/Claude の作業ドキュメント隔離先" \
   "" \
@@ -65,7 +75,7 @@ write_readme_if_absent "$VAULT/Tasks/_README.md" \
   "1 repo 1サブディレクトリ(Tasks/<repo>/、書込時に mkdir で生やす)で時系列ログとして全部残す。" \
   "doc-gravity hook(block-repo-doc.sh)がリポ配下の新規 .md をブロックしてここへ誘導する正式な書込先。" \
   "" \
-  "意図的に Tier0/MOC/グラフ/Obsidian 検索から除外している(load-obsidian-memory.sh は MOC 非掲載、" \
+  "意図的にグラフ/Obsidian 検索から除外している(load-obsidian-memory.sh の注入対象外(ルートガイド以外は注入しない)、" \
   ".obsidian の userIgnoreFilters で検索/グラフから隔離)。作業ログはノイズ源なので知識レイヤーと混ぜない。" \
   "再利用価値のある知見は Knowledge/ Decisions/ 等へ昇華する。"
 
@@ -101,8 +111,9 @@ Obsidian 永続記憶 vault を初期化しました: $VAULT
   Mistakes/     ミスの観測ログ(repo 固有は <repo>/、横断は _shared/)
   Projects/     進行中プロジェクトの状態(1 repo 1ファイル)
   Preferences/  好み・作業スタイル(共有・flat)
-  Tasks/        delegate/Claude の作業ドキュメント隔離先(<repo>/ サブ、Tier0/MOC/検索から除外)
-  .index/       MOC(索引)自動生成先(SessionStart hook が更新)
+  Tasks/        delegate/Claude の作業ドキュメント隔離先(<repo>/ サブ、Tier0/注入/検索から除外)
+  .index/       旧 MOC 索引置き場(MOC は廃止・現在未使用。SessionStart はガイドを注入)
+  Guides/       生きたガイド(context ごとの運用知 current-state。guide-capture skill 経由で書込)
 
 <type>/<repo>/ と <type>/_shared/ のサブディレクトリは書込時に mkdir -p で生やします
 (init では先掘りしません = 空ディレクトリを量産しない)。
