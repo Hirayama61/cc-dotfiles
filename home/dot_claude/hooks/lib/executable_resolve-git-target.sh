@@ -79,11 +79,23 @@ git_subcommand_of_segment() {
     w="$(_strip_one_quote "${words[$i]}")"
     case "$w" in
     # 値が別語の引数付きグローバルオプション(値も飛ばす)。
+    # 値がクォートで空白を含む場合 `read -r -a` がクォートを尊重せず空白分割するため、
+    # 値が複数語に割れる。クォートは語頭(`-c "k=v with space"`)とは限らず `=` の後
+    # (`-c user.name="John Doe"`)にも来るため、語のどこかで未閉じクォートが開いていれば
+    # 閉じ語まで読み飛ばし続け、途中語(`Doe"`)をサブコマンドに取り違えない(M-1/F-002)。
     -C | -c | --git-dir | --work-tree | --namespace | --exec-path | --super-prefix)
-      i=$((i + 2)) ;;
-    # `--opt=value` 形式は1語スキップ(-C=/-c= は git が受け付けない形なので扱わない)。
-    --git-dir=* | --work-tree=* | --namespace=* | --exec-path=*)
+      i=$((i + 1))
+      i=$(_skip_option_value words "$n" "$i") ;;
+    # glued `-C<path>`(空白なし)は値を内包する1語。`git_subcommand_of_segment` と
+    # `_git_c_dir_of_segment` の glued 扱いを対称化する(M-2)。
+    -C?*)
       i=$((i + 1)) ;;
+    # グルー型 `--opt=value`(-c= は git が受け付けない形なので扱わない)。グルー値が空白入り
+    # クォートで複数語に割れる場合に対応(CR-1)。グルー語自体を値語として `_skip_option_value`
+    # に渡せば、`--git-dir="/tmp/work tree/.git"` の未閉じクォートを閉じ語まで消費し、クォート
+    # 無しの通常値は1語スキップのままになる。
+    --git-dir=* | --work-tree=* | --namespace=* | --exec-path=*)
+      i=$(_skip_option_value words "$n" "$i") ;;
     # 値を取らないグローバルフラグ。
     -p | --paginate | -P | --no-pager | --bare | --no-replace-objects | \
       --literal-pathspecs | --no-optional-locks | --html-path | --man-path | --info-path)
@@ -97,6 +109,55 @@ git_subcommand_of_segment() {
   return 0
 }
 
+# 引数付きグローバルオプションの値(words[start])を飛ばし、次の語の index を返す。
+# 値のどこかでクォート(' か ")が開き、その語内で閉じていない場合、クォートが閉じる
+# 語まで読み飛ばしを続ける(`read -r -a` の空白分割で値が複数語に割れた状態の復元)。
+# クォートは語頭(`-c "k=v with space"`)とは限らず `=` の後(`-c user.name="John Doe"`)
+# にも来るので、語頭判定ではなく未閉じクォートの有無で判定する。`" 内 ' / ' 内 "` の
+# 混在(`-c a="x'y"`)を `" / '` の独立カウントが誤判定するため、_unclosed_quote の
+# 状態機械で語内に閉じていないクォート文字を求める(F-002 / SEC-1)。
+# bash 3.2 互換: 連想配列を使わず name ref 代わりに配列名を間接展開する。
+_skip_option_value() {
+  local _arr="$1" _n="$2" _i="$3"
+  [[ $_i -ge $_n ]] && { printf '%s' "$_i"; return 0; }
+  local first
+  eval "first=\"\${${_arr}[$_i]}\""
+  _i=$((_i + 1))
+  # 先頭語に未閉じクォートがあれば、それが閉じる語まで消費する(`read -r -a` の空白分割で
+  # 値が複数語に割れた状態の復元)。語を左から走査して語内で閉じていないクォート文字を求める。
+  local _q
+  _q="$(_unclosed_quote "$first")"
+  if [[ -n "$_q" ]]; then
+    while [[ $_i -lt $_n ]]; do
+      local _w
+      eval "_w=\"\${${_arr}[$_i]}\""
+      _i=$((_i + 1))
+      case "$_w" in *"$_q"*) break ;; esac
+    done
+  fi
+  printf '%s' "$_i"
+}
+
+# 文字列 s を左から走査し、語内で閉じていないクォート文字(" か ')を返す。閉じていれば空。
+# " の中の ' / ' の中の " は文字どおり扱う(独立カウントだと a="x'y" 等の混在を誤判定する)。
+# bash 3.2 互換(${s:i:1} で1文字ずつ走査)。
+_unclosed_quote() {
+  local _s="$1" _len=${#1} _i=0 _ch _state=""
+  while [[ $_i -lt $_len ]]; do
+    _ch="${_s:$_i:1}"
+    if [[ -z "$_state" ]]; then
+      case "$_ch" in
+      '"') _state='"' ;;
+      \') _state="'" ;;
+      esac
+    elif [[ "$_ch" == "$_state" ]]; then
+      _state=""
+    fi
+    _i=$((_i + 1))
+  done
+  printf '%s' "$_state"
+}
+
 # クォート(' か ")を1段剥がす。`'/a/b'` → `/a/b`、`"/a/b"` → `/a/b`。
 _strip_one_quote() {
   local s="${1:-}"
@@ -108,37 +169,75 @@ _strip_one_quote() {
 }
 
 # あるセグメント内の `git -C <dir>` の dir を返す(クォート1段除去済み)。無ければ空。
+# グローバルオプション位置の `-C` だけを見る。最初の非オプション語(サブコマンド)に達したら
+# 探索を止め、`git commit -m "fix -C hooks"` のような後続引数中の `-C` を拾わない(CR-2)。
+# git_subcommand_of_segment と対称: `git` まで進めてから値付きグローバルオプションの値も飛ばす。
 _git_c_dir_of_segment() {
   local seg="${1:-}"
   local -a words=()
   read -r -a words <<<"$seg"
   local n=${#words[@]}
+  [[ $n -eq 0 ]] && return 0
   local i=0
-  # `-C` フラグも quote-aware に探す(`git "-C" /x push` 対応)。git_subcommand_of_segment と
-  # 対称に各トークンを _strip_one_quote してから比較する。dir 値の strip は既存どおり維持。
+  # 先頭の `git` を見つけるまで進める(`sudo git ...` 等の prefix を許容)。
   while [[ $i -lt $n ]]; do
     case "$(_strip_one_quote "${words[$i]}")" in
+    git) i=$((i + 1)); break ;;
+    *) i=$((i + 1)) ;;
+    esac
+  done
+  [[ $i -ge $n ]] && return 0
+
+  # `-C` フラグも quote-aware に探す(`git "-C" /x push` 対応)。dir 値の strip は既存どおり維持。
+  while [[ $i -lt $n ]]; do
+    local w
+    w="$(_strip_one_quote "${words[$i]}")"
+    case "$w" in
     -C)
       if [[ $((i + 1)) -lt $n ]]; then
         _strip_one_quote "${words[$((i + 1))]}"
       fi
-      return 0
-      ;;
+      return 0 ;;
+    # glued `-C<path>`(空白なし)。rest 非空なら即 dir、空(`-C`単独)は上の枝で次語(M-2)。
+    -C?*)
+      printf '%s' "${w#-C}"
+      return 0 ;;
+    # 値付きグローバルオプションの値も飛ばす(値が `-C` 様に化けるのを防ぐ)。F-002/CR-1 と対称。
+    -c | --git-dir | --work-tree | --namespace | --exec-path | --super-prefix)
+      i=$((i + 1))
+      i=$(_skip_option_value words "$n" "$i") ;;
+    --git-dir=* | --work-tree=* | --namespace=* | --exec-path=*)
+      i=$(_skip_option_value words "$n" "$i") ;;
+    -p | --paginate | -P | --no-pager | --bare | --no-replace-objects | \
+      --literal-pathspecs | --no-optional-locks | --html-path | --man-path | --info-path)
+      i=$((i + 1)) ;;
+    -*) i=$((i + 1)) ;;
+    # 非オプション語 = サブコマンド。ここで止めて後続の `-C` を拾わない(CR-2)。
+    *) return 0 ;;
     esac
-    i=$((i + 1))
   done
   return 0
 }
 
 # セグメント先頭が `cd <dir>` のとき、その dir を返す(クォート1段除去済み)。無ければ空。
+# `cd -- <dir>` / `cd -L <dir>` / `cd -P <dir>` の先頭フラグは飛ばし最初の非フラグ語を dir
+# とする(dispatcher で `cd -- <wt> && git push` を使う場合の cwd 誤判定対策)。
 _leading_cd_dir_of_segment() {
   local seg="${1:-}"
   local -a words=()
   read -r -a words <<<"$seg"
-  [[ ${#words[@]} -lt 2 ]] && return 0
-  if [[ "${words[0]}" == "cd" ]]; then
-    _strip_one_quote "${words[1]}"
-  fi
+  local n=${#words[@]}
+  [[ $n -lt 2 ]] && return 0
+  [[ "${words[0]}" != "cd" ]] && return 0
+  local i=1
+  while [[ $i -lt $n ]]; do
+    case "$(_strip_one_quote "${words[$i]}")" in
+    --) i=$((i + 1)); break ;;
+    -L | -P) i=$((i + 1)) ;;
+    *) break ;;
+    esac
+  done
+  [[ $i -lt $n ]] && _strip_one_quote "${words[$i]}"
   return 0
 }
 

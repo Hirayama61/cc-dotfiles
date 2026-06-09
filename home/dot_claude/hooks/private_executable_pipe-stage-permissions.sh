@@ -67,6 +67,20 @@ is_sensitive_var() {
   return 1
 }
 
+# split_stages が分割しないシェルメタ文字（コマンド置換・リダイレクト等）が
+# ステージ内に残っていたら true を返す。残っている場合は前方一致が許可語の後続に
+# 未検証コマンド（`$(rm x)` / `> /etc/passwd` 等）を取り込み auto-approve を
+# バイパスできるため、auto-approve を見送ってネイティブ権限プロンプトに委ねる。
+has_unhandled_metachar() {
+  local s="$1"
+  case "$s" in
+  *'$('* | *'`'* | *'>'* | *'<'*)
+    return 0
+    ;;
+  esac
+  return 1
+}
+
 # 環境変数を除去してから、コマンドが許可リストにマッチするか判定
 matches_allowed() {
   local cmd="$1"
@@ -149,6 +163,16 @@ split_stages() {
         ((i+=2))
         continue
       fi
+      # 単一 & はバックグラウンド実行の区切り。&& 以外の & も分割点とする
+      # (例: `ls & rm -rf x` の rm を独立ステージとして検証させる)。
+      # ただし直前が > の場合は fd 複製リダイレクト(`2>&1` / `>&2`)であり
+      # 区切りではないので分割しない(後段の fd-dup 除去 sed に委ねる)。
+      if [ "$c" = "&" ] && [ "$next" != "&" ] && [ "${current%>}" = "$current" ]; then
+        printf '%s\n' "$current"
+        current=""
+        ((i += 1))
+        continue
+      fi
     fi
     current+="$c"
     ((i += 1))
@@ -169,6 +193,10 @@ for stage in "${STAGES[@]}"; do
   clean="$(echo "$stage" | sed 's/[0-9]*>&[0-9]*//g' \
     | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')"
   [ -z "$clean" ] && continue
+  if has_unhandled_metachar "$clean"; then
+    all_match=false
+    break
+  fi
   if ! matches_allowed "$clean"; then
     all_match=false
     break

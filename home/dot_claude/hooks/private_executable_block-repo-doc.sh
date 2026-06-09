@@ -15,6 +15,66 @@
 #   rel 算出 → home/dot_* 除外(rel アンカー)→ 許可リスト/docs/.github → else exit2。
 set -euo pipefail
 
+# 絶対パスの `.`/`..` セグメントを純シェルで論理正規化する(bash 3.2 互換・symlink 非解決)。
+# 未存在の中間 dir + `..`(例 `docs/x/../../../evil/EVIL.md`、x 未存在)は cd+pwd -P で
+# 物理化できず tail に `..` が残り、rel が `docs/x/../../../evil/...` のまま許可リスト
+# `docs/*` に前方一致して doc-gravity を素通る(F-001)。canonical 化前に `..` を畳んで防ぐ。
+# `/` で分割し位置パラメータをスタックに使う。`.`/空は捨て、`..` は1つ pop。ルートを越える
+# `..`(`/..`)は安全側で捨てる(= `/`)。block-main-clone-edit / pre-edit-guard と同一実装。
+_normalize_path() {
+  local p="$1"
+  case "$p" in /*) ;; *) printf '%s' "$p"; return 0 ;; esac
+  local oldifs="$IFS" seg _noglob=0
+  local -a stack=()
+  IFS='/'
+  case $- in *f*) _noglob=1 ;; esac
+  set -f
+  # IFS='/' で意図的に単語分割してセグメント化する(quote すると分割されない)。set -f は
+  # パス内の glob メタ文字(* ? [ ])が分割と同時に展開され正規化結果が cwd 依存になるのを
+  # 防ぐ(Next.js の [id] 等。SEC-2)。元の glob 状態を保存して復元する。
+  # shellcheck disable=SC2086
+  set -- $p
+  [[ $_noglob -eq 0 ]] && set +f
+  IFS="$oldifs"
+  for seg in "$@"; do
+    case "$seg" in
+    '' | .) ;;
+    ..) [[ ${#stack[@]} -gt 0 ]] && unset 'stack[${#stack[@]}-1]' ;;
+    *) stack[${#stack[@]}]="$seg" ;;
+    esac
+  done
+  [[ ${#stack[@]} -eq 0 ]] && { printf '/'; return 0; }
+  local out=""
+  for seg in "${stack[@]}"; do out="$out/$seg"; done
+  printf '%s' "$out"
+}
+
+# 親 dir が未存在でも canonical 化する。Write は中間ディレクトリを自動生成するため、
+# 新規サブディレクトリへの新規 .md(reports/x.md 等)を素通ししないよう最近接既存祖先まで
+# 遡って解決し未存在の tail を再付与する。CANON_DIR=正規化 dir / GIT_ANCHOR=git -C 用の
+# 実在祖先(未存在 dir を git -C に渡すと fail するため分離)。総失敗時は両方空。
+CANON_DIR=""
+GIT_ANCHOR=""
+canonicalize_dir() {
+  local dir tail="" base parent
+  dir="$(_normalize_path "$1")"
+  while [[ -n "$dir" && ! -d "$dir" ]]; do
+    base="$(basename -- "$dir")"
+    tail="$base${tail:+/$tail}"
+    parent="$(dirname -- "$dir")"
+    [[ "$parent" == "$dir" ]] && break
+    dir="$parent"
+  done
+  [[ -d "$dir" ]] || return 0
+  GIT_ANCHOR="$(cd "$dir" 2>/dev/null && pwd -P || true)"
+  [[ -z "$GIT_ANCHOR" ]] && return 0
+  if [[ -n "$tail" ]]; then
+    CANON_DIR="$GIT_ANCHOR/$tail"
+  else
+    CANON_DIR="$GIT_ANCHOR"
+  fi
+}
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 input="$(cat)"
@@ -34,10 +94,11 @@ esac
 
 # パス正規化: git --show-toplevel は canonical を返すが fp は非正規化でありうる
 # (macOS の /tmp→/private/tmp 等)。dir を canonical 化し canonical_fp を以後の判定に使う。
-# 親ディレクトリが未存在等で canonical 化できなければ安全側で素通し。
+# 最近接既存祖先まで遡れず canonical 化が総失敗した場合のみ安全側で素通し。
 dir="$(dirname -- "$fp")"
 base="$(basename -- "$fp")"
-cdir="$(cd "$dir" 2>/dev/null && pwd -P || true)"
+canonicalize_dir "$dir"
+cdir="$CANON_DIR"
 [[ -z "$cdir" ]] && exit 0
 cfp="$cdir/$base"
 
@@ -54,7 +115,9 @@ esac
 # 既存ファイルの上書きは常に許可(新規生成だけブロック)。
 [[ -e "$cfp" ]] && exit 0
 
-toplevel="$(git -C "$cdir" rev-parse --show-toplevel 2>/dev/null || true)"
+# git -C には実在祖先(GIT_ANCHOR)を渡す。cdir は未存在の新規サブディレクトリを
+# 含みうるため git -C "$cdir" は fail する。
+toplevel="$(git -C "$GIT_ANCHOR" rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -z "$toplevel" ]] && exit 0
 
 # repo 相対パス(toplevel も --show-toplevel で canonical なので cfp と整合)。
@@ -76,7 +139,7 @@ case "$rel" in
 docs/* | .github/*) exit 0 ;;
 esac
 
-repo_key="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$cdir" 2>/dev/null || true)"
+repo_key="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$GIT_ANCHOR" 2>/dev/null || true)"
 : "${repo_key:=$(basename -- "$toplevel")}"
 
 {

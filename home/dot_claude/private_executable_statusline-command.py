@@ -84,6 +84,18 @@ def fmt(label: str, pct: float, reset_str: str = "") -> str:
     return result
 
 
+def safe_float(value, default: float = 0.0) -> float:
+    """値を float に変換する。変換不能(非数値文字列・None・型不一致)なら default を返す。
+
+    harness が stdin に流す JSON の各フィールドの型は保証されず、used_percentage 等が
+    "abc" 等の非数値文字列で来うる。未捕捉 ValueError で statusline を落とさないため吸収する。
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def time_until(resets_at) -> str:
     """リセット時刻から残り時間を人間が読みやすい形式で返す
 
@@ -113,22 +125,26 @@ def time_until(resets_at) -> str:
         return f"{minutes}m"
 
 
-def main():
-    # ---------- stdinからJSON読み込み ----------
-    try:
-        raw = sys.stdin.read()
-        data = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
-        print("parse error", end="")
-        return
+def render(data: dict) -> str:
+    """ステータスライン文字列を組み立てる。
 
+    各フィールドは dict とは限らない(harness のスキーマ変更・型ゆれ)ので、
+    入れ子の取得は `isinstance(x, dict)` でガードしてから .get() する。
+    """
     # ---------- フィールドのパース ----------
-    model_name = data.get("model", {}).get("display_name", "Unknown")
-    used_pct = data.get("context_window", {}).get("used_percentage", 0) or 0
+    model = data.get("model")
+    model_name = model.get("display_name", "Unknown") if isinstance(model, dict) else "Unknown"
+
+    ctx = data.get("context_window")
+    used_pct = (ctx.get("used_percentage", 0) if isinstance(ctx, dict) else 0) or 0
+
     cwd = data.get("cwd", "")
+    if not isinstance(cwd, str):
+        cwd = ""
+
     rate_limits = data.get("rate_limits")
 
-    ctx_pct = float(used_pct)
+    ctx_pct = safe_float(used_pct)
 
     # レートリミット情報
     rl_5h_pct = None
@@ -136,13 +152,15 @@ def main():
     rl_7d_pct = None
     rl_7d_resets = None
 
-    if rate_limits:
-        five_hour = rate_limits.get("five_hour", {})
-        seven_day = rate_limits.get("seven_day", {})
-        rl_5h_pct = five_hour.get("used_percentage")
-        rl_5h_resets = five_hour.get("resets_at")
-        rl_7d_pct = seven_day.get("used_percentage")
-        rl_7d_resets = seven_day.get("resets_at")
+    if isinstance(rate_limits, dict):
+        five_hour = rate_limits.get("five_hour")
+        seven_day = rate_limits.get("seven_day")
+        if isinstance(five_hour, dict):
+            rl_5h_pct = five_hour.get("used_percentage")
+            rl_5h_resets = five_hour.get("resets_at")
+        if isinstance(seven_day, dict):
+            rl_7d_pct = seven_day.get("used_percentage")
+            rl_7d_resets = seven_day.get("resets_at")
 
     # ---------- gitブランチ取得 ----------
     git_branch = ""
@@ -171,17 +189,37 @@ def main():
 
     # 5時間レートリミット
     reset_str = time_until(rl_5h_resets) if rl_5h_resets else ""
-    sections.append(fmt("5h", float(rl_5h_pct or 0), reset_str))
+    sections.append(fmt("5h", safe_float(rl_5h_pct), reset_str))
 
     # 7日間レートリミット
     reset_str = time_until(rl_7d_resets) if rl_7d_resets else ""
-    sections.append(fmt("7d", float(rl_7d_pct or 0), reset_str))
+    sections.append(fmt("7d", safe_float(rl_7d_pct), reset_str))
 
     # gitブランチ
     sections.append(f"{DIM}⎇{RESET} {git_branch or '-'}")
 
-    # ---------- 出力 ----------
-    print(sep.join(sections), end="")
+    return sep.join(sections)
+
+
+def main():
+    # ---------- stdinからJSON読み込み ----------
+    try:
+        raw = sys.stdin.read()
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        print("parse error", end="")
+        return
+
+    if not isinstance(data, dict):
+        print("status err", end="")
+        return
+
+    # statusline は決して例外を漏らさない契約。render が想定外の入力で落ちても
+    # 最終フォールバックで安全な短文を出し、本体プロセスに非ゼロ exit を返さない。
+    try:
+        print(render(data), end="")
+    except Exception:
+        print("status err", end="")
 
 
 if __name__ == "__main__":

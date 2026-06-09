@@ -20,13 +20,38 @@ input="$(cat)"
 cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
 [ -z "$cmd" ] && exit 0
 
-# `gh pr create` 検知。block-gh-mutations.sh の border/env/flags パターンを流用し、
-# 文字列リテラルやチェイン中の gh も拾いつつ read-only サブコマンドの誤検知を避ける。
+LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[ -r "$LIB" ] || exit 0
+# shellcheck source=/dev/null
+. "$LIB"
+
+# `gh pr create` 検知。block-gh-mutations.sh と同じ border/env/flags ERE を、同じく
+# normalized_words_of_segment で正規化(トークン化 → 各 _strip_one_quote → 単一空白で再結合)
+# してから適用する。これで `gh pr "create"` / `"gh" pr create` のクォート付き素通り
+# (Knowledge/字句grep型hookはクォート付きフラグを取りこぼす の層 (b))を block-gh-mutations と
+# 対称に塞ぐ。normalized_words_of_segment の `read -r -a` は先頭行しか読まないため、cmd 全体を
+# 渡すと2行目以降の `gh pr create`(複数行コマンド)を取りこぼす(生 grep からの後退・F-004)。
+# 行で分割し各行を個別に正規化 → grep し、いずれか一致で検知する。
+#
+# 既知の限界(block-gh-mutations と同じ best-effort): 文字列リテラルや heredoc 本文中の
+# `| gh pr create` は BORDER がコマンド境界と区別できず誤検知しうる(block-gh-mutations.sh も
+# 同入力を同様に誤検知する受容済み限界)。pr-create は自動起動だが下流 poll-checks の atomic
+# mkdir lock で二重 watch にはならないので実害は低い。
 FLAGS='(-{1,2}[A-Za-z][A-Za-z0-9-]*(=\S+)?\s+([^-\s]\S*\s+)?)*'
 ENV='([A-Za-z_][A-Za-z0-9_]*=\S+\s+)*'
 BORDER='(^|[;&|(])[[:space:]]*'
 END='(\s|$|[;&|)])'
-echo "$cmd" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}pr\\s+create${END}" || exit 0
+matched=0
+while IFS= read -r line; do
+  normalized="$(normalized_words_of_segment "$line")"
+  if echo "$normalized" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}pr\\s+create${END}"; then
+    matched=1
+    break
+  fi
+done <<EOF
+$cmd
+EOF
+[ "$matched" -eq 1 ] || exit 0
 
 # PR 特定は現ブランチ基準(cwd 結合での cross-repo 誤判定を避ける。
 # Knowledge/pushゲートフックがプライマリrepo結合でcross-repo-push誤判定)。

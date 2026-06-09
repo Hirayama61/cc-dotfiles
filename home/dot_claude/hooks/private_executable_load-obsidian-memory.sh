@@ -35,6 +35,10 @@ MOC_MAX=800 # MOC 行数上限。Tier0 を実質定数に丸める
 INDEX_DIR="$VAULT/.index"
 MOC="$INDEX_DIR/MOC.md"
 mkdir -p "$INDEX_DIR"
+# 並行 SessionStart(複数セッション/worktree 同時 open)が同一 MOC へ直接 redirect すると
+# 切詰め途中のファイルを読みうる。temp へ書いて同一 FS 上で atomic rename に統一する。
+# mktemp 失敗時は temp 無しで従来どおり MOC へ直接書く(degrade=best-effort/exit 0 契約を保つ)。
+MOC_TMP="$(mktemp "$INDEX_DIR/.MOC.XXXXXX" 2>/dev/null || true)"
 {
   echo "# MOC(自動生成 / $(date +%F)${REPO_KEY:+ / repo=$REPO_KEY}) — Tier1 本文は Grep/Glob + [[wikilink]] で必要分だけ読む"
   # 除外: _README.md(フォルダ説明の足場でノイズ)
@@ -66,7 +70,12 @@ mkdir -p "$INDEX_DIR"
     meta="$(awk -F': ' '/^tags:|^project:/{printf "%s ",$2}' "$f")"
     printf -- "- [[%s]] %s%s\n" "$name" "${title:+$title }" "${meta:+($meta)}"
   done
-} | awk -v max="$MOC_MAX" 'NR<=max' >"$MOC" # 生成側を制限(head 不使用で SIGPIPE 回避)
+} | awk -v max="$MOC_MAX" 'NR<=max' >"${MOC_TMP:-$MOC}" # 生成側を制限(head 不使用で SIGPIPE 回避)
+
+# temp が取れた時のみ atomic rename。失敗時は temp を掃除し既存 MOC を温存する。
+if [[ -n "$MOC_TMP" ]]; then
+  mv -f "$MOC_TMP" "$MOC" 2>/dev/null || rm -f "$MOC_TMP" 2>/dev/null || true
+fi
 
 # --- Tier0 を additionalContext に注入 ---
 BODY="$(
