@@ -88,9 +88,12 @@ git_subcommand_of_segment() {
     # `_git_c_dir_of_segment` の glued 扱いを対称化する(M-2)。
     -C?*)
       i=$((i + 1)) ;;
-    # `--opt=value` 形式は1語スキップ(-c= は git が受け付けない形なので扱わない)。
+    # グルー型 `--opt=value`(-c= は git が受け付けない形なので扱わない)。グルー値が空白入り
+    # クォートで複数語に割れる場合に対応(CR-1)。グルー語自体を値語として `_skip_option_value`
+    # に渡せば、`--git-dir="/tmp/work tree/.git"` の未閉じクォートを閉じ語まで消費し、クォート
+    # 無しの通常値は1語スキップのままになる。
     --git-dir=* | --work-tree=* | --namespace=* | --exec-path=*)
-      i=$((i + 1)) ;;
+      i=$(_skip_option_value words "$n" "$i") ;;
     # 値を取らないグローバルフラグ。
     -p | --paginate | -P | --no-pager | --bare | --no-replace-objects | \
       --literal-pathspecs | --no-optional-locks | --html-path | --man-path | --info-path)
@@ -164,14 +167,26 @@ _strip_one_quote() {
 }
 
 # あるセグメント内の `git -C <dir>` の dir を返す(クォート1段除去済み)。無ければ空。
+# グローバルオプション位置の `-C` だけを見る。最初の非オプション語(サブコマンド)に達したら
+# 探索を止め、`git commit -m "fix -C hooks"` のような後続引数中の `-C` を拾わない(CR-2)。
+# git_subcommand_of_segment と対称: `git` まで進めてから値付きグローバルオプションの値も飛ばす。
 _git_c_dir_of_segment() {
   local seg="${1:-}"
   local -a words=()
   read -r -a words <<<"$seg"
   local n=${#words[@]}
+  [[ $n -eq 0 ]] && return 0
   local i=0
-  # `-C` フラグも quote-aware に探す(`git "-C" /x push` 対応)。git_subcommand_of_segment と
-  # 対称に各トークンを _strip_one_quote してから比較する。dir 値の strip は既存どおり維持。
+  # 先頭の `git` を見つけるまで進める(`sudo git ...` 等の prefix を許容)。
+  while [[ $i -lt $n ]]; do
+    case "$(_strip_one_quote "${words[$i]}")" in
+    git) i=$((i + 1)); break ;;
+    *) i=$((i + 1)) ;;
+    esac
+  done
+  [[ $i -ge $n ]] && return 0
+
+  # `-C` フラグも quote-aware に探す(`git "-C" /x push` 対応)。dir 値の strip は既存どおり維持。
   while [[ $i -lt $n ]]; do
     local w
     w="$(_strip_one_quote "${words[$i]}")"
@@ -180,15 +195,24 @@ _git_c_dir_of_segment() {
       if [[ $((i + 1)) -lt $n ]]; then
         _strip_one_quote "${words[$((i + 1))]}"
       fi
-      return 0
-      ;;
+      return 0 ;;
     # glued `-C<path>`(空白なし)。rest 非空なら即 dir、空(`-C`単独)は上の枝で次語(M-2)。
     -C?*)
       printf '%s' "${w#-C}"
-      return 0
-      ;;
+      return 0 ;;
+    # 値付きグローバルオプションの値も飛ばす(値が `-C` 様に化けるのを防ぐ)。F-002/CR-1 と対称。
+    -c | --git-dir | --work-tree | --namespace | --exec-path | --super-prefix)
+      i=$((i + 1))
+      i=$(_skip_option_value words "$n" "$i") ;;
+    --git-dir=* | --work-tree=* | --namespace=* | --exec-path=*)
+      i=$(_skip_option_value words "$n" "$i") ;;
+    -p | --paginate | -P | --no-pager | --bare | --no-replace-objects | \
+      --literal-pathspecs | --no-optional-locks | --html-path | --man-path | --info-path)
+      i=$((i + 1)) ;;
+    -*) i=$((i + 1)) ;;
+    # 非オプション語 = サブコマンド。ここで止めて後続の `-C` を拾わない(CR-2)。
+    *) return 0 ;;
     esac
-    i=$((i + 1))
   done
   return 0
 }
