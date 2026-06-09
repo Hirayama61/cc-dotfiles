@@ -10,7 +10,9 @@
 #
 # 解析は best-effort であり敵対防御ではない: 難読化(`g=git; $g push`・変数経由 dir・
 # eval)は素通る。安全 hook の意図は「正規 push を素通しつつ保護を維持」であり、悪意ある
-# 回避の遮断ではない。解決不能時は cwd フォールバック(= 既存挙動)で安全側に倒す。
+# 回避の遮断ではない。明示対象(-C/cd)が解決不能なら raw リテラルを返し(下流 git -C が
+# 到達不能なら fail-open=素通し)、明示対象が無い時のみ cwd フォールバック。fail-open は正規
+# push を止めない優先(誤ブロック回避)との trade-off で受容する。
 #
 # bash 3.2 互換: 連想配列(declare -A)・`grep -P`・`${var,,}` を使わない。正規表現は
 # ERE のみ・`[[:space:]]` を使い `\s`/`\b` を避ける(BSD grep / bash 3.2 の `[[ =~ ]]`)。
@@ -205,10 +207,25 @@ _abs_dir() {
   esac
 }
 
+# _abs_dir 失敗(実在しない dir 等)時の fallback。明示対象(-C/cd)は定義上 cwd ではないので
+# cwd へ倒さず raw リテラルを論理連結で返す(cwd 倒しは別ブランチ誤判定を生む)。物理正規化はしない。
+_raw_dir() {
+  local dir="${1:-}" base="${2:-}"
+  [[ -z "$dir" ]] && return 0
+  case "$dir" in
+  /*) printf '%s' "$dir" ;;
+  "~"/* | "~") printf '%s' "${dir/#\~/$HOME}" ;;
+  # base 空(cwd 不明)で `/$dir`(ルート基準)に化ける退行を防ぎ、相対のまま返す
+  # (下流が cwd 基準で解釈)。_abs_dir も base 空は cd 失敗で空を返し非ルート化で対称。
+  *) [[ -z "$base" ]] && { printf '%s' "$dir"; return 0; }
+     printf '%s' "${base%/}/$dir" ;;
+  esac
+}
+
 # push 実対象 working dir を導出する。
 # 規則(優先順): 対象サブコマンド(push/merge/commit)を含むセグメント内の `git -C <dir>`
 #   > コマンド全体で最初に現れる先頭 `cd <dir>` > <cwd>。
-# 相対は cwd 基準で解決。解決不能(存在しない dir 等)は <cwd> フォールバック(安全側)。
+# 相対は cwd 基準で解決。解決不能でも -C/cd の明示対象は raw リテラルを返し、明示対象が無い時のみ <cwd>。
 resolve_git_target_dir() {
   local cmd="${1:-}" cwd="${2:-$PWD}"
   local target=""
@@ -222,8 +239,11 @@ resolve_git_target_dir() {
     push | merge | commit)
       cdir="$(_git_c_dir_of_segment "$seg")"
       if [[ -n "$cdir" ]]; then
+        # -C は最優先・常に権威。解決不能でも raw を返し step2/cwd へ落とさない(誤判定防止)。
         target="$(_abs_dir "$cdir" "$cwd")"
-        [[ -n "$target" ]] && { printf '%s' "$target"; return 0; }
+        [[ -z "$target" ]] && target="$(_raw_dir "$cdir" "$cwd")"
+        printf '%s' "$target"
+        return 0
       fi
       ;;
     esac
@@ -237,8 +257,10 @@ resolve_git_target_dir() {
     [[ -z "$seg" ]] && continue
     cdir="$(_leading_cd_dir_of_segment "$seg")"
     if [[ -n "$cdir" ]]; then
+      # 解決成功なら物理パス、失敗なら raw で current を更新(据え置かず畳み続ける)。
       target="$(_abs_dir "$cdir" "$current")"
-      [[ -n "$target" ]] && current="$target"
+      [[ -z "$target" ]] && target="$(_raw_dir "$cdir" "$current")"
+      current="$target"
       continue
     fi
     case "$(git_subcommand_of_segment "$seg")" in
