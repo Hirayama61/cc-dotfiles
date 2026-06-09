@@ -52,7 +52,7 @@ Obsidian Vault 内の **repo スコープ Tasks** に書く:
 
 - `<repo>` = **現在の作業 repo の論理キー**(git toplevel の basename)。単一情報源
   `~/.claude/hooks/lib/resolve-repo-key.sh "$PWD"` で導出する(doc-gravity hook /
-  SessionStart MOC / obsidian-reviewer と同じ写像)。リゾルバが空を返す(非 git の
+  SessionStart ガイド注入 / obsidian-reviewer と同じ写像)。リゾルバが空を返す(非 git の
   vault 直編集中等)時だけ `Tasks/_misc/` に退避する。
 - サブディレクトリ名 = **日付プレフィックス + 日本語トピック**(例
   `2026-05-24-作業ログをvaultへ移行`)。一覧が repo ごとの時系列作業ログになる。
@@ -63,8 +63,8 @@ Obsidian Vault 内の **repo スコープ Tasks** に書く:
 - **全部残す**(完了後も削除しない。全セッション横断の時系列ログとして保持)。
 - macOS の日本語ファイル名は **NFC に統一**(`mv` 後に
   `python3 -c "import unicodedata"` で検証。NFD なら NFC 名へ付け直す)。
-- `Tasks/` は MOC / Obsidian グラフ / 全文検索から **隔離済み**(SessionStart hook の
-  MOC 生成対象外 + vault 設定で除外)。だから作業ログをいくら溜めても Claude の
+- `Tasks/` は Obsidian グラフ / 全文検索から **隔離済み**(SessionStart hook の注入対象外 +
+  vault 設定で除外)。だから作業ログをいくら溜めても Claude の
   コンテキストにも知識グラフにも載らない。再利用価値のある知見は従来どおり
   `Knowledge/` `Decisions/` 等へ昇華する(下記)。
 
@@ -79,11 +79,12 @@ Obsidian Vault 内の **repo スコープ Tasks** に書く:
 result.md の末尾に必ず `## 外部脳候補` セクションを置く。形式:
 
 - `- [folder] タイトル — 1行要約`(folder は `Knowledge` / `Decisions` / `Projects` /
-  `Preferences` のいずれか)の箇条書き、
+  `Preferences` / `Guides` のいずれか)の箇条書き、
 - 候補が無ければ `- なし` の1行のみ(`なし` が最も安いデフォルト回答。迷ったらこれ)。
 
 品質バー: **再利用可能 / 非自明 / 次回また調べ直すのを防ぐ** ものだけを候補にする。
 作業ログ(「ファイル X を触った」「テストを通した」式)は候補にしない。
+folder の使い分け: 運用知(テスト規約・実装注意点・落とし穴)は `Guides`、判断履歴は `Decisions`。
 
 ### 値する候補は自分で書く
 
@@ -91,15 +92,17 @@ result.md の末尾に必ず `## 外部脳候補` セクションを置く。形
 発火して書く**(書込先フォルダ・命名・frontmatter は skill の規約に従う)。OFM 記法
 (wikilink / callout / properties)の正確さは **`obsidian-markdown` skill** に従う。
 
+**ただし `Guides` 候補は delegate が直接書かない。** ガイド(運用知の現在状態)の
+書込は人間ゲート付き skill `guide-capture` の担当。`Guides` 候補は result.md の
+`## 外部脳候補` に申告するに留め、main が `guide-capture` で反映する。
+
 - **1知見 = 1ファイル**。並列 background delegate の同時書込衝突を避けるため、
   `Knowledge/` `Decisions/` の新規ノートで衝突しうるものはファイル名に時刻を含める
   (例 既存は `topic-subtopic.md` / `YYYY-MM-DD-topic.md` だが、衝突しうる新規は
   `YYYY-MM-DD-HHMMSS-topic.md` のように時刻を付すか、親への書き戻し委譲に回す)。
 - 共有ファイルへの追記(`mistakes.md` 等)は避ける(macOS に `flock` 無し。複数行の
   read-modify-write はロストアップデートしうる)。共有追記が要るものは親に委ねる。
-- 直書きした新規ノートは **同セッション中は `.index/MOC.md` に乗らない**。MOC 再生成は
-  SessionStart hook の専管で、**次回 SessionStart で索引化**される(直書き直後に同
-  セッションで MOC 経由参照しない限り実害なし)。
+- 直書きした新規ノートは索引化されない。参照は Grep/Glob + [[wikilink]] で行う。
 
 ## 外部脳からの読み(参考ノート + 非破壊の鮮度メンテ)
 
