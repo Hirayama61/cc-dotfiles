@@ -1,10 +1,8 @@
 ---
 name: guide-to-repo
 description: >-
-  vault の「生きたガイド」(~/obsidian/brain/Guides)の安定・共有可能な部分だけを
-  抜粋し、対象 repo の AGENTS.md へ一方向・オンデマンド・人間ゲート付きで投影する。
-  vault が source of truth、AGENTS.md は派生物(双方向同期しない)。
-  `/guide-to-repo`、「ガイドをリポに反映」等で起動する。
+  vault の生きたガイド(~/obsidian/brain/Guides)の安定・共有可能な部分を対象 repo の
+  AGENTS.md へ投影する。`/guide-to-repo`・「ガイドをリポに反映」等で起動する。
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion
 user-invocable: true
 ---

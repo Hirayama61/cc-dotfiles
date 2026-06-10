@@ -1,9 +1,7 @@
 ---
 name: codex-consult
 description: >-
-  行き詰まり時に別モデル(OpenAI Codex)へセカンドオピニオンを求める相談 skill。
-  問題状況の要約 + 試したこと + 関連コードをプロンプトに編んで Codex CLI に渡し、
-  別の視点を得る。self-review(レビュア)とは隔離方針が真逆で、ここでは**文脈を盛る**。
+  行き詰まり時に別モデル(OpenAI Codex CLI)へセカンドオピニオンを求める。
   「Codex に相談」「セカンドオピニオン」「別モデルの意見」、同一問題で複数回試して
   解決しない時、`/codex-consult` での起動で発火する。個人PC専用(codex 未導入なら skip)。
 user-invocable: true

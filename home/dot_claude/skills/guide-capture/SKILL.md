@@ -1,12 +1,9 @@
 ---
 name: guide-capture
 description: >-
-  外部脳の「生きたガイド」(~/obsidian/brain/Guides)へ運用知の現在状態を書く。
-  テスト規約 / 実装の注意点 / 落とし穴を、context(repo or 横断トピック)ごとの
-  ルートガイドに current-state として蒸留・蓄積する。Decisions(なぜ=履歴)とは
-  直交し、ここは「今こうする」の最新のみ。陳腐・矛盾は能動 prune、肥大は遅延分割。
-  書込は必ず diff 提示 → 人間承認のゲート付き。作業中に運用知を学んだ際の
-  proactive 提案、または `/guide-capture` 明示起動・「ガイドに書いて」で発火する。
+  外部脳の生きたガイド(~/obsidian/brain/Guides)へ運用知の現在状態を書く。
+  作業中に運用知を学んだ際の proactive 提案、または `/guide-capture`・「ガイドに書いて」
+  で発火する。書込は必ず diff 提示 → 人間承認のゲート付き。
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion
 user-invocable: true
 ---

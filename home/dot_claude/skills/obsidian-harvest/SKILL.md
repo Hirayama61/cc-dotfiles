@@ -1,13 +1,10 @@
 ---
 name: obsidian-harvest
 description: >-
-  外部脳(~/obsidian/brain)をリポジトリ単位で監査し、まだ Claude Code 設定に符号化
-  されていない知見(documented gap)と、まだ脳に無い繰り返す誤挙動(undocumented mistake)を
-  検知して hook / CLAUDE.md / settings / skill へ「昇格」させる改善計画と、Obsidian 整理
-  アクションを提案する。obsidian-memory(書き)の対になる収穫/昇格(読み→config化)側。
-  提案のみ・人間ゲート(適用や自動 commit はしない)。「外部脳を収穫」「ハーベスト」
-  「知見を config に昇格」「gap 監査」、`/obsidian-harvest` での起動で発火する。
-  ユーザー起動・オンデマンドの定期メンテ系スキル。
+  外部脳(~/obsidian/brain)をリポジトリ単位で監査し、未符号化の知見と繰り返す誤挙動を
+  hook / CLAUDE.md / settings / skill へ昇格させる改善計画を提案する。提案のみ・人間ゲート。
+  「外部脳を収穫」「ハーベスト」「知見を config に昇格」「gap 監査」、`/obsidian-harvest`
+  での起動で発火する。
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob, Agent, AskUserQuestion
 ---
