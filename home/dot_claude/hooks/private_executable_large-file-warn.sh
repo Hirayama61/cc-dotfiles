@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse(Edit|Write): 大きいファイル / 単一 Write の一括書き込みを警告のみで
+# PostToolUse(Edit|Write|MultiEdit): 大きいファイル / 単一 Write の一括書き込みを警告のみで
 # 可視化する(ブロックしない)。既存テストファイルへの一括 Write でテスト観点を無言で
 # 失う事故の上流予防として、肥大と全置換の規模を注意喚起に出す。
 #
@@ -16,17 +16,25 @@ file_path="$(echo "$input" | jq -r '.tool_input.file_path // empty')"
 [[ -f "$file_path" ]] || exit 0
 tool_name="$(echo "$input" | jq -r '.tool_name // empty')"
 
+# 巨大ファイル(50MB 超)は wc -l の全読みを避けてサイズだけで警告する
+# (hook が timeout まで I/O を占有しないため)。
+size="$(stat -f %z "$file_path" 2>/dev/null || echo 0)"
+if [[ "$size" =~ ^[0-9]+$ ]] && ((size > 50 * 1024 * 1024)); then
+  printf '%s' "ファイルが $((size / 1024 / 1024))MB あります。責務分割を検討してください。" |
+    jq -Rs '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:.}}' 2>/dev/null || true
+  exit 0
+fi
+
 line_count="$(wc -l < "$file_path" 2>/dev/null | tr -d ' ')" || exit 0
 [[ "$line_count" =~ ^[0-9]+$ ]] || exit 0
 
 warn=""
-if [[ "$line_count" -gt 500 ]]; then
-  warn="ファイルが ${line_count} 行あります(500 行超)。責務分割を検討してください。"
-fi
-# Write は既存ファイルを全置換する。PostToolUse では置換前の行数を取れないため、
-# 「Write かつ大行数」を全置換の近似シグナルとして観点喪失に注意喚起する。
+# Write は新規作成または既存ファイルの全置換。PostToolUse では置換前の状態を取れない
+# ため、「Write かつ大行数」を全置換の近似シグナルとして観点喪失に注意喚起する。
 if [[ "$tool_name" == "Write" && "$line_count" -gt 500 ]]; then
-  warn="${warn:+$warn }単一 Write で ${line_count} 行を一括書き込みしました。既存ファイルの全置換はテスト観点等を無言で失う恐れがあるため、差分が意図どおりか確認してください。"
+  warn="単一 Write で ${line_count} 行(500 行超)を一括書き込みしました。新規作成または既存ファイルの全置換であり、後者はテスト観点等を無言で失う恐れがあります。責務分割と差分の意図確認を検討してください。"
+elif [[ "$line_count" -gt 500 ]]; then
+  warn="ファイルが ${line_count} 行あります(500 行超)。責務分割を検討してください。"
 fi
 
 [[ -z "$warn" ]] && exit 0

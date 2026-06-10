@@ -12,14 +12,15 @@
 #
 # best-effort な抑止であり敵対防御ではない: 本文がコマンド文字列に現れないケース
 # ── `--body-file`/`-F`(ファイル経由)・`-m` 無し `git commit`(エディタ起動)・
-# `$(...)`/heredoc 展開前 ── は本文が見えず素通る。`split_git_segments` は env 値内の
-# `&;|` をクォート無視で誤分割しうる(検出漏れ方向 = fail-open)。これらは既存 hook 群と
-# 同じく「うっかり silent punting」の抑止が目的で、意図的な回避の遮断ではない。
+# `$(...)`/heredoc 展開前 ── は本文が見えず素通る。`split_git_segments` は env 値内や
+# 本文中の `&;|()` をクォート無視で誤分割し、後半のフレーズを取りこぼしうる(検出漏れ
+# 方向 = fail-open)。クォートで囲んだフラグ(`"--body"`)の本文抽出も対象外。これらは
+# 既存 hook 群と同じく「うっかり silent punting」の抑止が目的で、意図的な回避の遮断ではない。
 set -euo pipefail
 
 command -v jq &>/dev/null || exit 0
 input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
+cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty')"
 [[ -z "$cmd" ]] && exit 0
 
 LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
@@ -27,11 +28,18 @@ LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
 # shellcheck source=/dev/null
 . "$LIB"
 
+# heredoc 本文(ドキュメント書き出し中のコマンド例等)への誤爆を防ぐ(dotfiles#74 と同作法)。
+if type strip_heredocs >/dev/null 2>&1; then
+  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
+  [[ -n "$stripped" ]] && cmd="$stripped"
+fi
+
 # 日本語 defer フレーズの grep を確実にするためロケールを固定(旧 block-defer-phrases 踏襲)。
 export LC_ALL=en_US.UTF-8
 
 # defer フレーズ(JP/EN)。抽出した本文に対し grep -iE で照合する。
-DEFER_PHRASES='後で対応|あとで対応|次のPRで|別PRで|別のPRで|一旦スキップ|いったんスキップ|時間があれば|余裕があれば|will fix later|fix later|in a follow-up|follow-up PR|followup PR|punt|defer to|out of scope'
+# `defer to X`(X に従う)は正当な技術表現のため、先送りの語形だけに絞る。
+DEFER_PHRASES='後で対応|あとで対応|次のPRで|別PRで|別のPRで|一旦スキップ|いったんスキップ|時間があれば|余裕があれば|will fix later|fix later|in a follow-up|follow-up PR|followup PR|punt|defer (to|until) (later|next|the next|a follow)|out of scope'
 
 # gh サブコマンド検出の字句は block-gh-mutations.sh と同一(quote-aware・whole-segment ERE)。
 # サブコマンド前のグローバルフラグ / 前置 env 代入 / コマンド境界を許容する。
@@ -46,8 +54,8 @@ _is_target_segment() {
   local seg="${1:-}" norm
   [[ "$(git_subcommand_of_segment "$seg")" == "commit" ]] && return 0
   norm="$(normalized_words_of_segment "$seg")"
-  echo "$norm" | grep -qE "${BORDER}${ENV}gh\s+${FLAGS}pr\s+(comment|review)${END}" && return 0
-  echo "$norm" | grep -qE "${BORDER}${ENV}gh\s+${FLAGS}issue\s+comment${END}" && return 0
+  printf '%s\n' "$norm" | grep -qE "${BORDER}${ENV}gh\s+${FLAGS}pr\s+(comment|review)${END}" && return 0
+  printf '%s\n' "$norm" | grep -qE "${BORDER}${ENV}gh\s+${FLAGS}issue\s+comment${END}" && return 0
   return 1
 }
 
@@ -60,15 +68,14 @@ _body_text_of_segment() {
   local seg="${1:-}" out="" m val
   while IFS= read -r m; do
     [[ -z "$m" ]] && continue
-    # m 例: --body "後で対応" / -m='fix later' / --message bareword
-    # フラグ直後の最初の = か空白より後ろを値とする。
-    val="${m#*[=[:space:]]}"
-    # 値前後のクォート1段を除去。
+    # m 例: --body "後で対応" / -m='fix later' / -am "msg"(束ねフラグ)/ -m"密着クォート"
+    # フラグ部を剥がして値を取り出し、前後のクォート1段を除去する。
+    val="$(printf '%s' "$m" | sed -E 's/^(-[A-Za-z]*m|--message|-[A-Za-z]*b|--body)(=|[[:space:]]+)?//')"
     val="${val#[\"\']}"
     val="${val%[\"\']}"
     out="${out:+$out }$val"
   done < <(printf '%s\n' "$seg" |
-    grep -oE "(-m|--message|-b|--body)(=|[[:space:]]+)(\"[^\"]*\"|'[^']*'|[^[:space:]]+)")
+    grep -oE "(-[A-Za-z]*m|--message|-[A-Za-z]*b|--body)((=|[[:space:]]+)(\"[^\"]*\"|'[^']*'|[^[:space:]]+)|(\"[^\"]*\"|'[^']*'))")
   printf '%s' "$out"
 }
 
@@ -81,14 +88,16 @@ while IFS= read -r seg; do
   [[ -z "$body" ]] && continue
 
   # 追跡参照(#番号)が本文にあれば honest な先送りとして通す。
-  echo "$body" | grep -qE '#[0-9]+' && continue
+  printf '%s\n' "$body" | grep -qE '#[0-9]+' && continue
   # lib の括弧分割(dotfiles#72)により本文中の「(#123 で追跡)」が別セグメントへ
-  # 割れて body から消えるため、raw cmd 全体への fallback 照合で取りこぼしを防ぐ
-  # (チェーン中の別コマンドの #参照も拾う緩み = fail-open 方向で受容)。
-  printf '%s' "$cmd" | grep -qE '#[0-9]+' && continue
+  # 割れて body から消えるため、raw cmd への fallback 照合で取りこぼしを防ぐ。
+  # パターンを「(#番号」に絞るのは、裸の #番号 だと hex 色コード・シェルコメント・
+  # チェーン中の別コマンドで defer 検出が恒常無効化されるため(動機ケース限定の緩和)。
+  printf '%s' "$cmd" | grep -qE '\(#[0-9]+' && continue
 
-  if echo "$body" | grep -qiE "$DEFER_PHRASES"; then
-    matched="$(echo "$body" | grep -ioE "$DEFER_PHRASES" | head -n1)"
+  if printf '%s\n' "$body" | grep -qiE "$DEFER_PHRASES"; then
+    matched="$(printf '%s\n' "$body" | grep -ioE "$DEFER_PHRASES" || true)"
+    matched="${matched%%$'\n'*}"
     echo "ブロック: コメント/コミット本文の先送り表現「${matched}」を検出。今のスコープで解決するか、#番号で追跡参照を伴わせること。" >&2
     exit 2
   fi
