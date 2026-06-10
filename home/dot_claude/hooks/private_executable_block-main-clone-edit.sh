@@ -24,7 +24,7 @@ set -euo pipefail
 
 # git 判定の核(--git-dir / --git-common-dir)を環境変数注入で狂わされないよう無効化する。
 # 混線したシェルや export が GIT_DIR 等を持ち込むと、main clone 本体の編集を linked worktree と
-# 誤判定してブロックをすり抜けられる(bgIsolation:none 下で本 hook が混線防止の最後の砦になるため)。
+# 誤判定してブロックをすり抜けられる(bgIsolation 隔離が効かない経路でも本 hook が混線防止の最後の砦になるため)。
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 
 command -v jq >/dev/null 2>&1 || exit 0
