@@ -33,12 +33,32 @@ case "$fp" in
 esac
 
 # パス正規化: git --show-toplevel は canonical を返すが fp は非正規化でありうる
-# (macOS の /tmp→/private/tmp 等)。dir を canonical 化し canonical_fp を以後の判定に使う。
-# 親ディレクトリが未存在等で canonical 化できなければ安全側で素通し。
+# (macOS の /tmp→/private/tmp 等)。実在する最近接の祖先(anchor)を canonical 化し、
+# 未存在分のパス成分を連結して canonical_fp を組む。Write は親ディレクトリを自動作成
+# するため、親未存在を素通しにすると新規ディレクトリへの1ファイル目が抜ける(dotfiles#76)。
 dir="$(dirname -- "$fp")"
 base="$(basename -- "$fp")"
-cdir="$(cd "$dir" 2>/dev/null && pwd -P || true)"
-[[ -z "$cdir" ]] && exit 0
+anchor=""
+pending=""
+probe="$dir"
+while :; do
+  anchor="$(cd "$probe" 2>/dev/null && pwd -P || true)"
+  [[ -n "$anchor" ]] && break
+  [[ -z "$probe" || "$probe" == "/" ]] && break
+  pending="$(basename -- "$probe")${pending:+/$pending}"
+  probe="$(dirname -- "$probe")"
+done
+[[ -z "$anchor" ]] && exit 0
+# 未存在成分は canonical 化を経ないため、`..`/`.` を含むと除外パターン判定を字面で
+# 外せる(docs/../x.md 等)。未作成ディレクトリ越しの `..` に正当な用途は無いので
+# 素通しではなくブロック側に倒す。
+case "/$pending/" in
+*/../* | */./*)
+  echo "ブロック: 未作成ディレクトリ越しの ../ を含む新規 .md パスは判定不能のため禁止: $fp" >&2
+  exit 2
+  ;;
+esac
+cdir="$anchor${pending:+/$pending}"
 cfp="$cdir/$base"
 
 # スコープ除外(いずれか該当で素通し)。canonical_fp で評価する:
@@ -54,7 +74,7 @@ esac
 # 既存ファイルの上書きは常に許可(新規生成だけブロック)。
 [[ -e "$cfp" ]] && exit 0
 
-toplevel="$(git -C "$cdir" rev-parse --show-toplevel 2>/dev/null || true)"
+toplevel="$(git -C "$anchor" rev-parse --show-toplevel 2>/dev/null || true)"
 [[ -z "$toplevel" ]] && exit 0
 
 # repo 相対パス(toplevel も --show-toplevel で canonical なので cfp と整合)。
@@ -76,7 +96,7 @@ case "$rel" in
 docs/* | .github/*) exit 0 ;;
 esac
 
-repo_key="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$cdir" 2>/dev/null || true)"
+repo_key="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$anchor" 2>/dev/null || true)"
 : "${repo_key:=$(basename -- "$toplevel")}"
 
 {
