@@ -5,7 +5,7 @@ description: >-
   検出する。self-review skill が差分のみを渡して並列起動する(実装意図・会話履歴は
   渡さない=コンテキスト隔離)。レポートのみ出力し、コードの修正はしない。常に網羅的。
 tools: Read, Grep, Glob, Bash
-effort: xhigh
+effort: xhigh # モデルの推論エフォート。effort 引数による絞り込み(本文)とは別物
 ---
 
 # security-reviewer — セキュリティレビュー専門エージェント
