@@ -180,6 +180,15 @@
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/load-obsidian-memory.sh"
           }
         ]
+      },
+      {
+        "matcher": "clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/rearm-coding-standards.sh"
+          }
+        ]
       }
     ],
     "WorktreeCreate": [

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # inject-coding-standards.sh — PreToolUse hook (Edit|Write|MultiEdit|NotebookEdit)
 #
-# コード編集の瞬間にコーディング規約を additionalContext として注入する。
+# コンテキストごとに初回のコード編集でコーディング規約を additionalContext として注入する。
 # 注入順 = ① グローバル正典(~/.claude/coding-standards.md)→ ② 作業 repo 固有規約。
 # additionalContext の出力形は pipe-stage-permissions.sh を流用。
 #
@@ -36,10 +36,27 @@ STD="$HOME/.claude/coding-standards.md"
 input="$(cat || true)"
 fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null || true)"
 
+# 同一コンテキストへは初回のみ注入する(dotfiles#62)。キーは transcript_path 基準
+# (session_id は subagent と共有され、delegate への初回注入まで抑止される落とし穴)。
+# キー導出は rearm-coding-standards.sh(clear|compact でフラグ破棄)と完全一致させる。
+# キーが取れない時は常時注入に倒す(fail-open)。
+ctx="$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"
+ctx="$(basename "${ctx%.jsonl}" 2>/dev/null || true)"
+flag_dir="/tmp/claude-sessions"
+seen() { [[ -n "$ctx" && -f "$flag_dir/cs-injected-${ctx}--${1}" ]]; }
+mark() { [[ -z "$ctx" ]] && return 0; { mkdir -p "$flag_dir" && touch "$flag_dir/cs-injected-${ctx}--${1}"; } 2>/dev/null || true; }
+
 # 注入本文を組み立てる。グローバル正典 → repo 固有規約の順で連結。
 # 読取失敗を握って fail-open(best-effort 注入の不変条件を維持)。
+# mark は出力成功後に行う(出力前に立てると jq 失敗時にフラグだけ残り注入が欠落する)。
 body=""
-[[ -f "$STD" ]] && body="$(cat "$STD" 2>/dev/null || true)"
+did_global=0
+did_repo=0
+rk=""
+if [[ -f "$STD" ]] && ! seen global; then
+  body="$(cat "$STD" 2>/dev/null || true)"
+  [[ -n "$body" ]] && did_global=1
+fi
 
 # 編集対象ファイルの git toplevel 直下の AGENTS.md / CLAUDE.md を辿る。
 # 相対パスは hook の cwd 依存で壊れるため絶対パスのときだけ(block-main-clone-edit 同様)。
@@ -60,7 +77,11 @@ if [[ "$fp" = /* ]]; then
       repo_std="$f"
       break
     done
-    if [[ -n "$repo_std" ]]; then
+    # repo key は単一情報源 resolve-repo-key.sh で導出する(flat worktree では
+    # toplevel の basename が branch leaf 名になり、別 repo 同士で衝突するため)。
+    rk="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$root" 2>/dev/null || true)"
+    [[ -z "$rk" ]] && rk="$(basename "$root")"
+    if [[ -n "$repo_std" ]] && ! seen "$rk"; then
       # コンテキスト肥大と間接 prompt injection の影響範囲を抑えるためサイズ上限を課す。
       repo_body="$(head -c 20000 "$repo_std" 2>/dev/null || true)"
       if [[ -n "$repo_body" ]]; then
@@ -75,6 +96,7 @@ $repo_body"
         else
           body="$repo_block"
         fi
+        did_repo=1
       fi
     fi
   fi
@@ -85,11 +107,15 @@ fi
 
 # jq へは stdin 経由で渡す(--arg だと規約が大きいとき ARG_MAX を超えて jq 起動に
 # 失敗し fail-open を破りうる。-Rs で stdin 全体を 1 文字列としてエンコードする)。
-printf '%s' "$body" | jq -Rs '{
+out="$(printf '%s' "$body" | jq -Rs '{
   hookSpecificOutput: {
     hookEventName: "PreToolUse",
     additionalContext: .
   }
-}' 2>/dev/null || exit 0
+}' 2>/dev/null || true)"
+[[ -z "$out" ]] && exit 0
+printf '%s\n' "$out"
+[[ "$did_global" == 1 ]] && mark global
+[[ "$did_repo" == 1 && -n "$rk" ]] && mark "$rk"
 
 exit 0
