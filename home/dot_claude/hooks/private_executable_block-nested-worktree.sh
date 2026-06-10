@@ -6,13 +6,23 @@
 # 対象: git worktree add / gwq add / claude --worktree(-w)。
 # 非対象: bin/wt.sh 経由の呼び出し(スクリプト内部の git worktree add は子プロセスで
 #         この hook には見えない)。delegate の isolation:"worktree" は Bash コマンド
-#         ではないので誤爆しない。
+#         ではないので誤爆しない。heredoc 本文(issue 本文中のコマンド例等)は
+#         strip_heredocs で除去してから照合する(dotfiles#74)。
 set -euo pipefail
 
 command -v jq &>/dev/null || exit 0
 input="$(cat)"
 cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
 [[ -z "$cmd" ]] && exit 0
+
+# lib が無い環境では素の cmd で従来どおり判定する(ブロック能力を落とさない)。
+LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+if [[ -r "$LIB" ]]; then
+  # shellcheck source=/dev/null
+  . "$LIB"
+  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
+  [[ -n "$stripped" ]] && cmd="$stripped"
+fi
 
 # wt.sh 経由は許可(誤ブロック防止)。
 if echo "$cmd" | grep -qE '(^|/)wt\.sh(\s|$)'; then
