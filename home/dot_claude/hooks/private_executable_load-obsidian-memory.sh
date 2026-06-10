@@ -15,6 +15,30 @@
 # 想定外のエラーはすべて exit 0 で素通り(コンテキスト注入は best-effort)。
 set -euo pipefail
 
+# Tier0 各パーツの注入上限(バイト)。ルートを小さく保つ規律が破れても注入を有界にする。
+TIER0_MAX_BYTES=20000
+
+# stdin のテキストを max バイトに截断して出力し、上限到達/接近で警告 callout を付す。
+# Preferences とガイドの両パーツを共通化し、注入の有界化を統一する。
+# 截断は here-string(`head -c <<<`)で行う: 外部プロデューサ無しで SIGPIPE が起きず、
+# `set -euo pipefail` 下でも printf|head の早期 close による中断(141)を避けられる。
+# 引換えに here-string は末尾改行を1個増やすが、注入本文では許容する。
+# バイト計測は `wc -c`(${#var} は文字数で多バイト日本語のバイト上限判定に不正)。
+emit_capped() {
+  local label="$1" action_hint="$2" max="$3" text bytes soft
+  text="$(cat)"
+  bytes="$(printf '%s' "$text" | wc -c | tr -d ' ')"
+  soft=$(( max * 75 / 100 ))
+  head -c "$max" <<<"$text"
+  if (( bytes >= max )); then
+    echo
+    echo "> [!warning] ${label}: 注入上限 ${max}B に到達し一部を截断した(以降は欠落)。${action_hint}。"
+  elif (( bytes >= soft )); then
+    echo
+    echo "> [!warning] ${label}: 注入上限に接近(${bytes}/${max}B)。${action_hint}。"
+  fi
+}
+
 command -v jq &>/dev/null || exit 0
 
 # cwd から現在 repo の論理キーを導出し、注入するルートガイドを現在 repo に対応づける。
@@ -46,13 +70,18 @@ fi
 BODY="$(
   echo "# 永続記憶(外部脳)Tier0 — 自動ロード。読込手順は hook が代行済み"
   echo "## Preferences(好み・作業スタイル)"
-  # _README.md は除外: フォルダ説明の足場であり毎セッション注入する価値がない
-  find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f -exec cat {} + 2>/dev/null || true
+  # _README.md は除外: フォルダ説明の足場であり毎セッション注入する価値がない。
+  # 複数ファイルの連結順を LC_ALL=C sort で固定し、截断結果を決定的にする。
+  pref_files="$(find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f 2>/dev/null | LC_ALL=C sort || true)"
+  if [[ -n "$pref_files" ]]; then
+    printf '%s\n' "$pref_files" | tr '\n' '\0' | xargs -0 cat 2>/dev/null \
+      | emit_capped "Preferences" "上限到達なら link 化(Phase2)を検討" "$TIER0_MAX_BYTES"
+  fi
   if [[ -n "$GUIDE" ]]; then
     echo
     echo "## 生きたガイド($REPO_KEY)— 最新の運用知。詳細サブは [[link]]/Grep でオンデマンド"
-    # 注入量の安全上限。ルートを小さく保つ規律が破れても注入を有界にする。
-    head -c 20000 "$GUIDE" 2>/dev/null || true
+    cat "$GUIDE" 2>/dev/null \
+      | emit_capped "生きたガイド($REPO_KEY)" "root を削って小さく保て" "$TIER0_MAX_BYTES"
   fi
 )"
 
