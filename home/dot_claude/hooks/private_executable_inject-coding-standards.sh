@@ -36,11 +36,10 @@ STD="$HOME/.claude/coding-standards.md"
 input="$(cat || true)"
 fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null || true)"
 
-# 同一コンテキストへは初回のみ注入する(dotfiles#62。毎編集の反復注入は規約遵守率に
-# 効かずトークンを浪費するため)。キーは transcript_path 基準: subagent は独立
-# コンテキスト=別 transcript を持つので、session_id をキーにすると delegate への
-# 初回注入まで抑止してしまう。compact 時は rearm-coding-standards.sh がフラグを
-# 破棄して再注入させる。キーが取れない時は常時注入に倒す(fail-open)。
+# 同一コンテキストへは初回のみ注入する(dotfiles#62)。キーは transcript_path 基準
+# (session_id は subagent と共有され、delegate への初回注入まで抑止される落とし穴)。
+# キー導出は rearm-coding-standards.sh(clear|compact でフラグ破棄)と完全一致させる。
+# キーが取れない時は常時注入に倒す(fail-open)。
 ctx="$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"
 ctx="$(basename "${ctx%.jsonl}" 2>/dev/null || true)"
 flag_dir="/tmp/claude-sessions"
@@ -49,10 +48,14 @@ mark() { [[ -z "$ctx" ]] && return 0; { mkdir -p "$flag_dir" && touch "$flag_dir
 
 # 注入本文を組み立てる。グローバル正典 → repo 固有規約の順で連結。
 # 読取失敗を握って fail-open(best-effort 注入の不変条件を維持)。
+# mark は出力成功後に行う(出力前に立てると jq 失敗時にフラグだけ残り注入が欠落する)。
 body=""
+did_global=0
+did_repo=0
+rk=""
 if [[ -f "$STD" ]] && ! seen global; then
   body="$(cat "$STD" 2>/dev/null || true)"
-  [[ -n "$body" ]] && mark global
+  [[ -n "$body" ]] && did_global=1
 fi
 
 # 編集対象ファイルの git toplevel 直下の AGENTS.md / CLAUDE.md を辿る。
@@ -74,7 +77,10 @@ if [[ "$fp" = /* ]]; then
       repo_std="$f"
       break
     done
-    rk="$(basename "$root")"
+    # repo key は単一情報源 resolve-repo-key.sh で導出する(flat worktree では
+    # toplevel の basename が branch leaf 名になり、別 repo 同士で衝突するため)。
+    rk="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$root" 2>/dev/null || true)"
+    [[ -z "$rk" ]] && rk="$(basename "$root")"
     if [[ -n "$repo_std" ]] && ! seen "$rk"; then
       # コンテキスト肥大と間接 prompt injection の影響範囲を抑えるためサイズ上限を課す。
       repo_body="$(head -c 20000 "$repo_std" 2>/dev/null || true)"
@@ -90,7 +96,7 @@ $repo_body"
         else
           body="$repo_block"
         fi
-        mark "$rk"
+        did_repo=1
       fi
     fi
   fi
@@ -101,11 +107,15 @@ fi
 
 # jq へは stdin 経由で渡す(--arg だと規約が大きいとき ARG_MAX を超えて jq 起動に
 # 失敗し fail-open を破りうる。-Rs で stdin 全体を 1 文字列としてエンコードする)。
-printf '%s' "$body" | jq -Rs '{
+out="$(printf '%s' "$body" | jq -Rs '{
   hookSpecificOutput: {
     hookEventName: "PreToolUse",
     additionalContext: .
   }
-}' 2>/dev/null || exit 0
+}' 2>/dev/null || true)"
+[[ -z "$out" ]] && exit 0
+printf '%s\n' "$out"
+[[ "$did_global" == 1 ]] && mark global
+[[ "$did_repo" == 1 && -n "$rk" ]] && mark "$rk"
 
 exit 0
