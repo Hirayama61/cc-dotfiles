@@ -49,6 +49,15 @@ while :; do
   probe="$(dirname -- "$probe")"
 done
 [[ -z "$anchor" ]] && exit 0
+# 未存在成分は canonical 化を経ないため、`..`/`.` を含むと除外パターン判定を字面で
+# 外せる(docs/../x.md 等)。未作成ディレクトリ越しの `..` に正当な用途は無いので
+# 素通しではなくブロック側に倒す。
+case "/$pending/" in
+*/../* | */./*)
+  echo "ブロック: 未作成ディレクトリ越しの ../ を含む新規 .md パスは判定不能のため禁止: $fp" >&2
+  exit 2
+  ;;
+esac
 cdir="$anchor${pending:+/$pending}"
 cfp="$cdir/$base"
 
