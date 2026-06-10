@@ -2,7 +2,8 @@
 name: obsidian-harvest
 description: >-
   外部脳(~/obsidian/brain)をリポジトリ単位で監査し、未符号化の知見と繰り返す誤挙動を
-  hook / CLAUDE.md / settings / skill へ昇格させる改善計画を提案する。提案のみ・人間ゲート。
+  hook / CLAUDE.md / settings / skill へ昇格させる改善計画と Obsidian 整理アクションを提案する。
+  提案のみ・人間ゲート。
   「外部脳を収穫」「ハーベスト」「知見を config に昇格」「gap 監査」、`/obsidian-harvest`
   での起動で発火する。
 user-invocable: true

@@ -1,9 +1,9 @@
 ---
 name: guide-capture
 description: >-
-  外部脳の生きたガイド(~/obsidian/brain/Guides)へ運用知の現在状態を書く。
+  外部脳の生きたガイド(~/obsidian/brain/Guides)へ運用知(テスト規約・実装の注意点・落とし穴)の現在状態を書く。
   作業中に運用知を学んだ際の proactive 提案、または `/guide-capture`・「ガイドに書いて」
-  で発火する。書込は必ず diff 提示 → 人間承認のゲート付き。
+  で発火する。運用知は即時記録の obsidian-memory でなくこちら。書込は必ず diff 提示 → 人間承認のゲート付き。
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion
 user-invocable: true
 ---

@@ -2,7 +2,7 @@
 name: guide-to-repo
 description: >-
   vault の生きたガイド(~/obsidian/brain/Guides)の安定・共有可能な部分を対象 repo の
-  AGENTS.md へ投影する。`/guide-to-repo`・「ガイドをリポに反映」等で起動する。
+  AGENTS.md へ diff 承認(人間ゲート)付きで投影する。`/guide-to-repo`・「ガイドをリポに反映」等で起動する。
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion
 user-invocable: true
 ---

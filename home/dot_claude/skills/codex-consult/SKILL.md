@@ -1,7 +1,7 @@
 ---
 name: codex-consult
 description: >-
-  行き詰まり時に別モデル(OpenAI Codex CLI)へセカンドオピニオンを求める。
+  行き詰まり時に別モデル(OpenAI Codex CLI)へセカンドオピニオンを求める(問題要約と関連コードを外部 CLI へ渡す)。
   「Codex に相談」「セカンドオピニオン」「別モデルの意見」、同一問題で複数回試して
   解決しない時、`/codex-consult` での起動で発火する。個人PC専用(codex 未導入なら skip)。
 user-invocable: true

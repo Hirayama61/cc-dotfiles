@@ -1,7 +1,8 @@
 ---
 name: ci-watch
 description: >-
-  push 後の CodeRabbit/CI 評価隊。`gh pr create` hook が自動起動し、`git push` hook がナッジする。
+  push 後の CodeRabbit/CI 評価隊(assess-only。返信・適用はしない)。
+  `gh pr create` hook が自動起動し、`git push` hook がナッジする。
   「CI 監視して」「CodeRabbit 確認して」、`/ci-watch [PR番号]` での起動、またはオーケストレータが
   push 後に同一セッションで実行する。
 user-invocable: true
