@@ -20,12 +20,17 @@ TIER0_MAX_BYTES=20000
 
 # stdin を max バイトで截断して出力し、上限到達/接近(75%)で警告 callout を付す。
 # Preferences とガイドの有界化を共通化する(PR #35 の設計を後継)。stdin からは
-# max+1 バイトしか読まないためメモリも有界(供給側の SIGPIPE(141)は呼び出し側
-# パイプラインの || true で吸収)。截断で割れた UTF-8 末尾は iconv -c が除去する
-# (${var:0:N} はロケール依存で不可)。iconv 不在なら截断のみで素通し。
+# max+1 バイトしか読まないためメモリも有界。供給側の非ゼロ終了(SIGPIPE 由来の 141 /
+# xargs の 1 等)は呼び出し側パイプラインの || true で吸収する。截断で割れた UTF-8
+# 末尾は iconv -c が除去(${var:0:N} はロケール依存で不可)。iconv 不在なら截断のみで
+# 素通し(その場合の割れ末尾の扱いは最終段 jq に委ねる。失敗しても fail-open)。
 emit_capped() {
   local label="$1" action_hint="$2" max="$3" text bytes out
-  text="$(head -c "$((max + 1))" 2>/dev/null || true)"
+  [[ "$max" =~ ^[0-9]+$ ]] || return 0
+  # 番兵 x で末尾改行を保存する(コマンド置換は末尾改行を剥がすため、max+1 バイト目が
+  # 改行だと bytes が max 以下に縮み、截断したのに到達 callout が出ない偽陰性になる)。
+  text="$(head -c "$((max + 1))" 2>/dev/null || true; printf x)"
+  text="${text%x}"
   bytes="$(printf '%s' "$text" | wc -c | tr -d ' ')"
   if command -v iconv >/dev/null 2>&1; then
     out="$(printf '%s' "$text" | head -c "$max" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || true)"
