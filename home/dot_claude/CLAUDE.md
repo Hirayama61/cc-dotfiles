@@ -46,8 +46,10 @@ hook で守れる事項は書かない。
   単独作業はオーケストレーション節どおりメイン直接でよい。
 - **戻しにくい変更は worktree で**: 履歴改変・大量書換など影響の大きい変更は、単独作業でも worktree に隔離してから行う。
 - **worktree 作成は `~/ghq/github.com/Hirayama61/dotfiles/bin/wt.sh` 経由のみ**: どのリポからもこの絶対パスで呼ぶ。
-  これは Bash で直接 worktree を作る操作(git worktree add / gwq add)への規約。
-  `isolation: "worktree"` 等のネイティブ worktree は WorktreeCreate hook が同じ flat 配置へ誘導するため、自粛せず使ってよい。
+  これは Bash で直接 worktree を作る操作(git worktree add / gwq add / claude --worktree)への規約。
+  `isolation: "worktree"`(Agent ツール経由)は WorktreeCreate hook が同じ flat 配置へ誘導するため、自粛せず使ってよい。
+  hook が使えない環境(jq / dotfiles リポ / origin 不在)では既定の `<repo>/.claude/worktrees/` 配置に戻る。
+  worktree 隔離は混線防止であり権限境界ではない。
 - **1 worktree = 1 ブランチ**: 同じブランチの続きは既存 worktree を使う。
   新規作業前にこの分岐をまず判断する。
 - **案件 = Epic 配下の複数タスク**: 複数ブランチが要るなら epic ブランチを派生させタスクごとの worktree を並べる。
