@@ -17,9 +17,8 @@ cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
 
 # lib が無い環境では素の cmd で従来どおり判定する(ブロック能力を落とさない)。
 LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
-if [[ -r "$LIB" ]]; then
-  # shellcheck source=/dev/null
-  . "$LIB"
+# shellcheck source=/dev/null
+if [[ -r "$LIB" ]] && . "$LIB" 2>/dev/null; then
   stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
   [[ -n "$stripped" ]] && cmd="$stripped"
 fi

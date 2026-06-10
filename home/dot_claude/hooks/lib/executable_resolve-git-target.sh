@@ -197,25 +197,29 @@ normalized_words_of_segment() {
 }
 
 # コマンド文字列から heredoc 本文を除去して返す(dotfiles#74)。
-# `<<TAG` / `<<-TAG` / `<<'TAG'` / `<<"TAG"` の開始を検出し、終端 TAG 行(<<- は行頭
-# タブ許容)までの本文行を落とす。字句 grep 型 hook が heredoc 内の説明文(issue 本文中の
-# コマンド例等)に誤爆するのを防ぐ。herestring(<<<)は \001 に退避して誤検出しない。
-# 1行内の複数 heredoc は最初のタグのみ追跡する best-effort(取りこぼしは fail-open 方向)。
+# `<<TAG` / `<<-TAG` / `<<'TAG'` / `<<"TAG"` / `<<\TAG` の開始を検出し、終端 TAG 行
+# (`<<-` のみ行頭タブ許容)までの本文行を落とす。字句 grep 型 hook が heredoc 内の
+# 説明文(issue 本文中のコマンド例等)に誤爆するのを防ぐ。herestring(<<<)は \001 に
+# 退避して誤検出しない。既知の限界(best-effort で受容):
+#   - 1行内の複数 heredoc は最初のタグのみ追跡(漏れた本文は照合対象に残る=ブロック過剰側)
+#   - タグは [A-Za-z_][A-Za-z_0-9]* のみ(`<<END-OF` は部分捕捉し以降を飲み込む=fail-open)
+#   - 算術シフト等の heredoc でない `<<`+英字も開始と誤認しうる(fail-open)
 strip_heredocs() {
   printf '%s\n' "${1:-}" | awk '
     skip {
       line = $0
-      sub(/^\t+/, "", line)
+      if (dash) sub(/^\t+/, "", line)
       if (line == tag) skip = 0
       next
     }
     {
       probe = $0
       gsub(/<<</, "\001", probe)
-      if (match(probe, /<<-?[[:space:]]*["'\'']?[A-Za-z_][A-Za-z_0-9]*/)) {
+      if (match(probe, /<<-?[[:space:]]*["'\''\\]?[A-Za-z_][A-Za-z_0-9]*/)) {
         tag = substr(probe, RSTART, RLENGTH)
+        dash = (substr(tag, 3, 1) == "-")
         sub(/^<<-?[[:space:]]*/, "", tag)
-        gsub(/["'\'']/, "", tag)
+        gsub(/["'\''\\]/, "", tag)
         skip = 1
       }
       print
