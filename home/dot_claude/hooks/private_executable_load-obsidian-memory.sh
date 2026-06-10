@@ -29,7 +29,13 @@ emit_capped() {
   text="$(cat)"
   bytes="$(printf '%s' "$text" | wc -c | tr -d ' ')"
   soft=$(( max * 75 / 100 ))
-  head -c "$max" <<<"$text"
+  # head -c はバイト単位截断なので截断点で UTF-8 多バイト文字が割れ末尾に壊れバイトが
+  # 残る。iconv -c で不完全バイトを落とし注入を妥当な UTF-8 に保つ。iconv 不在なら素出力。
+  if command -v iconv >/dev/null 2>&1; then
+    head -c "$max" <<<"$text" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null || true
+  else
+    head -c "$max" <<<"$text"
+  fi
   if (( bytes >= max )); then
     echo
     echo "> [!warning] ${label}: 注入上限 ${max}B に到達し一部を截断した(以降は欠落)。${action_hint}。"
@@ -71,17 +77,21 @@ BODY="$(
   echo "# 永続記憶(外部脳)Tier0 — 自動ロード。読込手順は hook が代行済み"
   echo "## Preferences(好み・作業スタイル)"
   # _README.md は除外: フォルダ説明の足場であり毎セッション注入する価値がない。
-  # 複数ファイルの連結順を LC_ALL=C sort で固定し、截断結果を決定的にする。
-  pref_files="$(find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f 2>/dev/null | LC_ALL=C sort || true)"
-  if [[ -n "$pref_files" ]]; then
-    printf '%s\n' "$pref_files" | tr '\n' '\0' | xargs -0 cat 2>/dev/null \
-      | emit_capped "Preferences" "上限到達なら link 化(Phase2)を検討" "$TIER0_MAX_BYTES"
-  fi
+  # 連結順を LC_ALL=C sort -z で固定し截断結果を決定的に。-print0/-z/-0 で改行入り
+  # ファイル名でも区切りが崩れない(NUL 区切り)。末尾 `|| true` は安全契約: producer
+  # 失敗(race/権限なし等)で pipefail が立っても BODY 代入を止めず exit 0 で素通る。
+  find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f -print0 2>/dev/null \
+    | LC_ALL=C sort -z \
+    | xargs -0 cat 2>/dev/null \
+    | emit_capped "Preferences" "上限到達なら link 化(Phase2)を検討" "$TIER0_MAX_BYTES" \
+    || true
   if [[ -n "$GUIDE" ]]; then
     echo
     echo "## 生きたガイド($REPO_KEY)— 最新の運用知。詳細サブは [[link]]/Grep でオンデマンド"
+    # 末尾 `|| true`: cat 失敗(race/権限なし等)でも安全契約を守り素通る。
     cat "$GUIDE" 2>/dev/null \
-      | emit_capped "生きたガイド($REPO_KEY)" "root を削って小さく保て" "$TIER0_MAX_BYTES"
+      | emit_capped "生きたガイド($REPO_KEY)" "root を削って小さく保て" "$TIER0_MAX_BYTES" \
+      || true
   fi
 )"
 
