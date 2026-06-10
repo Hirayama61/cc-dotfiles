@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash): 未コミット作業を復元不能に破棄しうる git 操作をブロックする(dotfiles#72)。
-# 対象: reset --hard / clean -f系 / stash drop・clear / branch -D(--delete + --force)。
+# 対象: reset --hard / clean -f系 / stash drop・clear / branch 強制削除(-D とその等価形)/
+#       restore(worktree 接触)/ checkout の変更破棄(-- / -f)/ worktree remove --force。
 # delegate 規約緩和(二段階の自己分類化)の補償として、客観条件を hook 層で担保する。
 # 既存 block 系と同じ best-effort 字句検査(難読化は対象外)。人間は ! バイパスで実行可能。
+# 既知の限界(受容): long オプションの前方略記(--ha 等)・バックスラッシュ行継続は検出しない。
 # 安全側設計: jq 無し / 空コマンド / lib 不在なら exit 0(通す)。
 set -euo pipefail
 
@@ -34,8 +36,11 @@ while IFS= read -r seg; do
     segment_has_option "$seg" --hard && block "git reset --hard"
     ;;
   clean)
-    # -n(dry-run)等は許可し、実削除に必須の -f / --force だけを見る。
-    segment_has_option "$seg" --force f && block "git clean -f"
+    # 実削除に必須の -f / --force だけを見る。-n/--dry-run 併用(clean -nf 等)は
+    # 削除しないため許可する。
+    if ! segment_has_option "$seg" --dry-run n && segment_has_option "$seg" --force f; then
+      block "git clean -f"
+    fi
     ;;
   stash)
     norm="$(normalized_words_of_segment "$seg")"
@@ -44,10 +49,31 @@ while IFS= read -r seg; do
     fi
     ;;
   branch)
-    # -d(merged 限定の安全削除)は許可。強制削除のみ止める。
+    # -d(merged 限定の安全削除)は許可。強制削除(-D とその等価形 -df / --delete --force)のみ止める。
     segment_has_option "$seg" "" D && block "git branch -D"
-    if segment_has_option "$seg" --delete && segment_has_option "$seg" --force f; then
+    if segment_has_option "$seg" --delete d && segment_has_option "$seg" --force f; then
       block "git branch --delete --force"
+    fi
+    ;;
+  restore)
+    # --staged 単独(index のみ・worktree 非接触)は許可。それ以外は worktree の
+    # 未コミット変更を破棄しうるため止める(-W/--worktree 明示を含む)。
+    if segment_has_option "$seg" --worktree W || ! segment_has_option "$seg" --staged S; then
+      block "git restore(worktree の変更破棄)"
+    fi
+    ;;
+  checkout)
+    # ブランチ切替・-b は許可。パス指定の変更破棄(--)と -f/--force のみ止める。
+    norm="$(normalized_words_of_segment "$seg")"
+    if printf '%s' " $norm " | grep -qE '[[:space:]]--[[:space:]]'; then
+      block "git checkout -- <path>(変更破棄)"
+    fi
+    segment_has_option "$seg" --force f && block "git checkout -f"
+    ;;
+  worktree)
+    norm="$(normalized_words_of_segment "$seg")"
+    if printf '%s' "$norm" | grep -qE '(^|[[:space:]])worktree[[:space:]]+remove([[:space:]]|$)'; then
+      segment_has_option "$seg" --force f && block "git worktree remove --force(dirty worktree の破棄)"
     fi
     ;;
   esac
