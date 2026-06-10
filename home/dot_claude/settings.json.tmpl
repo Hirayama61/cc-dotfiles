@@ -90,6 +90,10 @@
           {
             "type": "command",
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-amend-pushed.sh"
+          },
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-destructive-git.sh"
           }
         ]
       },

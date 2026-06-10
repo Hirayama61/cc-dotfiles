@@ -33,6 +33,11 @@ split_git_segments() {
   cmd="${cmd//;/$'\n'}"
   cmd="${cmd//|/$'\n'}"
   cmd="${cmd//&/$'\n'}"
+  # サブシェル/コマンド置換の括弧も分割点にする(dotfiles#72): `(cd x && git push -f)` /
+  # `$(git reset --hard)` は括弧がトークンに癒着して git 語検出を外すため。関数定義
+  # `f() {` は分割後セグメントに git 語が無く無反応(誤爆しない)。
+  cmd="${cmd//(/$'\n'}"
+  cmd="${cmd//)/$'\n'}"
   local line
   while IFS= read -r line; do
     # 前後空白を除去し、非空のみ返す。
