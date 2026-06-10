@@ -13,7 +13,9 @@ allowed-tools: Read, Write, Edit, Grep, Glob
 
 > 翻案注記(原本からの差分): 原本「1.読み取り」は MCP でセッション開始時に毎回
 > 読む前提だが、本 skill では **SessionStart hook が Preferences + 当該 repo の
-> ルートガイド(`Guides/<repo>/<repo>-ガイド.md`)を自動注入**する方式に置換した。
+> ルートガイド(`Guides/<repo>/<repo>-ガイド.md`)を上限まで自動注入**する方式に
+> 置換した(上限超過時は截断され注入末尾に警告が出る。肥大したら root へ集約し
+> サブを [[wikilink]] でオンデマンド参照に切り替える)。
 > 関連する Tier1 本文(Mistakes/ 含む)は **Grep/Glob + [[wikilink]] でオンデマンド
 > 取得**する(MCP は使わず直接 FS アクセス)。本 skill が担うのは **書込**(原本「2〜7」)。
 

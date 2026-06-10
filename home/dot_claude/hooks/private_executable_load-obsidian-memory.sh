@@ -15,6 +15,31 @@
 # 想定外のエラーはすべて exit 0 で素通り(コンテキスト注入は best-effort)。
 set -euo pipefail
 
+# Tier0 各パーツの注入上限(バイト)。ルートを小さく保つ規律が破れても注入を有界にする。
+TIER0_MAX_BYTES=20000
+
+# stdin を max バイトで截断して出力し、上限到達/接近(75%)で警告 callout を付す。
+# Preferences とガイドの有界化を共通化する(PR #35 の設計を後継)。stdin からは
+# max+1 バイトしか読まないためメモリも有界(供給側の SIGPIPE(141)は呼び出し側
+# パイプラインの || true で吸収)。截断で割れた UTF-8 末尾は iconv -c が除去する
+# (${var:0:N} はロケール依存で不可)。iconv 不在なら截断のみで素通し。
+emit_capped() {
+  local label="$1" action_hint="$2" max="$3" text bytes out
+  text="$(head -c "$((max + 1))" 2>/dev/null || true)"
+  bytes="$(printf '%s' "$text" | wc -c | tr -d ' ')"
+  if command -v iconv >/dev/null 2>&1; then
+    out="$(printf '%s' "$text" | head -c "$max" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || true)"
+  else
+    out="$(printf '%s' "$text" | head -c "$max" || true)"
+  fi
+  printf '%s\n' "$out"
+  if ((bytes > max)); then
+    printf '\n> [!warning] %s: 注入上限 %sB に到達し以降を截断した。%s。\n' "$label" "$max" "$action_hint"
+  elif ((bytes >= max * 75 / 100)); then
+    printf '\n> [!warning] %s: 注入上限に接近(%s/%sB)。%s。\n' "$label" "$bytes" "$max" "$action_hint"
+  fi
+}
+
 command -v jq &>/dev/null || exit 0
 
 # cwd から現在 repo の論理キーを導出し、注入するルートガイドを現在 repo に対応づける。
@@ -46,26 +71,18 @@ fi
 BODY="$(
   echo "# 永続記憶(外部脳)Tier0 — 自動ロード。読込手順は hook が代行済み"
   echo "## Preferences(好み・作業スタイル)"
-  # _README.md は除外: フォルダ説明の足場であり毎セッション注入する価値がない
-  # ガイドと同じバイト単位の有界注入。sort -z で注入順をファイル名順に決定化し、
-  # head -c が読込自体を上限で止める(全文読込後の截断はメモリが有界にならない)。
-  # 截断で割れた UTF-8 末尾は iconv -c が除去し(${var:0:N} はロケール依存で不可)、
-  # head の早期 close による SIGPIPE(pipefail で 141)は || true で吸収する。
-  PREF_LIMIT=20000
-  PREFS="$(find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f -print0 2>/dev/null |
-    sort -z | xargs -0 cat 2>/dev/null | head -c "$PREF_LIMIT" |
-    iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || true)"
-  # iconv が末尾最大3バイトを落としうるため、上限-3 以上なら截断とみなす
-  if (($(printf '%s' "$PREFS" | wc -c) >= PREF_LIMIT - 3)); then
-    PREFS="${PREFS}
-(截断: Preferences 合計が上限 ${PREF_LIMIT} バイトを超過。全文は ~/obsidian/brain/Preferences/ を直接読むこと)"
-  fi
-  printf '%s\n' "$PREFS"
+  # _README.md は除外: フォルダ説明の足場であり毎セッション注入する価値がない。
+  # LC_ALL=C sort -z で連結順を固定し、截断結果を環境非依存で決定的に保つ。
+  find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f -print0 2>/dev/null |
+    LC_ALL=C sort -z | xargs -0 cat 2>/dev/null |
+    emit_capped "Preferences" "全文は ~/obsidian/brain/Preferences/ を直接読む。肥大が続くなら link 化(Phase2)を検討" "$TIER0_MAX_BYTES" ||
+    true
   if [[ -n "$GUIDE" ]]; then
     echo
     echo "## 生きたガイド($REPO_KEY)— 最新の運用知。詳細サブは [[link]]/Grep でオンデマンド"
-    # 注入量の安全上限。ルートを小さく保つ規律が破れても注入を有界にする。
-    head -c 20000 "$GUIDE" 2>/dev/null || true
+    cat "$GUIDE" 2>/dev/null |
+      emit_capped "生きたガイド($REPO_KEY)" "root を削って小さく保つ" "$TIER0_MAX_BYTES" ||
+      true
   fi
 )"
 
