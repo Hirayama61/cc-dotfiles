@@ -47,7 +47,20 @@ BODY="$(
   echo "# 永続記憶(外部脳)Tier0 — 自動ロード。読込手順は hook が代行済み"
   echo "## Preferences(好み・作業スタイル)"
   # _README.md は除外: フォルダ説明の足場であり毎セッション注入する価値がない
-  find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f -exec cat {} + 2>/dev/null || true
+  # ガイドと同じバイト単位の有界注入。sort -z で注入順をファイル名順に決定化し、
+  # head -c が読込自体を上限で止める(全文読込後の截断はメモリが有界にならない)。
+  # 截断で割れた UTF-8 末尾は iconv -c が除去し(${var:0:N} はロケール依存で不可)、
+  # head の早期 close による SIGPIPE(pipefail で 141)は || true で吸収する。
+  PREF_LIMIT=20000
+  PREFS="$(find "$VAULT/Preferences" -maxdepth 1 -name '*.md' ! -name '_README.md' -type f -print0 2>/dev/null |
+    sort -z | xargs -0 cat 2>/dev/null | head -c "$PREF_LIMIT" |
+    iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || true)"
+  # iconv が末尾最大3バイトを落としうるため、上限-3 以上なら截断とみなす
+  if (($(printf '%s' "$PREFS" | wc -c) >= PREF_LIMIT - 3)); then
+    PREFS="${PREFS}
+(截断: Preferences 合計が上限 ${PREF_LIMIT} バイトを超過。全文は ~/obsidian/brain/Preferences/ を直接読むこと)"
+  fi
+  printf '%s\n' "$PREFS"
   if [[ -n "$GUIDE" ]]; then
     echo
     echo "## 生きたガイド($REPO_KEY)— 最新の運用知。詳細サブは [[link]]/Grep でオンデマンド"
