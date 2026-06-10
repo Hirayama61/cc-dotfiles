@@ -1,11 +1,10 @@
 ---
 name: self-review
 description: >-
-  push 前の汎用品質レビュー隊。push 対象 diff を code-reviewer・security-reviewer
-  の 2 Agent + CodeRabbit CLI + Codex CLI で並列検査し、severity 順に人間へ提示してトリアージを
-  促す。「セルフレビューして」「push 前に確認」、`/self-review [effort]` での起動、
-  またはオーケストレータが push 直前に実行する。レビュー実施 + 人間トリアージ
-  済を確認した時だけ push ゲートのフラグを立てる。指摘ゼロは強制しない。
+  push 前の汎用品質レビュー隊。2 Agent + 外部 CLI(CodeRabbit / Codex)へ diff を渡して並列検査する。
+  「セルフレビューして」「push 前に確認」、
+  `/self-review [effort]` での起動、またはオーケストレータが push 直前に実行する。
+  レビュー実施 + 人間トリアージ済を確認した時だけ push ゲートのフラグを立てる。
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob, Agent, AskUserQuestion
 ---

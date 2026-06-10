@@ -1,11 +1,9 @@
 ---
 name: obsidian-memory
 description: >-
-  Obsidian Vault(~/obsidian/brain)を外部脳とした永続記憶への書込。バグ解決 /
-  新発見 / 判断 / プロジェクト状態変化 / 好みの発見 / ユーザーからの訂正が起きた
-  瞬間に該当ノートへ即時記録する(「後で書く」はしない)。読込は SessionStart
-  hook が Tier0 を自動注入するので不要。自動発火トリガ語: 「覚えておいて」
-  「方針として」「次回のために」「またミスった」「訂正」「初期セットアップして」。
+  Obsidian Vault(~/obsidian/brain)への永続記憶書込。バグ解決 / 新発見 / 判断 /
+  状態変化 / 好み / 訂正が起きた瞬間に即時記録する。自動発火トリガ語:
+  「覚えておいて」「方針として」「次回のために」「またミスった」「訂正」「初期セットアップして」。
 allowed-tools: Read, Write, Edit, Grep, Glob
 ---
 

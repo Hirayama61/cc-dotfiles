@@ -1,11 +1,8 @@
 ---
 name: ci-watch
 description: >-
-  push 後の CodeRabbit/CI 評価隊。self-review(push 前ゲート)の姉妹で、gh pr create hook が
-  自動起動・git push hook がナッジする。現ブランチの PR の全 check が terminal になるまで
-  bg シェルでゼロトークン待機し、起床後に未解決 CodeRabbit thread と失敗 check ログを
-  delegate がフルコンテキストでコードに突き合わせ一次評価(妥当/誤検知/要ユーザー判断・
-  CI 失敗は修正/テスト/再実行/見送り)して人間へ提示する。返信も適用も一切しない(assess-only)。
+  push 後の CodeRabbit/CI 評価隊(assess-only。返信・適用はしない)。
+  `gh pr create` hook が自動起動し、`git push` hook がナッジする。
   「CI 監視して」「CodeRabbit 確認して」、`/ci-watch [PR番号]` での起動、またはオーケストレータが
   push 後に同一セッションで実行する。
 user-invocable: true
