@@ -53,9 +53,10 @@ END='(\s|$|[;&|)])'
 _is_target_segment() {
   local seg="${1:-}" norm
   [[ "$(git_subcommand_of_segment "$seg")" == "commit" ]] && return 0
+  # FLAGS はサブコマンド群の後にも置ける(`gh pr -R owner/repo comment`)ため両位置で許容。
   norm="$(normalized_words_of_segment "$seg")"
-  printf '%s\n' "$norm" | grep -qE "${BORDER}${ENV}gh\s+${FLAGS}pr\s+(comment|review)${END}" && return 0
-  printf '%s\n' "$norm" | grep -qE "${BORDER}${ENV}gh\s+${FLAGS}issue\s+comment${END}" && return 0
+  printf '%s\n' "$norm" | grep -qE "${BORDER}${ENV}gh\s+${FLAGS}pr\s+${FLAGS}(comment|review)${END}" && return 0
+  printf '%s\n' "$norm" | grep -qE "${BORDER}${ENV}gh\s+${FLAGS}issue\s+${FLAGS}comment${END}" && return 0
   return 1
 }
 
@@ -70,12 +71,12 @@ _body_text_of_segment() {
     [[ -z "$m" ]] && continue
     # m 例: --body "後で対応" / -m='fix later' / -am "msg"(束ねフラグ)/ -m"密着クォート"
     # フラグ部を剥がして値を取り出し、前後のクォート1段を除去する。
-    val="$(printf '%s' "$m" | sed -E 's/^(-[A-Za-z]*m|--message|-[A-Za-z]*b|--body)(=|[[:space:]]+)?//')"
+    val="$(printf '%s' "$m" | sed -E 's/^[[:space:]]*(-[A-Za-z]*m|--message|-[A-Za-z]*b|--body)(=|[[:space:]]+)?//')"
     val="${val#[\"\']}"
     val="${val%[\"\']}"
     out="${out:+$out }$val"
   done < <(printf '%s\n' "$seg" |
-    grep -oE "(-[A-Za-z]*m|--message|-[A-Za-z]*b|--body)((=|[[:space:]]+)(\"[^\"]*\"|'[^']*'|[^[:space:]]+)|(\"[^\"]*\"|'[^']*'))")
+    grep -oE "(^|[[:space:]])(-[A-Za-z]*m|--message|-[A-Za-z]*b|--body)((=|[[:space:]]+)(\"[^\"]*\"|'[^']*'|[^[:space:]]+)|(\"[^\"]*\"|'[^']*'))")
   printf '%s' "$out"
 }
 
