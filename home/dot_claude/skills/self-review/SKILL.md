@@ -207,19 +207,20 @@ reviewer: code-reviewer / security-reviewer / CodeRabbit({実施 or skip 理由}
 
 - 通過条件は「レビュー実施 + 人間がトリアージ済(修正 or 意図的見送り)」。
   **指摘ゼロは強制しない。**
-- トリアージ完了を確認したらフラグを立てる(`pre-push-selfreview-gate.sh`(読取)/
-  `postcommit-invalidate-review.sh`(削除)とキー規約 `review-passed-${repo}--${safe}`
-  を完全一致させる。repo は `resolve-repo-key.sh` で導出。3者の1つでも崩すと恒久
-  ブロック or ゲート無効化になるので hook 側と必ず同時に変更する。
+- トリアージ完了を確認したらフラグを立てる(キーは `flag-paths.sh` が単一情報源。
+  `pre-push-selfreview-gate.sh`(読取)/ `postcommit-invalidate-review.sh`(削除)も
+  同 lib を使うため、フラグパスは必ず lib 経由で得る。手書きでキーを組み立てない。
+  repo は `resolve-repo-key.sh` で導出。
   **このスキルはレビュー対象 repo 内(`$PWD` = 対象 worktree)で実行すること**。gate /
   postcommit はフラグキーを push 実対象 dir(`git -C`/`cd` 解決)起点で引くため、別 cwd
   で実行するとキー基点がずれて恒久ブロックになりうる):
   ```sh
   branch="$(git branch --show-current)"
-  safe="$(echo "$branch" | tr '/' '-')"
   repo="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$PWD" 2>/dev/null || true)"
-  mkdir -p /tmp/claude-sessions
-  touch "/tmp/claude-sessions/review-passed-${repo}--${safe}"
+  flag="$("$HOME/.claude/hooks/lib/flag-paths.sh" review-passed "$repo" "$branch")"
+  [ -n "$flag" ] || { echo "flag-paths.sh が引けない。中断" >&2; exit 1; }
+  mkdir -p "$(dirname "$flag")"
+  touch "$flag"
   ```
   これで `pre-push-selfreview-gate.sh` が解除される。
 - レビュー未実施・トリアージ未了ならフラグを書かない。
