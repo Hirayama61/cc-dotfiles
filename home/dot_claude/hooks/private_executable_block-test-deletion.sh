@@ -11,8 +11,11 @@ fi
 
 PATTERN_LIB="$HOME/.claude/hooks/lib/test-patterns.sh"
 [[ -r "$PATTERN_LIB" ]] || exit 0
+# 構文破損 lib を直接 source すると bash が status 2 で即死し「ブロック」に化けるため、
+# subshell で読めるか先に検査してから本 source する(fail-open)。
 # shellcheck source=/dev/null
-. "$PATTERN_LIB"
+( . "$PATTERN_LIB" ) >/dev/null 2>&1 || exit 0
+. "$PATTERN_LIB" 2>/dev/null || exit 0
 
 input="$(cat)"
 tool_name="$(echo "$input" | jq -r '.tool_name // empty')"

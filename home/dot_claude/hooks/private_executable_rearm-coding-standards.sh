@@ -10,7 +10,8 @@ command -v jq &>/dev/null || exit 0
 FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
 [[ -r "$FLAG_LIB" ]] || exit 0
 # shellcheck source=/dev/null
-. "$FLAG_LIB"
+( . "$FLAG_LIB" ) >/dev/null 2>&1 || exit 0
+. "$FLAG_LIB" 2>/dev/null || exit 0
 
 input="$(cat || true)"
 ctx="$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"

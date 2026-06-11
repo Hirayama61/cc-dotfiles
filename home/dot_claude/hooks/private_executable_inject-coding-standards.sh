@@ -43,9 +43,10 @@ fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.noteboo
 # キーが取れない時 / lib 不達時は常時注入に倒す(fail-open)。
 ctx=""
 FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
-if [[ -r "$FLAG_LIB" ]]; then
-  # shellcheck source=/dev/null
-  . "$FLAG_LIB"
+# 構文破損 lib を直接 source すると bash が status 2 で即死するため subshell で先に検査。
+# 検査 NG なら ctx 空のまま = 常時注入へ倒す(fail-open)。
+# shellcheck source=/dev/null
+if [[ -r "$FLAG_LIB" ]] && ( . "$FLAG_LIB" ) >/dev/null 2>&1 && . "$FLAG_LIB" 2>/dev/null; then
   ctx="$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"
   ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
 fi

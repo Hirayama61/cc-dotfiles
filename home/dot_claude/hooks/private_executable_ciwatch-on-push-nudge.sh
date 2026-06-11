@@ -34,7 +34,8 @@ LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
 BASE_LIB="$HOME/.claude/hooks/lib/resolve-base-ref.sh"
 [ -r "$BASE_LIB" ] || exit 0
 # shellcheck source=/dev/null
-. "$BASE_LIB"
+( . "$BASE_LIB" ) >/dev/null 2>&1 || exit 0
+. "$BASE_LIB" 2>/dev/null || exit 0
 
 # push サブコマンドの有無だけ見る。refspec(`HEAD:main` 等)の dst は解釈しないので、
 # 現ブランチと異なる宛先への push でも現ブランチ基準でナッジしうる。block-protected-branch-push
