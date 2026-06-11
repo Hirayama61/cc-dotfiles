@@ -70,12 +70,13 @@ primary repo で走り別 repo の同名 PR を誤監視するのを防ぐ。PR 
 
 ### 2. 早期 return
 
-- 保護ブランチ(`main`/`master`/`develop`/`epic/*`)上は PR ベース監視の対象外:
+- 保護ブランチ上は PR ベース監視の対象外(一覧は `resolve-base-ref.sh` が単一情報源):
 
   ```bash
-  case "$branch" in
-    main|master|develop|epic/*) echo "ci-watch: 保護ブランチ($branch)は対象外。"; exit 0 ;;
-  esac
+  . "$HOME/.claude/hooks/lib/resolve-base-ref.sh"
+  if is_protected_branch "$branch"; then
+    echo "ci-watch: 保護ブランチ($branch)は対象外。"; exit 0
+  fi
   ```
 
 - `pr` が空 or `null` なら open PR が無い。「現ブランチに open PR が無い。push して PR を

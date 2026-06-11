@@ -13,7 +13,9 @@
 # Claude を縛る best-effort ゲートであり、refspec(src:dst / refs/heads/* / --delete)解析の
 # 誤爆・漏れリスクを避けるため受容する。
 #
-# 安全側設計: jq 無し / git 外 / ブランチ不明なら exit 0(通す)。
+# 保護ブランチ一覧は resolve-base-ref.sh の is_protected_branch が単一情報源。
+#
+# 安全側設計: jq 無し / git 外 / ブランチ不明 / lib 不達なら exit 0(通す)。
 # 検知は best-effort(難読化は素通る)であり敵対防御ではない。
 set -euo pipefail
 
@@ -28,6 +30,11 @@ LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
 . "$LIB"
+BASE_LIB="$HOME/.claude/hooks/lib/resolve-base-ref.sh"
+[[ -r "$BASE_LIB" ]] || exit 0
+# shellcheck source=/dev/null
+( . "$BASE_LIB" ) >/dev/null 2>&1 || exit 0
+. "$BASE_LIB" 2>/dev/null || exit 0
 
 # セグメント分割 + サブコマンド厳密一致で push / merge を検出。
 # merge-base/merge-tree/merge-file や `git log | grep push` 等の誤爆を避ける。
@@ -47,16 +54,12 @@ git -C "$target_dir" rev-parse --is-inside-work-tree &>/dev/null || exit 0
 branch="$(git -C "$target_dir" branch --show-current 2>/dev/null || echo "")"
 [[ -z "$branch" ]] && exit 0
 
-is_protected() {
-  [[ "$1" == "main" || "$1" == "master" || "$1" == "develop" || "$1" == epic/* ]]
-}
-
-if [[ "$has_push" -eq 1 ]] && is_protected "$branch"; then
+if [[ "$has_push" -eq 1 ]] && is_protected_branch "$branch"; then
   echo "ブロック: 保護ブランチ(${branch})への push は禁止。feature ブランチから人間が PR を作成すること。" >&2
   exit 2
 fi
 
-if [[ "$has_merge" -eq 1 ]] && is_protected "$branch"; then
+if [[ "$has_merge" -eq 1 ]] && is_protected_branch "$branch"; then
   echo "ブロック: 保護ブランチ(${branch})への merge は禁止。人間の判断を経ること。" >&2
   exit 2
 fi

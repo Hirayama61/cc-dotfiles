@@ -31,6 +31,11 @@ LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
 [ -r "$LIB" ] || exit 0
 # shellcheck source=/dev/null
 . "$LIB"
+BASE_LIB="$HOME/.claude/hooks/lib/resolve-base-ref.sh"
+[ -r "$BASE_LIB" ] || exit 0
+# shellcheck source=/dev/null
+( . "$BASE_LIB" ) >/dev/null 2>&1 || exit 0
+. "$BASE_LIB" 2>/dev/null || exit 0
 
 # push サブコマンドの有無だけ見る。refspec(`HEAD:main` 等)の dst は解釈しないので、
 # 現ブランチと異なる宛先への push でも現ブランチ基準でナッジしうる。block-protected-branch-push
@@ -47,9 +52,9 @@ git -C "$target_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 branch="$(git -C "$target_dir" branch --show-current 2>/dev/null || echo "")"
 [ -z "$branch" ] && exit 0
 
-case "$branch" in
-main | master | develop | epic/*) exit 0 ;;
-esac
+if is_protected_branch "$branch"; then
+  exit 0
+fi
 
 command -v gh >/dev/null 2>&1 || exit 0
 pr="$(cd "$target_dir" 2>/dev/null && gh pr list --head "$branch" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")"

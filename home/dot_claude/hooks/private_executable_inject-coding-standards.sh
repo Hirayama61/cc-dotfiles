@@ -38,13 +38,20 @@ fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.noteboo
 
 # 同一コンテキストへは初回のみ注入する(dotfiles#62)。キーは transcript_path 基準
 # (session_id は subagent と共有され、delegate への初回注入まで抑止される落とし穴)。
-# キー導出は rearm-coding-standards.sh(clear|compact でフラグ破棄)と完全一致させる。
-# キーが取れない時は常時注入に倒す(fail-open)。
-ctx="$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"
-ctx="$(basename "${ctx%.jsonl}" 2>/dev/null || true)"
-flag_dir="/tmp/claude-sessions"
-seen() { [[ -n "$ctx" && -f "$flag_dir/cs-injected-${ctx}--${1}" ]]; }
-mark() { [[ -z "$ctx" ]] && return 0; { mkdir -p "$flag_dir" && touch "$flag_dir/cs-injected-${ctx}--${1}"; } 2>/dev/null || true; }
+# キー導出は flag-paths.sh(単一情報源)で行い rearm-coding-standards.sh
+# (clear|compact でフラグ破棄)と完全一致させる。
+# キーが取れない時 / lib 不達時は常時注入に倒す(fail-open)。
+ctx=""
+FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
+# 構文破損 lib を直接 source すると bash が status 2 で即死するため subshell で先に検査。
+# 検査 NG なら ctx 空のまま = 常時注入へ倒す(fail-open)。
+# shellcheck source=/dev/null
+if [[ -r "$FLAG_LIB" ]] && ( . "$FLAG_LIB" ) >/dev/null 2>&1 && . "$FLAG_LIB" 2>/dev/null; then
+  ctx="$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"
+  ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
+fi
+seen() { [[ -n "$ctx" && -f "$(cs_injected_flag "$ctx" "$1")" ]]; }
+mark() { [[ -z "$ctx" ]] && return 0; { mkdir -p "$(claude_flag_dir)" && touch "$(cs_injected_flag "$ctx" "$1")"; } 2>/dev/null || true; }
 
 # 注入本文を組み立てる。グローバル正典 → repo 固有規約の順で連結。
 # 読取失敗を握って fail-open(best-effort 注入の不変条件を維持)。
