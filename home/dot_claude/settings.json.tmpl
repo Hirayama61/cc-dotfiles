@@ -120,8 +120,21 @@
         ]
       },
       {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-unreviewed-plan.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit",
         "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-unreviewed-mutation.sh"
+          },
           {
             "type": "command",
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/inject-coding-standards.sh"
