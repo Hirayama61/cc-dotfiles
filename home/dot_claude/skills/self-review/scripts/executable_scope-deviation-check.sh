@@ -57,7 +57,7 @@ else
     # 誤参照の実害が表示ノイズに留まるため、見逃し側を減らす方に倒す意図的な差。
     mt="$(stat -f %m "$p" 2>/dev/null || echo 0)"
     now="$(date +%s)"
-    [[ $((now - mt)) -le 86400 ]] && scope_file="$p"
+    [[ "$mt" -le "$now" && $((now - mt)) -le 86400 ]] && scope_file="$p"
   fi
 fi
 [[ -z "$scope_file" ]] && skip "スコープ宣言なし(design-review 未実施 or 宣言なしで通過)"
