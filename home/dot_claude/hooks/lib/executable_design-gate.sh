@@ -62,6 +62,16 @@ design_gate_exempt_dir() {
   return 1
 }
 
+# フラグ読取は regular file のみ認める(-f/-s は symlink を辿るため、予測可能パスへの
+# symlink 設置で読取側から解錠できてしまう。書込側の -L 拒否と対称の読取側硬化)。
+_design_gate_flag_ok() { # path → 0 = 実在する regular file
+  [[ -f "${1:-}" && ! -L "${1:-}" ]]
+}
+
+_design_gate_flag_nonempty() { # path → 0 = 非空の regular file
+  [[ -s "${1:-}" && ! -L "${1:-}" ]]
+}
+
 _design_gate_fresh() { # file → 0 = TTL 内(未来 mtime は不正として弾く)
   local f="${1:-}" mt now
   mt="$(stat -f %m "$f" 2>/dev/null || echo 0)"
@@ -96,7 +106,7 @@ _design_gate_solidify() { # repo branch
   local sp sb
   sp="$(design_scope_pending_flag "$repo")"
   sb="$(design_scope_flag "$repo" "$branch")"
-  if [[ -f "$sp" && ! -e "$sb" && ! -L "$sb" ]]; then
+  if _design_gate_flag_ok "$sp" && [[ ! -e "$sb" && ! -L "$sb" ]]; then
     mv "$sp" "$sb" 2>/dev/null || true
   fi
   return 0
@@ -105,7 +115,7 @@ _design_gate_solidify() { # repo branch
 # fresh pending があれば昇格して 0、無ければ 1。
 _design_gate_try_pending() { # pending-path ctx-path sid
   local p="${1:-}"
-  if [[ -f "$p" ]] && _design_gate_fresh "$p"; then
+  if _design_gate_flag_ok "$p" && _design_gate_fresh "$p"; then
     _design_gate_promote "$p" "${2:-}" "${3:-}"
     return 0
   fi
@@ -120,16 +130,16 @@ design_gate_pass() {
   local repo="${1:-}" sid="${2:-}" branch="${3:-}" allow_trivial="${4:-0}"
   [[ -z "$repo" ]] && return 0
 
-  if [[ -n "$branch" && -f "$(design_reviewed_flag "$repo" "$branch")" ]]; then
+  if [[ -n "$branch" ]] && _design_gate_flag_ok "$(design_reviewed_flag "$repo" "$branch")"; then
     return 0
   fi
   if [[ -n "$sid" ]]; then
-    if [[ -f "$(design_reviewed_ctx_flag "$repo" "$sid")" ]]; then
+    if _design_gate_flag_ok "$(design_reviewed_ctx_flag "$repo" "$sid")"; then
       _design_gate_solidify "$repo" "$branch"
       return 0
     fi
-    # trivial-override は理由(内容)非空を要求する(-s)。
-    if [[ "$allow_trivial" == 1 && -s "$(trivial_override_ctx_flag "$repo" "$sid")" ]]; then
+    # trivial-override は理由(内容)非空を要求する。
+    if [[ "$allow_trivial" == 1 ]] && _design_gate_flag_nonempty "$(trivial_override_ctx_flag "$repo" "$sid")"; then
       return 0
     fi
   fi
@@ -142,7 +152,7 @@ design_gate_pass() {
   if [[ "$allow_trivial" == 1 ]]; then
     local tp
     tp="$(trivial_override_pending_flag "$repo")"
-    if [[ -s "$tp" ]] && _design_gate_fresh "$tp"; then
+    if _design_gate_flag_nonempty "$tp" && _design_gate_fresh "$tp"; then
       _design_gate_promote "$tp" "$(trivial_override_ctx_flag "$repo" "$sid")" "$sid"
       return 0
     fi

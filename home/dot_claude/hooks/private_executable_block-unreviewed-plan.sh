@@ -19,6 +19,10 @@ input="$(cat)"
 sid="$(jq -r '.session_id // empty' <<<"$input")"
 cwd="$(jq -r '.cwd // empty' <<<"$input")"
 [[ -z "$cwd" ]] && cwd="$PWD"
+# 相対 cwd は hook 実行ディレクトリ依存で別 repo を見に行くため判定しない
+# (Gate 2 の相対 file_path 素通しと同じ fail-open)。
+[[ "$cwd" = /* ]] || exit 0
+cwd="$(cd "$cwd" 2>/dev/null && pwd -P || printf '%s' "$cwd")"
 
 FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
 [[ -r "$FLAG_LIB" ]] || exit 0
