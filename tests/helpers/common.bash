@@ -64,8 +64,16 @@ list_installed_hooks() {
 # cwd 未指定入力でも fail-open(repo 不明 → exit 0)で決定的になる。
 _run_hook_impl() {
   local path_val="$1" hook="$2" json="$3"
+  # cwd 固定の前提(BATS_TEST_TMPDIR が有効な非 repo dir であること)を厳格に確認する。
+  # silent な cd 失敗は実 repo で hook を走らせ環境依存へ戻すため、無効なら即失敗させる。
+  if [[ ! -d "$BATS_TEST_TMPDIR" ]]; then
+    echo "ERROR: BATS_TEST_TMPDIR が未設定/無効。cwd 固定が無効化される" >&2
+    status=1
+    output="BATS_TEST_TMPDIR invalid"
+    return 1
+  fi
   set +e
-  output="$(cd "$BATS_TEST_TMPDIR" 2>/dev/null && PATH="$path_val" bash -c 'printf "%s" "$2" | "$1"' _ "$hook" "$json" 2>&1)"
+  output="$(cd "$BATS_TEST_TMPDIR" && PATH="$path_val" bash -c 'printf "%s" "$2" | "$1"' _ "$hook" "$json" 2>&1)"
   status=$?
   set -e
 }

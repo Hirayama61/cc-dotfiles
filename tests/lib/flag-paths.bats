@@ -18,11 +18,13 @@ setup() {
 
 @test "review-passed key for a plain branch" {
   run "$FLAG" review-passed myrepo main
+  [ "$status" -eq 0 ]
   [ "$output" = "/tmp/claude-sessions/review-passed-myrepo--main" ]
 }
 
 @test "branch slash collapses to dash (current lossy behavior)" {
   run "$FLAG" review-passed myrepo feature/a-b
+  [ "$status" -eq 0 ]
   [ "$output" = "/tmp/claude-sessions/review-passed-myrepo--feature-a-b" ]
 }
 
@@ -30,20 +32,24 @@ setup() {
   run "$FLAG" review-passed myrepo feature/a-b
   k1="$output"
   run "$FLAG" review-passed myrepo feature-a/b
+  [ "$status" -eq 0 ]
   [ "$output" = "$k1" ]
 }
 
 @test "empty branch yields trailing double-dash" {
   run "$FLAG" review-passed myrepo ""
+  [ "$status" -eq 0 ]
   [ "$output" = "/tmp/claude-sessions/review-passed-myrepo--" ]
 }
 
 @test "design-reviewed key uses same convention" {
   run "$FLAG" design-reviewed myrepo main
+  [ "$status" -eq 0 ]
   [ "$output" = "/tmp/claude-sessions/design-reviewed-myrepo--main" ]
 }
 
 @test "cs-injected key joins ctx and scope" {
   run "$FLAG" cs-injected ctx123 scopeA
+  [ "$status" -eq 0 ]
   [ "$output" = "/tmp/claude-sessions/cs-injected-ctx123--scopeA" ]
 }

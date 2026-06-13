@@ -14,6 +14,7 @@ setup() {
   mkdir -p "$r"
   git -C "$r" init -q
   run resolve_repo_key "$r"
+  [ "$status" -eq 0 ]
   [ "$output" = "myproj" ]
 }
 
@@ -23,6 +24,7 @@ setup() {
   git -C "$r" init -q
   touch "$r/some-file.txt"
   run resolve_repo_key "$r/some-file.txt"
+  [ "$status" -eq 0 ]
   [ "$output" = "myproj2" ]
 }
 
@@ -30,6 +32,7 @@ setup() {
   d="$BATS_TEST_TMPDIR/plain"
   mkdir -p "$d"
   run resolve_repo_key "$d"
+  [ "$status" -eq 0 ]
   [ "$output" = "" ]
 }
 
@@ -38,5 +41,6 @@ setup() {
   mkdir -p "$r"
   git -C "$r" init -q
   run resolve_repo_key "$r"
+  [ "$status" -eq 0 ]
   [ "$output" = "cc-dotfiles" ]
 }
