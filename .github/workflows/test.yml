@@ -1,0 +1,36 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+# 最小権限: テストは読み取りのみで足りる(fork PR 時の被害面も縮小する)。
+permissions:
+  contents: read
+
+# 同一ブランチの古い実行はキャンセル
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # macOS runner: 同梱 /bin/bash は 3.2 系。hooks の bash 3.2 互換を実機で担保する。
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup mise (bats / shellcheck / shfmt)
+        uses: jdx/mise-action@v2
+        with:
+          # mise 本体も固定し再現性を確保(ツールは mise.toml で pin 済み)。
+          version: 2026.6.0
+
+      - name: bash 3.2 syntax check
+        run: mise run syntax
+
+      - name: shellcheck (error level)
+        run: mise run lint
+
+      - name: bats
+        run: mise run test
