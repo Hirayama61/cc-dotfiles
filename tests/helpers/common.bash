@@ -56,10 +56,16 @@ list_installed_hooks() {
 # bats の `run` を使わず自前で status を取るのは、jq 不在 hook の exit 127 で
 # bats が出す BW01 警告(command-not-found 助言)を避けるため。stdout/stderr を
 # 混ぜて output に入れ、ブロックメッセージの検証に使えるようにする。
+#
+# 実行 cwd を BATS_TEST_TMPDIR(非 git・一時領域)に固定する。hook の一部は入力 JSON に
+# cwd が無いと $PWD へフォールバックして実 repo を判定する(例 block-unreviewed-plan が
+# design-gate 状態を見る)。固定しないとテスト実行ディレクトリの repo 状態に依存して
+# 環境ごとに結果が変わる(CI とローカルで挙動が割れる)。非 repo に固定すれば
+# cwd 未指定入力でも fail-open(repo 不明 → exit 0)で決定的になる。
 _run_hook_impl() {
   local path_val="$1" hook="$2" json="$3"
   set +e
-  output="$(PATH="$path_val" bash -c 'printf "%s" "$2" | "$1"' _ "$hook" "$json" 2>&1)"
+  output="$(cd "$BATS_TEST_TMPDIR" 2>/dev/null && PATH="$path_val" bash -c 'printf "%s" "$2" | "$1"' _ "$hook" "$json" 2>&1)"
   status=$?
   set -e
 }
