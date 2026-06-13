@@ -23,21 +23,19 @@ install_hooks() {
   mkdir -p "$dst/lib"
 
   local f base
-  # lib(executable_ プレフィックス)
+  # lib(executable_ プレフィックス)。install -m 755 で copy + 実行権限付与を原子的に行う。
   for f in "$HOOKS_SRC"/lib/executable_*.sh; do
     [[ -e "$f" ]] || continue
     base="$(basename "$f")"
     base="${base#executable_}"
-    cp "$f" "$dst/lib/$base"
-    chmod +x "$dst/lib/$base"
+    install -m 755 "$f" "$dst/lib/$base"
   done
   # hooks(private_executable_ プレフィックス)
   for f in "$HOOKS_SRC"/private_executable_*.sh; do
     [[ -e "$f" ]] || continue
     base="$(basename "$f")"
     base="${base#private_executable_}"
-    cp "$f" "$dst/$base"
-    chmod +x "$dst/$base"
+    install -m 755 "$f" "$dst/$base"
   done
 
   export HOME="$TEST_HOME"
