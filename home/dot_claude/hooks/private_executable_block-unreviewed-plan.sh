@@ -16,6 +16,9 @@ unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 
 command -v jq &>/dev/null || exit 0
 input="$(cat)"
+# 空入力(stdin 無し)は判定材料が無く、cwd 未指定で $PWD フォールバックすると無関係 repo の
+# design-gate を巻き込んで誤ブロックする。他 hook の異常系と同じく fail-open で素通す。
+[[ -z "$input" ]] && exit 0
 sid="$(jq -r '.session_id // empty' <<<"$input")"
 cwd="$(jq -r '.cwd // empty' <<<"$input")"
 [[ -z "$cwd" ]] && cwd="$PWD"

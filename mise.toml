@@ -1,0 +1,23 @@
+# cc-dotfiles のテスト/静的検査タスク入口。
+# 注: chezmoi のソースルートは home/(.chezmoiroot)。この mise.toml と tests/ は
+# リポ直下=chezmoi 管理外なので $HOME には展開されない(CI/ローカル検証専用)。
+[tools]
+bats = "1.13.0"
+shellcheck = "latest"
+shfmt = "latest"
+
+[tasks.test]
+description = "bats で hooks/lib を検証(一時 HOME に複製して実行)"
+run = "bats --recursive tests"
+
+[tasks.lint]
+description = "shellcheck で hooks/lib を検査(error レベル)"
+run = "shellcheck --severity=error home/dot_claude/hooks/*.sh home/dot_claude/hooks/lib/*.sh"
+
+[tasks.syntax]
+description = "bash 3.2(macOS 同梱)構文チェック"
+run = "find home/dot_claude/hooks -name '*.sh' -print0 | xargs -0 /bin/bash -n"
+
+[tasks.check]
+description = "test + lint + syntax を一括実行"
+depends = ["syntax", "lint", "test"]
