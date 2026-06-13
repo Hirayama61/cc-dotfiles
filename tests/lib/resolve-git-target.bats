@@ -76,12 +76,12 @@ setup() {
 }
 
 # --- split_git_segments ---
-# 注: split_git_segments の戻り値は入力の最終行が空だと 1 になりうる(while ループ末尾の
-# `[[ -n "" ]] && printf` がショートサーキットするため)。出力は正しい。戻り値の修正
-# (`return 0` 追加)は実装(lib)変更なので PR-3 の finding として扱い、ここでは status を
-# 検証せず出力のみ固定する(Phase 1 は lib を触らない)。
+# split_git_segments は末尾で return 0 を明示し、入力に依らず戻り値を 0 に固定する
+# (最終行が空でも while ループ末尾の `[[ -n "" ]] && printf` のショートサーキットで
+# 1 を返さない。NEW-1 修正)。よって status 検証を行う。
 @test "split: && separates into two segments" {
   run split_git_segments "cd /x && git push"
+  [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
   [ "${lines[0]}" = "cd /x" ]
   [ "${lines[1]}" = "git push" ]
@@ -89,6 +89,7 @@ setup() {
 
 @test "split: subshell parens are split points" {
   run split_git_segments "(cd /x && git push -f)"
+  [ "$status" -eq 0 ]
   [ "${lines[0]}" = "cd /x" ]
   [ "${lines[1]}" = "git push -f" ]
 }

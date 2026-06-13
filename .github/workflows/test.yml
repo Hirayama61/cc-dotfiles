@@ -18,10 +18,11 @@ jobs:
     # macOS runner: 同梱 /bin/bash は 3.2 系。hooks の bash 3.2 互換を実機で担保する。
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      # supply-chain 対策で action はコミット SHA でピン留めする(@v4/@v2 が現在指す版)。
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup mise (bats / shellcheck / shfmt)
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
           # mise 本体も固定し再現性を確保(ツールは mise.toml で pin 済み)。
           version: 2026.6.0
