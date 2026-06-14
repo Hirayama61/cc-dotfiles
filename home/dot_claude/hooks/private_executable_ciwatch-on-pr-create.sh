@@ -15,9 +15,12 @@
 # 止めない(jq 不在 / 非対象 / PR 未解決 はすべて exit 0 で無音素通り)。
 set -euo pipefail
 
-command -v jq >/dev/null 2>&1 || exit 0
-input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+cmd="$(hook_command)"
 [ -z "$cmd" ] && exit 0
 
 # `gh pr create` 検知。block-gh-mutations.sh の border/env/flags パターンを流用し、
@@ -33,7 +36,7 @@ echo "$cmd" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}pr\\s+create${END}" || exit
 # gh pr create には git -C 文法が無く対象は常に hook の .cwd の repo なので、
 # push 系のような git -C 解決はせず .cwd の repo で現ブランチ→PR を引く
 # (cd X && gh pr create は稀という割り切り。Tasks/.../plan.md §3-A の確定方針)。
-cwd="$(echo "$input" | jq -r '.cwd // empty')"
+cwd="$(hook_cwd)"
 [ -z "$cwd" ] && cwd="$PWD"
 git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 branch="$(git -C "$cwd" branch --show-current 2>/dev/null || echo "")"

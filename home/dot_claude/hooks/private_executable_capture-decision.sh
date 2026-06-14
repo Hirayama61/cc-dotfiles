@@ -10,15 +10,18 @@
 # すべて exit 0 で無音素通り(リマインドは best-effort)。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
 
 # matcher で AskUserQuestion に絞っているが、二重で確認(取りこぼし防止)。
-tool="$(echo "$input" | jq -r '.tool_name // empty')"
+tool="$(hook_tool_name)"
 [[ "$tool" == "AskUserQuestion" ]] || exit 0
 
 # best-effort: 質問文を抽出して文言に添える(wire 形式が違っても空でフォールバック)。
-questions="$(echo "$input" | jq -r '
+questions="$(printf '%s' "$HOOK_INPUT" | jq -r '
   (.tool_input.questions // []) | map(.question // empty) | map(select(. != "")) | join(" / ")
 ' 2>/dev/null || echo "")"
 

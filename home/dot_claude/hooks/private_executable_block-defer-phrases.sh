@@ -18,15 +18,17 @@
 # 既存 hook 群と同じく「うっかり silent punting」の抑止が目的で、意図的な回避の遮断ではない。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty')"
-[[ -z "$cmd" ]] && exit 0
-
-LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
-. "$LIB"
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
+
+RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[[ -r "$RGT" ]] || exit 0
+# shellcheck source=/dev/null
+. "$RGT"
 
 # heredoc 本文(ドキュメント書き出し中のコマンド例等)への誤爆を防ぐ(dotfiles#74 と同作法)。
 if type strip_heredocs >/dev/null 2>&1; then

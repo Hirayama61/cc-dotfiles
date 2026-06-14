@@ -27,10 +27,12 @@ set -euo pipefail
 # 誤判定してブロックをすり抜けられる(bgIsolation 隔離が効かない経路でも本 hook が混線防止の最後の砦になるため)。
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 
-command -v jq >/dev/null 2>&1 || exit 0
-
-input="$(cat)"
-fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty')"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+fp="$(hook_file_path)"
 [[ -z "$fp" ]] && exit 0
 
 # 相対パスは hook の CWD 基準になり判定が壊れるので安全側で素通し(block-repo-doc 同様)。

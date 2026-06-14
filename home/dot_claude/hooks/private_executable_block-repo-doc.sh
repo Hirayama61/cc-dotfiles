@@ -15,13 +15,15 @@
 #   rel 算出 → home/dot_* 除外(rel アンカー)→ 許可リスト/docs/.github → else exit2。
 set -euo pipefail
 
-command -v jq >/dev/null 2>&1 || exit 0
-
-input="$(cat)"
-tool_name="$(printf '%s' "$input" | jq -r '.tool_name // empty')"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+tool_name="$(hook_tool_name)"
 [[ "$tool_name" == "Write" ]] || exit 0
 
-fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty')"
+fp="$(hook_file_path)"
 [[ -z "$fp" ]] && exit 0
 
 # 相対 file_path は git -C が hook の CWD 基準になり判定が壊れるので安全側で素通し。

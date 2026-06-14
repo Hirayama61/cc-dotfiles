@@ -29,17 +29,18 @@
 # 安全側設計: jq 無し / 空コマンド / lib 不在 / git 外 / HEAD 不明なら exit 0(通す)。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
-[[ -z "$cmd" ]] && exit 0
-cwd="$(echo "$input" | jq -r '.cwd // empty')"
-[[ -z "$cwd" ]] && cwd="$PWD"
-
-LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
-. "$LIB"
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
+cwd="$(hook_cwd)"; [[ -z "$cwd" ]] && cwd="$PWD"
+
+RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[[ -r "$RGT" ]] || exit 0
+# shellcheck source=/dev/null
+. "$RGT"
 
 # 当該セグメントの HEAD が push 済(remote 到達)なら 0 を返す(= block すべき)。
 # git 外 / unborn HEAD / 解決不能は非 0(= このセグメントは skip)。

@@ -29,15 +29,17 @@
 # 安全側設計: jq 無し / 空コマンド / lib 不在なら exit 0(通す)。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
-[[ -z "$cmd" ]] && exit 0
-
-LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
-. "$LIB"
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
+
+RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[[ -r "$RGT" ]] || exit 0
+# shellcheck source=/dev/null
+. "$RGT"
 
 while IFS= read -r seg; do
   [[ -z "$seg" ]] && continue

@@ -11,17 +11,18 @@
 # lib 不達時は gate 側も同様に exit 0 するためゲート全体が fail-open で整合)。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
-[[ -z "$cmd" ]] && exit 0
-cwd="$(echo "$input" | jq -r '.cwd // empty')"
-[[ -z "$cwd" ]] && cwd="$PWD"
-
-LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
-. "$LIB"
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
+cwd="$(hook_cwd)"; [[ -z "$cwd" ]] && cwd="$PWD"
+
+RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[[ -r "$RGT" ]] || exit 0
+# shellcheck source=/dev/null
+. "$RGT"
 FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
 [[ -r "$FLAG_LIB" ]] || exit 0
 # shellcheck source=/dev/null

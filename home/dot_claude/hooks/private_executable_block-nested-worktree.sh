@@ -10,15 +10,18 @@
 #         strip_heredocs で除去してから照合する(dotfiles#74)。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+cmd="$(hook_command)"
 [[ -z "$cmd" ]] && exit 0
 
 # lib が無い環境では素の cmd で従来どおり判定する(ブロック能力を落とさない)。
-LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
 # shellcheck source=/dev/null
-if [[ -r "$LIB" ]] && . "$LIB" 2>/dev/null; then
+if [[ -r "$RGT" ]] && . "$RGT" 2>/dev/null; then
   stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
   [[ -n "$stripped" ]] && cmd="$stripped"
 fi

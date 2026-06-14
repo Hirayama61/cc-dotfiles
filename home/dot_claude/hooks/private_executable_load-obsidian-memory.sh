@@ -45,12 +45,15 @@ emit_capped() {
   fi
 }
 
-command -v jq &>/dev/null || exit 0
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
 
 # cwd から現在 repo の論理キーを導出し、注入するルートガイドを現在 repo に対応づける。
 # 空(repo 外 / vault 直編集中)ならガイドは注入せず Preferences のみ(REPO_KEY="")。
-input="$(cat)" || true
-cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)"
+cwd="$(hook_cwd)"
 REPO_KEY=""
 RESOLVER="$HOME/.claude/hooks/lib/resolve-repo-key.sh"
 if [[ -n "$cwd" && -x "$RESOLVER" ]]; then

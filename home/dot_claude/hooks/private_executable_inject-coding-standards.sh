@@ -26,15 +26,18 @@ set -euo pipefail
 # 誤注入するのを防ぐ)。
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 
-command -v jq &>/dev/null || exit 0
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
 
 STD="$HOME/.claude/coding-standards.md"
 
 # stdin から編集対象パスを取得(repo 固有規約の探索起点)。matcher で対象を絞っているので
 # ここに来た時点でコード編集ツール。NotebookEdit は file_path でなく notebook_path を使う
 # ため両対応。jq 失敗時も素通りできるよう || true で握る。
-input="$(cat || true)"
-fp="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null || true)"
+fp="$(printf '%s' "$HOOK_INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null || true)"
 
 # 同一コンテキストへは初回のみ注入する(dotfiles#62)。キーは transcript_path 基準
 # (session_id は subagent と共有され、delegate への初回注入まで抑止される落とし穴)。
@@ -47,7 +50,7 @@ FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
 # 検査 NG なら ctx 空のまま = 常時注入へ倒す(fail-open)。
 # shellcheck source=/dev/null
 if [[ -r "$FLAG_LIB" ]] && ( . "$FLAG_LIB" ) >/dev/null 2>&1 && . "$FLAG_LIB" 2>/dev/null; then
-  ctx="$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"
+  ctx="$(printf '%s' "$HOOK_INPUT" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"
   ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
 fi
 seen() { [[ -n "$ctx" && -f "$(cs_injected_flag "$ctx" "$1")" ]]; }

@@ -5,10 +5,6 @@
 # 安全側設計: jq 無し / lib 不達なら exit 0。
 set -euo pipefail
 
-if ! command -v jq &>/dev/null; then
-  exit 0
-fi
-
 PATTERN_LIB="$HOME/.claude/hooks/lib/test-patterns.sh"
 [[ -r "$PATTERN_LIB" ]] || exit 0
 # 構文破損 lib を直接 source すると bash が status 2 で即死し「ブロック」に化けるため、
@@ -17,15 +13,19 @@ PATTERN_LIB="$HOME/.claude/hooks/lib/test-patterns.sh"
 ( . "$PATTERN_LIB" ) >/dev/null 2>&1 || exit 0
 . "$PATTERN_LIB" 2>/dev/null || exit 0
 
-input="$(cat)"
-tool_name="$(echo "$input" | jq -r '.tool_name // empty')"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+tool_name="$(hook_tool_name)"
 
 test_file_pattern="$(test_file_ere)"
 [[ -n "$test_file_pattern" ]] || exit 0
 
 # --- Bash: rm / git rm によるテストファイル削除をブロック ---
 if [[ "$tool_name" == "Bash" ]]; then
-  command="$(echo "$input" | jq -r '.tool_input.command // empty')"
+  command="$(hook_command)"
   [[ -z "$command" ]] && exit 0
 
   if printf '%s' "$command" | grep -qE '(^|\s|;|&&|\|\|)\s*(rm|git\s+rm)\s' && \
@@ -38,13 +38,13 @@ fi
 
 # --- Edit: テストコード(アサーション)の削除をブロック ---
 if [[ "$tool_name" == "Edit" ]]; then
-  file_path="$(echo "$input" | jq -r '.tool_input.file_path // empty')"
+  file_path="$(hook_file_path)"
   [[ -z "$file_path" ]] && exit 0
 
   printf '%s' "$file_path" | grep -qE "$test_file_pattern" || exit 0
 
-  old_string="$(echo "$input" | jq -r '.tool_input.old_string // empty')"
-  new_string="$(echo "$input" | jq -r '.tool_input.new_string // empty')"
+  old_string="$(hook_field '.tool_input.old_string')"
+  new_string="$(hook_field '.tool_input.new_string')"
   [[ -z "$old_string" ]] && exit 0
 
   assertion_pattern="$(test_assertion_ere)"
