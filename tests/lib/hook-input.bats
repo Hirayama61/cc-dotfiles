@@ -10,9 +10,14 @@ setup() {
   source "$LIB"
 }
 
+teardown() {
+  # source_hook_lib テストが作る一時 lib を掃除(BATS_TEST_TMPDIR は自動削除されるが明示)。
+  rm -f "$HOME/.claude/hooks/lib/broken-test.sh"
+}
+
 @test "hook_init returns 0 and HOOK_INPUT holds stdin when jq present" {
-  output="$(printf '%s' '{"tool_name":"Bash"}' | { hook_init; printf '%s' "$HOOK_INPUT"; })"
-  [ "$output" = '{"tool_name":"Bash"}' ]
+  output="$(printf '%s' '{"tool_name":"Bash"}' | { hook_init; printf '%s|%s' "$?" "$HOOK_INPUT"; })"
+  [ "$output" = '0|{"tool_name":"Bash"}' ]
 }
 
 @test "hook_init returns 1 when jq absent (fail-open)" {
