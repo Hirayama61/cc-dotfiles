@@ -66,3 +66,12 @@ assert_no_block_for() {
   assert_no_block_for "no-jq" \
     '{"tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"/tmp"}' "$nojq"
 }
+
+@test "corrupt hook-input.sh: no hook blocks (subshell guard fail-open)" {
+  # hook-input.sh が構文破損しても、各 hook 冒頭の subshell 試験 source が握って
+  # fail-open(exit 2 を出さない)。`. "$LIB" 2>/dev/null || exit 0` 単独だと parse
+  # エラーで exit 2 に化ける問題(self-review security 指摘)への回帰防止。
+  printf '%s' '{ broken bash (' >"$HOME/.claude/hooks/lib/hook-input.sh"
+  assert_no_block_for "corrupt-hook-input" \
+    '{"tool_name":"Bash","tool_input":{"command":"git push"},"cwd":"/tmp"}'
+}

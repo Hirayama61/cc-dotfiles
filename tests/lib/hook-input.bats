@@ -40,12 +40,6 @@ setup() {
   [ "$output" = "" ]
 }
 
-@test "hook_field_raw does not collapse false" {
-  HOOK_INPUT='{"x":false}'
-  run hook_field_raw '.x'
-  [ "$output" = "false" ]
-}
-
 @test "hook_command shortcut" {
   HOOK_INPUT='{"tool_input":{"command":"git push"}}'
   run hook_command

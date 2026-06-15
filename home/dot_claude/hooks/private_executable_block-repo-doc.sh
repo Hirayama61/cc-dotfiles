@@ -18,6 +18,7 @@ set -euo pipefail
 LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
 . "$LIB" 2>/dev/null || exit 0
 hook_init || exit 0
 tool_name="$(hook_tool_name)"

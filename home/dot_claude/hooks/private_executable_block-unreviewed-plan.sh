@@ -17,11 +17,12 @@ unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
 . "$LIB" 2>/dev/null || exit 0
 hook_init || exit 0
 # 空入力(stdin 無し)は判定材料が無く、cwd 未指定で $PWD フォールバックすると無関係 repo の
 # design-gate を巻き込んで誤ブロックする。他 hook の異常系と同じく fail-open で素通す。
-[[ -z "$HOOK_INPUT" ]] && exit 0
+[[ -z "${HOOK_INPUT:-}" ]] && exit 0
 sid="$(hook_session_id)"
 cwd="$(hook_cwd)"
 [[ -z "$cwd" ]] && cwd="$PWD"
