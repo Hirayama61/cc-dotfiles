@@ -231,6 +231,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/selfcheck-on-stop.sh"
+          }
+        ]
+      }
     ]
   }
 }
