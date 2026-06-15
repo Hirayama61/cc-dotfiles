@@ -121,8 +121,8 @@ assert_block() {
   [ -z "$output" ]
 }
 
-@test "never returns exit 2 (fail-open, even with incomplete task)" {
+@test "fail-open: exits 0 (never blocks via exit 2) with incomplete task" {
   _seed_task sess-g in_progress
   run_hook selfcheck-on-stop.sh '{"stop_hook_active":false,"session_id":"sess-g"}'
-  [ "$status" -ne 2 ]
+  [ "$status" -eq 0 ]
 }
