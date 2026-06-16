@@ -18,10 +18,14 @@ set -euo pipefail
 # git 判定核を環境変数注入で狂わされないよう無効化(block-main-clone-edit と同作法)。
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-sid="$(jq -r '.session_id // empty' <<<"$input")"
-fp="$(jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' <<<"$input")"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+sid="$(hook_session_id)"
+fp="$(hook_field '.tool_input.file_path // .tool_input.notebook_path')"
 # 相対パスは hook の cwd 依存で壊れるため絶対パスのときだけ判定(inject と同作法)。
 [[ "$fp" = /* ]] || exit 0
 

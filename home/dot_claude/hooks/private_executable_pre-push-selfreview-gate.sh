@@ -13,17 +13,19 @@
 # 安全側設計: 不明 / lib 不達なら exit 0。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
-[[ -z "$cmd" ]] && exit 0
-cwd="$(echo "$input" | jq -r '.cwd // empty')"
-[[ -z "$cwd" ]] && cwd="$PWD"
-
-LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
-. "$LIB"
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
+cwd="$(hook_cwd)"; [[ -z "$cwd" ]] && cwd="$PWD"
+
+RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[[ -r "$RGT" ]] || exit 0
+# shellcheck source=/dev/null
+. "$RGT"
 BASE_LIB="$HOME/.claude/hooks/lib/resolve-base-ref.sh"
 [[ -r "$BASE_LIB" ]] || exit 0
 # shellcheck source=/dev/null

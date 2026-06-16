@@ -14,12 +14,13 @@
 #   lint/CI のソースを取りこぼすため /home/dot_ セグメント判定に作り直した。
 set -euo pipefail
 
-if ! command -v jq &>/dev/null; then
-  exit 0
-fi
-
-input="$(cat)"
-file_path="$(echo "$input" | jq -r '.tool_input.file_path // empty')"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+file_path="$(hook_file_path)"
 
 if [[ -z "$file_path" ]]; then
   exit 0

@@ -14,13 +14,17 @@ set -euo pipefail
 # git 判定核を環境変数注入で狂わされないよう無効化(block-main-clone-edit と同作法)。
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
 # 空入力(stdin 無し)は判定材料が無く、cwd 未指定で $PWD フォールバックすると無関係 repo の
 # design-gate を巻き込んで誤ブロックする。他 hook の異常系と同じく fail-open で素通す。
-[[ -z "$input" ]] && exit 0
-sid="$(jq -r '.session_id // empty' <<<"$input")"
-cwd="$(jq -r '.cwd // empty' <<<"$input")"
+[[ -z "${HOOK_INPUT:-}" ]] && exit 0
+sid="$(hook_session_id)"
+cwd="$(hook_cwd)"
 [[ -z "$cwd" ]] && cwd="$PWD"
 # 相対 cwd は hook 実行ディレクトリ依存で別 repo を見に行くため判定しない
 # (Gate 2 の相対 file_path 素通しと同じ fail-open)。

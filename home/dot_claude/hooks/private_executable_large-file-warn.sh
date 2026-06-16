@@ -9,12 +9,16 @@
 # fail-open: jq 不在 / path 不明 / 非ファイルは素通し。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-file_path="$(echo "$input" | jq -r '.tool_input.file_path // empty')"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+file_path="$(hook_file_path)"
 [[ -z "$file_path" ]] && exit 0
 [[ -f "$file_path" ]] || exit 0
-tool_name="$(echo "$input" | jq -r '.tool_name // empty')"
+tool_name="$(hook_tool_name)"
 
 # 巨大ファイル(50MB 超)は wc -l の全読みを避けてサイズだけで警告する
 # (hook が timeout まで I/O を占有しないため)。

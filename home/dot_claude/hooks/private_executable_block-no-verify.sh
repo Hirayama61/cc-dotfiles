@@ -13,15 +13,19 @@
 # あり敵対防御ではない。安全側: jq 無しなら exit 0。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
-input="$(cat)"
-cmd="$(echo "$input" | jq -r '.tool_input.command // empty')"
-[[ -z "$cmd" ]] && exit 0
-
-LIB="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
-. "$LIB"
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
+cmd="$(hook_command)"
+[[ -z "$cmd" ]] && exit 0
+
+RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
+[[ -r "$RGT" ]] || exit 0
+# shellcheck source=/dev/null
+. "$RGT"
 
 while IFS= read -r seg; do
   [[ -z "$seg" ]] && continue

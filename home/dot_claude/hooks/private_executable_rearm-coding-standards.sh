@@ -6,15 +6,19 @@
 # lib 不達なら exit 0(inject 側も同時に常時注入へ倒れるため再注入漏れは起きない)。
 set -euo pipefail
 
-command -v jq &>/dev/null || exit 0
+LIB="$HOME/.claude/hooks/lib/hook-input.sh"
+[[ -r "$LIB" ]] || exit 0
+# shellcheck source=/dev/null
+( . "$LIB" ) >/dev/null 2>&1 || exit 0
+. "$LIB" 2>/dev/null || exit 0
+hook_init || exit 0
 FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
 [[ -r "$FLAG_LIB" ]] || exit 0
 # shellcheck source=/dev/null
 ( . "$FLAG_LIB" ) >/dev/null 2>&1 || exit 0
 . "$FLAG_LIB" 2>/dev/null || exit 0
 
-input="$(cat || true)"
-ctx="$(printf '%s' "$input" | jq -r '.transcript_path // .session_id // empty' 2>/dev/null || true)"
+ctx="$(hook_field '.transcript_path // .session_id')"
 ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
 [[ -z "$ctx" ]] && exit 0
 
