@@ -36,7 +36,7 @@ setup() {
 @test "review-passed key for a plain branch carries a SHA suffix" {
   local dir hash
   dir="$HOME/.local/state/claude-sessions"
-  hash="$(printf '%s' main | shasum -a 256 | cut -c1-8)"
+  hash="$(printf '%s' main | shasum -a 256 | cut -c1-16)"
   run "$FLAG" review-passed myrepo main
   [ "$status" -eq 0 ]
   [ "$output" = "$dir/review-passed-myrepo--main-$hash" ]
@@ -45,7 +45,7 @@ setup() {
 @test "branch slash is sanitized to dash but suffix keeps it unique" {
   local dir hash
   dir="$HOME/.local/state/claude-sessions"
-  hash="$(printf '%s' feature/a-b | shasum -a 256 | cut -c1-8)"
+  hash="$(printf '%s' feature/a-b | shasum -a 256 | cut -c1-16)"
   run "$FLAG" review-passed myrepo feature/a-b
   [ "$status" -eq 0 ]
   [ "$output" = "$dir/review-passed-myrepo--feature-a-b-$hash" ]
@@ -53,6 +53,7 @@ setup() {
 
 @test "FIXED (B-1): feature/a-b and feature-a/b map to DIFFERENT keys" {
   run "$FLAG" review-passed myrepo feature/a-b
+  [ "$status" -eq 0 ]
   local k1="$output"
   run "$FLAG" review-passed myrepo feature-a/b
   [ "$status" -eq 0 ]
@@ -61,8 +62,10 @@ setup() {
 
 @test "same branch yields the same key (reader/writer roundtrip)" {
   run "$FLAG" review-passed myrepo feature/x
+  [ "$status" -eq 0 ]
   local k1="$output"
   run "$FLAG" review-passed myrepo feature/x
+  [ "$status" -eq 0 ]
   [ "$output" = "$k1" ]
 }
 
@@ -76,7 +79,7 @@ setup() {
 
 @test "design-reviewed key uses the same branch convention" {
   local hash
-  hash="$(printf '%s' main | shasum -a 256 | cut -c1-8)"
+  hash="$(printf '%s' main | shasum -a 256 | cut -c1-16)"
   run "$FLAG" design-reviewed myrepo main
   [ "$status" -eq 0 ]
   [ "$output" = "$HOME/.local/state/claude-sessions/design-reviewed-myrepo--main-$hash" ]

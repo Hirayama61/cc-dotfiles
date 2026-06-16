@@ -432,7 +432,8 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
   # 念のため手順 5 に至る前にフラグが既存なら異常として中断する(子や別経路の自力 touch
   # 検知)。DECREASE/RESURRECT 分岐で `> "$flag"` する場合も、書き込み前に同じ確認を行う。
   [ -e "$flag" ] && { echo "想定外: review-passed フラグが手順 5 前に既存。中断" >&2; exit 1; }
-  "$HOME/.claude/hooks/lib/flag-paths.sh" dir-ensure
+  "$HOME/.claude/hooks/lib/flag-paths.sh" dir-ensure \
+    || { echo "flag state dir の検証に失敗。中断" >&2; exit 1; }
   touch "$flag"
   ```
   これで `pre-push-selfreview-gate.sh` が解除される。

@@ -17,7 +17,7 @@
 #   design-scope-${repo_key}--${safe_branch}         (Tier 3: 宣言スコープ。1行1 path/glob)
 #   design-scope-pending-${repo_key}                 (同: branch 不在時)
 #   cs-injected-${ctx}--${scope}
-# safe_branch = branch を '/'→'-' サニタイズ + 元 branch の SHA-256 先頭8桁サフィックス
+# safe_branch = branch を '/'→'-' サニタイズ + 元 branch の SHA-256 先頭16桁サフィックス
 #   (不可逆置換による feature/a-b ≡ feature-a/b 衝突を解消。#49 B-1)。
 # ctx = transcript_path(無ければ session_id)の basename から末尾 .jsonl を除去。
 # repo_key は resolve-repo-key.sh、branch は push/commit 実対象 dir
@@ -60,15 +60,17 @@ claude_flag_dir_ensure() {
 
 # branch を path 安全化 + 衝突回避サフィックス。'/'→'-' だけだと不可逆で feature/a-b と
 # feature-a/b が同一キーに衝突し偽承認が成立する(#49 B-1)。元 branch バイト列の SHA-256
-# 先頭8桁(macOS 標準 shasum)で一意化する。空入力は空のまま(現行同様 suffix 無し)。
-# shasum 不在(macOS では実質起きない)は cksum(POSIX 常在)へ fallback し必ず suffix を付ける
-# (旧 lossy 形へ戻さない=衝突を復活させない)。読取/書込が本関数を共有するので両側一致する。
+# 先頭16桁=64bit(macOS 標準 shasum)で一意化する。8桁=32bit はサニタイズ後同名化しうる
+# ブランチ群で意図的衝突の余地が残るため 16 桁に増やす(CodeRabbit PR#63)。空入力は空のまま
+# (現行同様 suffix 無し)。shasum 不在(macOS では実質起きない)は cksum(POSIX 常在)へ
+# fallback し必ず suffix を付ける(旧 lossy 形へ戻さない=衝突を復活させない)。読取/書込が
+# 本関数を共有するので両側一致する。
 flag_safe_branch() {
   local raw="${1:-}"
   [[ -z "$raw" ]] && return 0
   local sanitized hash
   sanitized="$(printf '%s' "$raw" | tr '/' '-')"
-  hash="$(printf '%s' "$raw" | shasum -a 256 2>/dev/null | cut -c1-8)"
+  hash="$(printf '%s' "$raw" | shasum -a 256 2>/dev/null | cut -c1-16)"
   [[ -z "$hash" ]] && hash="$(printf '%s' "$raw" | cksum 2>/dev/null | cut -d' ' -f1)"
   printf '%s-%s' "$sanitized" "$hash"
 }
