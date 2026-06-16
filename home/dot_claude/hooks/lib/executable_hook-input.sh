@@ -52,12 +52,15 @@ hook_session_id() { hook_field '.session_id'; }
 
 # source_hook_lib <basename>: $HOME/.claude/hooks/lib/<basename> をガード付きで source。
 # [[ -r ]] 確認 → subshell 試験 source(構文破損なら本 source を回避)→ 本 source。
-# いずれか失敗で return 1(呼び出し側で || exit 0 = fail-open)。bare source が破損 lib で
-# exit 2 に化ける事故(A-1)を塞ぐ正規経路。各 hook の他 lib 取り込み(resolve-git-target
-# 等)をこの1関数へ寄せる fail-open 化は Phase 3 で行う(本 PR は冒頭 jq 取り込みの集約に
-# 留め、source 形は現状維持=挙動不変のため)。
+# いずれか失敗で return 1(呼び出し側で `|| exit 0` = fail-open、または `if source_hook_lib`
+# で lib 無し時の素判定継続)。bare source が破損 lib で exit 2 に化ける事故(A-1)を塞ぐ
+# 正規経路で、git ゲート群の resolve-git-target / resolve-base-ref / flag-paths 取り込みは
+# この1関数へ統一済み。
 # 引数 <basename> は呼び出し側リテラル限定(外部入力を渡すと $HOME 外 source の恐れ)。
 source_hook_lib() {
+  # 引数は basename リテラル限定(下記 docstring)。万一 path 区切り(空含む)が
+  # 混じったら $HOME 外 source を避けるため拒否する(防御的。現状の全呼出はリテラル)。
+  case "${1:-}" in */* | "") return 1 ;; esac
   local lib="$HOME/.claude/hooks/lib/${1}"
   [[ -r "$lib" ]] || return 1
   # shellcheck source=/dev/null

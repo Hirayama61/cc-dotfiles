@@ -38,10 +38,7 @@ hook_init || exit 0
 cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
 cwd="$(hook_cwd)"; [[ -z "$cwd" ]] && cwd="$PWD"
 
-RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
-[[ -r "$RGT" ]] || exit 0
-# shellcheck source=/dev/null
-. "$RGT"
+source_hook_lib resolve-git-target.sh || exit 0
 
 # 当該セグメントの HEAD が push 済(remote 到達)なら 0 を返す(= block すべき)。
 # git 外 / unborn HEAD / 解決不能は非 0(= このセグメントは skip)。

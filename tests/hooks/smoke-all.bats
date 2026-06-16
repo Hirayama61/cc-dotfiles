@@ -5,10 +5,10 @@
 # stderr 表示のみで実行継続)。よって fail-open の正しい判定基準は「exit != 2」。
 # 無害入力・空入力・jq 不在のいずれでも、どの hook も exit 2 を返してはならない。
 #
-# 既知の現状(PR-3 で改善予定。ここでは「exit != 2 は満たす=ブロックしない」ことだけ固定):
-#   - block-secret-files / pipe-stage-permissions は jq 不在で exit 127(noisy だが非ブロック)。
-#   - lib 破損時に exit 2 へ化ける bare source の検証は smoke では扱わず、
-#     代表 E2E(block-no-verify.bats)で現状を固定し PR-3 で red→green 化する。
+# PR-3 適用後の不変条件:
+#   - block-secret-files / pipe-stage-permissions は jq 不在でも exit 0(ガード追加済)。
+#   - 共有 lib(hook-input.sh / resolve-git-target.sh)が構文破損しても、各 hook の
+#     source_hook_lib 経路が握って exit 2 を出さない(A-1 修正の全 hook スモーク)。
 
 load ../helpers/common
 
@@ -74,4 +74,12 @@ assert_no_block_for() {
   printf '%s' '{ broken bash (' >"$HOME/.claude/hooks/lib/hook-input.sh"
   assert_no_block_for "corrupt-hook-input" \
     '{"tool_name":"Bash","tool_input":{"command":"git push"},"cwd":"/tmp"}'
+}
+
+@test "corrupt resolve-git-target.sh: no hook blocks (A-1 bare source fix)" {
+  # かつて bare source していた git ゲート群が、resolve-git-target.sh の構文破損で
+  # exit 2(ブロック)に化けた(A-1)。source_hook_lib 化でどの hook も exit 2 を出さない。
+  printf '%s' '{ broken bash (' >"$HOME/.claude/hooks/lib/resolve-git-target.sh"
+  assert_no_block_for "corrupt-resolve-git-target" \
+    '{"tool_name":"Bash","tool_input":{"command":"git push --force"},"cwd":"/tmp"}'
 }

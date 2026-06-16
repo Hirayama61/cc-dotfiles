@@ -25,10 +25,7 @@ LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 hook_init || exit 0
 cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
 
-RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
-[[ -r "$RGT" ]] || exit 0
-# shellcheck source=/dev/null
-. "$RGT"
+source_hook_lib resolve-git-target.sh || exit 0
 
 # gh はサブコマンドの前にグローバル/継承フラグを置ける(例 `gh -R o/r pr merge`、
 # `gh --repo=o/r pr merge`)。gh とサブコマンドの間に「`-` 始まりのフラグトークン

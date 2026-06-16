@@ -27,11 +27,18 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "FP (D-M1 bug; fixed in PR-3): rm non-test + cp test file is wrongly blocked" {
-  # 独立した 2 つの grep(rm 系の存在 / テストパス名の存在)を AND 判定するため、
-  # 削除対象は build/ なのにコマンド中に test ファイル名が出るだけで誤ブロックする。
+@test "FP fixed (D-M1): rm non-test in one segment + cp test file in another is allowed" {
+  # rm 対象は build/ で、テストファイル名は別セグメント(cp)に出るだけ。セグメント分割で
+  # 同居判定するため誤ブロックしない。
   run_hook block-test-deletion.sh \
     '{"tool_name":"Bash","tool_input":{"command":"rm -rf build/ && cp src/foo.test.js dist/"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "still blocks rm of a test file chained after another command (D-M1 regression guard)" {
+  # 同一セグメント内に rm とテストファイルが同居するケースは引き続きブロックする。
+  run_hook block-test-deletion.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"cd src && rm foo.test.js"}}'
   [ "$status" -eq 2 ]
 }
 
