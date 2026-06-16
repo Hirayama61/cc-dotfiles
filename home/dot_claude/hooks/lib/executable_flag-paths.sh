@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# flag-paths.sh — /tmp/claude-sessions ゲートフラグのキー導出規約の単一情報源
-# (参謀ゲート Phase 1)。
+# flag-paths.sh — ゲートフラグの state dir 提供 + キー導出規約の単一情報源
+# (参謀ゲート Phase 1、state dir 移行 #49)。
 #
 # 背景: review-passed フラグは gate(読取)/ postcommit(削除)/ self-review SKILL(作成)の
 # 3者が同じキー文字列を別々に組み立てており、1者でも崩れると恒久ブロック or ゲート無効化に
@@ -17,7 +17,8 @@
 #   design-scope-${repo_key}--${safe_branch}         (Tier 3: 宣言スコープ。1行1 path/glob)
 #   design-scope-pending-${repo_key}                 (同: branch 不在時)
 #   cs-injected-${ctx}--${scope}
-# safe_branch = branch の '/' を '-' へ置換。
+# safe_branch = branch を '/'→'-' サニタイズ + 元 branch の SHA-256 先頭8桁サフィックス
+#   (不可逆置換による feature/a-b ≡ feature-a/b 衝突を解消。#49 B-1)。
 # ctx = transcript_path(無ければ session_id)の basename から末尾 .jsonl を除去。
 # repo_key は resolve-repo-key.sh、branch は push/commit 実対象 dir
 # (resolve-git-target.sh)起点で得る(導出はここではしない)。
@@ -25,12 +26,51 @@
 # bash 3.2 互換・source 時に set 状態を汚染しない・fail-open(空入力でもエラーに
 # しない)は resolve-repo-key.sh と同作法。strict 化は直接実行ガード内でのみ行う。
 
+# ゲートフラグの state dir。XDG_STATE_HOME 配下に置き /tmp 共有名前空間を脱する(#49 B-3)。
+# XDG_STATE_HOME が絶対パスでなければ無視して $HOME/.local/state へ倒す(相対パスは呼び出し側
+# cwd 依存で予測不能・別ユーザ書込の穴になるため)。
 claude_flag_dir() {
-  printf '%s' "/tmp/claude-sessions"
+  local base="${XDG_STATE_HOME:-}"
+  case "$base" in
+  /*) ;;
+  *) base="$HOME/.local/state" ;;
+  esac
+  printf '%s/claude-sessions' "$base"
 }
 
+# state dir を 0700 で用意し、最終 dir が実ディレクトリ・非 symlink・自ユーザ所有・mode 0700 で
+# あることを検証する。いずれか失敗で非ゼロ return(書込側は中止。読取側ゲートは fail-open のまま)。
+# 全書込経路(hook の mark / design-gate の touch・mv / skill のフラグ作成 / ci-watch lock)は
+# これを通してから書く。stdout には何も出さない(PreToolUse hook から呼ぶため出力で汚さない)。
+# 注: これは「$HOME 配下の自分の dir」健全性チェックであり、TOCTOU 耐性や中間ディレクトリ
+# (~/.local 等)の検証・中間 symlink 経由のリダイレクトは目標外。/tmp を脱した時点で攻撃面は
+# 自アカウントに限定され、$HOME 配下に細工できる時点でアカウント陥落(ゲートの脅威モデル
+# 「自分の Claude を縛る best-effort、敵対防御ではない」内)。
+claude_flag_dir_ensure() {
+  local dir
+  dir="$(claude_flag_dir)"
+  (umask 077 && mkdir -p "$dir") 2>/dev/null || return 1
+  [[ -d "$dir" && ! -L "$dir" ]] || return 1
+  local owner
+  owner="$(stat -f '%u' "$dir" 2>/dev/null || printf '%s' -1)"
+  [[ "$owner" == "$(id -u)" ]] || return 1
+  chmod 700 "$dir" 2>/dev/null || return 1
+  return 0
+}
+
+# branch を path 安全化 + 衝突回避サフィックス。'/'→'-' だけだと不可逆で feature/a-b と
+# feature-a/b が同一キーに衝突し偽承認が成立する(#49 B-1)。元 branch バイト列の SHA-256
+# 先頭8桁(macOS 標準 shasum)で一意化する。空入力は空のまま(現行同様 suffix 無し)。
+# shasum 不在(macOS では実質起きない)は cksum(POSIX 常在)へ fallback し必ず suffix を付ける
+# (旧 lossy 形へ戻さない=衝突を復活させない)。読取/書込が本関数を共有するので両側一致する。
 flag_safe_branch() {
-  printf '%s' "${1:-}" | tr '/' '-'
+  local raw="${1:-}"
+  [[ -z "$raw" ]] && return 0
+  local sanitized hash
+  sanitized="$(printf '%s' "$raw" | tr '/' '-')"
+  hash="$(printf '%s' "$raw" | shasum -a 256 2>/dev/null | cut -c1-8)"
+  [[ -z "$hash" ]] && hash="$(printf '%s' "$raw" | cksum 2>/dev/null | cut -d' ' -f1)"
+  printf '%s-%s' "$sanitized" "$hash"
 }
 
 review_passed_flag() {
@@ -108,6 +148,7 @@ design_scope_pending_flag() {
 #   flag-paths.sh design-scope-pending <repo_key>
 #   flag-paths.sh cs-injected <ctx> <scope>
 #   flag-paths.sh dir
+#   flag-paths.sh dir-ensure          (非 source 文脈から state dir を 0700 で用意・検証)
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   set -euo pipefail
   case "${1:-}" in
@@ -119,6 +160,7 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   design-scope-pending) design_scope_pending_flag "${2:-}" ;;
   cs-injected) cs_injected_flag "${2:-}" "${3:-}" ;;
   dir) claude_flag_dir ;;
+  dir-ensure) claude_flag_dir_ensure || exit 1; exit 0 ;;
   *)
     cat >&2 <<'USAGE'
 Usage: flag-paths.sh <subcommand> <args>
@@ -130,6 +172,7 @@ Usage: flag-paths.sh <subcommand> <args>
   design-scope-pending     <repo_key>
   cs-injected              <ctx> <scope>
   dir
+  dir-ensure
 USAGE
     exit 1
     ;;

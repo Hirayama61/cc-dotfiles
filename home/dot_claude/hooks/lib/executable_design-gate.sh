@@ -86,6 +86,9 @@ _design_gate_promote() { # pending-path ctx-path sid
   local p="${1:-}" c="${2:-}" sid="${3:-}"
   [[ -z "$sid" ]] && return 0
   [[ -L "$c" ]] && return 0
+  # state dir を確保してから mv(移行後の XDG dir は初回未作成)。確保失敗時は昇格を諦める
+  # (return 0)。通過判定は呼び出し側で確定済みなので未昇格は次回再評価になるだけ=安全側。
+  type claude_flag_dir_ensure >/dev/null 2>&1 && { claude_flag_dir_ensure || return 0; }
   mv "$p" "$c" 2>/dev/null || true
   return 0
 }
@@ -97,6 +100,9 @@ _design_gate_solidify() { # repo branch
   [[ -z "$repo" || -z "$branch" ]] && return 0
   type is_protected_branch >/dev/null 2>&1 || return 0
   is_protected_branch "$branch" && return 0
+  # state dir を確保してから touch(移行後の XDG dir は初回未作成)。確保失敗時は定着を諦める
+  # (return 0)。branch 定着は次回評価の高速化であって必須ではない=安全側。
+  type claude_flag_dir_ensure >/dev/null 2>&1 && { claude_flag_dir_ensure || return 0; }
   local bf
   bf="$(design_reviewed_flag "$repo" "$branch")"
   [[ -L "$bf" ]] && return 0

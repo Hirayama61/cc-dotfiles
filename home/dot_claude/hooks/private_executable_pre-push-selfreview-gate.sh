@@ -49,7 +49,9 @@ repo_key=""
 
 flag_file="$(review_passed_flag "$repo_key" "$branch")"
 
-if [[ ! -f "$flag_file" ]]; then
+# 解除フラグは regular file のみ認める(-f は symlink を辿るため、予測可能パスへの symlink 設置で
+# 解錠されるのを防ぐ。design-gate の読取側硬化と対称)。
+if [[ ! -f "$flag_file" || -L "$flag_file" ]]; then
   echo "ブロック: ブランチ(${branch})は /self-review 未通過。push 前に /self-review を実施すること(通過でゲート解除。新規コミットで再レビュー必須)。" >&2
   exit 2
 fi

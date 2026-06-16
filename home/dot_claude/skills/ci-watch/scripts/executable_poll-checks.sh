@@ -71,8 +71,10 @@ fi
 [ -n "$repo_key" ] || repo_key="unknown"
 
 # --- atomic mkdir lock(同一 PR 二重 watch 防止。複数 PR は番号で分かれるので並行可) ---
-lock_root="/tmp/claude-sessions"
-mkdir -p "$lock_root"
+# ロック dir はゲートフラグと同じ state dir(flag-paths.sh 単一情報源)に置く。
+FLAG_PATHS="$HOME/.claude/hooks/lib/flag-paths.sh"
+lock_root="$("$FLAG_PATHS" dir)"
+"$FLAG_PATHS" dir-ensure
 lock_dir="${lock_root}/ci-watch-${repo_key}-pr${pr}"
 pid_file="${lock_dir}/pid"
 

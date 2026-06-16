@@ -31,6 +31,7 @@ cwd="$(hook_cwd)"; [ -z "$cwd" ] && cwd="$PWD"
 
 source_hook_lib resolve-git-target.sh || exit 0
 source_hook_lib resolve-base-ref.sh || exit 0
+source_hook_lib flag-paths.sh || exit 0
 
 # push サブコマンドの有無だけ見る。refspec(`HEAD:main` 等)の dst は解釈しないので、
 # 現ブランチと異なる宛先への push でも現ブランチ基準でナッジしうる。block-protected-branch-push
@@ -61,8 +62,8 @@ repo_key=""
 [ -x "$REPO_RESOLVER" ] && repo_key="$("$REPO_RESOLVER" "$target_dir" 2>/dev/null || true)"
 [ -n "$repo_key" ] || repo_key="unknown"
 
-state_dir="/tmp/claude-sessions"
-mkdir -p "$state_dir"
+state_dir="$(claude_flag_dir)"
+claude_flag_dir_ensure || exit 0
 nudge_file="${state_dir}/ci-watch-nudge-${repo_key}-pr${pr}"
 debounce=300
 

@@ -55,7 +55,7 @@ if [[ -r "$FLAG_LIB" ]] && ( . "$FLAG_LIB" ) >/dev/null 2>&1 && . "$FLAG_LIB" 2>
   ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
 fi
 seen() { [[ -n "$ctx" && -f "$(cs_injected_flag "$ctx" "$1")" ]]; }
-mark() { [[ -z "$ctx" ]] && return 0; { mkdir -p "$(claude_flag_dir)" && touch "$(cs_injected_flag "$ctx" "$1")"; } 2>/dev/null || true; }
+mark() { [[ -z "$ctx" ]] && return 0; { claude_flag_dir_ensure && touch "$(cs_injected_flag "$ctx" "$1")"; } 2>/dev/null || true; }
 
 # 注入本文を組み立てる。グローバル正典 → repo 固有規約の順で連結。
 # 読取失敗を握って fail-open(best-effort 注入の不変条件を維持)。
