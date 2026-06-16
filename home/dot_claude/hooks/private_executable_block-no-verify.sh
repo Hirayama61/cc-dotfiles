@@ -22,10 +22,7 @@ hook_init || exit 0
 cmd="$(hook_command)"
 [[ -z "$cmd" ]] && exit 0
 
-RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
-[[ -r "$RGT" ]] || exit 0
-# shellcheck source=/dev/null
-. "$RGT"
+source_hook_lib resolve-git-target.sh || exit 0
 
 while IFS= read -r seg; do
   [[ -z "$seg" ]] && continue

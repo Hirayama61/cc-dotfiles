@@ -29,15 +29,8 @@ hook_init || exit 0
 cmd="$(hook_command)"; [ -z "$cmd" ] && exit 0
 cwd="$(hook_cwd)"; [ -z "$cwd" ] && cwd="$PWD"
 
-RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
-[ -r "$RGT" ] || exit 0
-# shellcheck source=/dev/null
-. "$RGT"
-BASE_LIB="$HOME/.claude/hooks/lib/resolve-base-ref.sh"
-[ -r "$BASE_LIB" ] || exit 0
-# shellcheck source=/dev/null
-( . "$BASE_LIB" ) >/dev/null 2>&1 || exit 0
-. "$BASE_LIB" 2>/dev/null || exit 0
+source_hook_lib resolve-git-target.sh || exit 0
+source_hook_lib resolve-base-ref.sh || exit 0
 
 # push サブコマンドの有無だけ見る。refspec(`HEAD:main` 等)の dst は解釈しないので、
 # 現ブランチと異なる宛先への push でも現ブランチ基準でナッジしうる。block-protected-branch-push

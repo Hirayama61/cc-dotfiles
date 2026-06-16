@@ -24,8 +24,10 @@ hook_init || exit 0
 # design-gate を巻き込んで誤ブロックする。他 hook の異常系と同じく fail-open で素通す。
 [[ -z "${HOOK_INPUT:-}" ]] && exit 0
 sid="$(hook_session_id)"
+# 破損 JSON 等で cwd 抽出不能な時に $PWD へフォールバックすると、hook 実行 dir の
+# 無関係 repo の design-gate を巻き込んで誤ブロックする(空 stdin ガードは空入力のみ)。
 cwd="$(hook_cwd)"
-[[ -z "$cwd" ]] && cwd="$PWD"
+[[ -z "$cwd" ]] && exit 0
 # 相対 cwd は hook 実行ディレクトリ依存で別 repo を見に行くため判定しない
 # (Gate 2 の相対 file_path 素通しと同じ fail-open)。
 [[ "$cwd" = /* ]] || exit 0

@@ -19,10 +19,10 @@ hook_init || exit 0
 cmd="$(hook_command)"
 [[ -z "$cmd" ]] && exit 0
 
-# lib が無い環境では素の cmd で従来どおり判定する(ブロック能力を落とさない)。
-RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
-# shellcheck source=/dev/null
-if [[ -r "$RGT" ]] && . "$RGT" 2>/dev/null; then
+# lib が無い/壊れた環境では素の cmd で従来どおり判定する(ブロック能力を落とさない)。
+# source_hook_lib は subshell 試験 source で構文破損を握るため、破損 lib でも exit 2 に
+# 化けず if が偽になり raw cmd 判定へ落ちる(A-1: bare source の parse エラー abort 回避)。
+if source_hook_lib resolve-git-target.sh; then
   stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
   [[ -n "$stripped" ]] && cmd="$stripped"
 fi

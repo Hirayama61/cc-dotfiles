@@ -22,20 +22,9 @@ hook_init || exit 0
 cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
 cwd="$(hook_cwd)"; [[ -z "$cwd" ]] && cwd="$PWD"
 
-RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
-[[ -r "$RGT" ]] || exit 0
-# shellcheck source=/dev/null
-. "$RGT"
-BASE_LIB="$HOME/.claude/hooks/lib/resolve-base-ref.sh"
-[[ -r "$BASE_LIB" ]] || exit 0
-# shellcheck source=/dev/null
-( . "$BASE_LIB" ) >/dev/null 2>&1 || exit 0
-. "$BASE_LIB" 2>/dev/null || exit 0
-FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
-[[ -r "$FLAG_LIB" ]] || exit 0
-# shellcheck source=/dev/null
-( . "$FLAG_LIB" ) >/dev/null 2>&1 || exit 0
-. "$FLAG_LIB" 2>/dev/null || exit 0
+source_hook_lib resolve-git-target.sh || exit 0
+source_hook_lib resolve-base-ref.sh || exit 0
+source_hook_lib flag-paths.sh || exit 0
 
 has_push=0
 while IFS= read -r seg; do

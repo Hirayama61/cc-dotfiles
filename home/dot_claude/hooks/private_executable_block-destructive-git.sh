@@ -16,10 +16,7 @@ LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 hook_init || exit 0
 cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
 
-RGT="$HOME/.claude/hooks/lib/resolve-git-target.sh"
-[[ -r "$RGT" ]] || exit 0
-# shellcheck source=/dev/null
-. "$RGT"
+source_hook_lib resolve-git-target.sh || exit 0
 
 # lib に strip_heredocs があれば heredoc 本文を除去して誤爆を防ぐ(dotfiles#74 と合流後に有効化)。
 if type strip_heredocs >/dev/null 2>&1; then

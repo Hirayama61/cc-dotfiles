@@ -29,11 +29,25 @@ if [[ "$tool_name" == "Bash" ]]; then
   command="$(hook_command)"
   [[ -z "$command" ]] && exit 0
 
-  if printf '%s' "$command" | grep -qE '(^|\s|;|&&|\|\|)\s*(rm|git\s+rm)\s' && \
-     printf '%s' "$command" | grep -qE "$test_file_pattern"; then
-    echo "ブロック: テストファイルの削除は禁止。テストが失敗するならテストコードを修正すること。" >&2
-    exit 2
+  # 独立 2-grep(rm の有無・テストパス名の有無を別々に AND)だと、別セグメントの
+  # rm とテストファイル名で誤発火する(例 `rm -rf build/ && cp src/foo.test.js dist/`)。
+  # lib があればセグメント分割して同一セグメント内の同居だけを止める。lib 不達/破損時は
+  # command 全体を1セグメント扱いで従来判定にフォールバックし検出能力を 0 にしない
+  # (この hook は rm+テスト同居時のみ exit 2 で、A-1 のような全 Bash 恒久ブロックには化けない)。
+  if source_hook_lib resolve-git-target.sh; then
+    seg_stream="$(split_git_segments "$command")"
+  else
+    seg_stream="$command"
   fi
+
+  while IFS= read -r seg; do
+    [[ -z "$seg" ]] && continue
+    printf '%s' "$seg" | grep -qE '(^|[[:space:]])(rm|git[[:space:]]+rm)([[:space:]]|$)' || continue
+    if printf '%s' "$seg" | grep -qE "$test_file_pattern"; then
+      echo "ブロック: テストファイルの削除は禁止。テストが失敗するならテストコードを修正すること。" >&2
+      exit 2
+    fi
+  done <<<"$seg_stream"
   exit 0
 fi
 
