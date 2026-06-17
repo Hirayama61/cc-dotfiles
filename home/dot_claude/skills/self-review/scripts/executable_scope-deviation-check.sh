@@ -48,11 +48,13 @@ repo=""
 
 branch="$(git -C "$dir" branch --show-current 2>/dev/null || echo "")"
 scope_file=""
-if [[ -n "$branch" && -f "$(design_scope_flag "$repo" "$branch")" ]]; then
-  scope_file="$(design_scope_flag "$repo" "$branch")"
+# 読取は regular file のみ(symlink を辿らない)。design-gate の読取側硬化と対称(#49)。
+bf="$(design_scope_flag "$repo" "$branch")"
+if [[ -n "$branch" && -f "$bf" && ! -L "$bf" ]]; then
+  scope_file="$bf"
 else
   p="$(design_scope_pending_flag "$repo")"
-  if [[ -f "$p" ]]; then
+  if [[ -f "$p" && ! -L "$p" ]]; then
     # pending の鮮度は 24h(Gate の昇格 TTL 6h より長い)。Tier 3 は surface-only で
     # 誤参照の実害が表示ノイズに留まるため、見逃し側を減らす方に倒す意図的な差。
     mt="$(stat -f %m "$p" 2>/dev/null || echo 0)"

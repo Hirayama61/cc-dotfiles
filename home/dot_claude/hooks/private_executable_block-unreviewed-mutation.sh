@@ -78,7 +78,7 @@ cat >&2 <<EOF
 ブロック: 設計レビューも trivial-override も無いコード repo(${repo_key})への編集。人間に確認して次のどちらかを取ること:
 (a) Plan を立てて /design-review を通す(設計レビューゲートの本則)。
 (b) 軽微な変更なら、人間の明示承認を得た上で理由付き override を立てる:
-    mkdir -p /tmp/claude-sessions
+    "\$HOME/.claude/hooks/lib/flag-paths.sh" dir-ensure
     printf '%s\n' '<人間が承認した理由>' > "\$("\$HOME/.claude/hooks/lib/flag-paths.sh" trivial-override-pending '${repo_key}')"
     (次の編集時に自セッションへ取り込まれて解除。理由が空だと通らない。フラグ内容として監査可能)
 EOF

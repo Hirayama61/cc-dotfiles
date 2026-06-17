@@ -6,10 +6,10 @@
 # private_executable_ / executable_ プレフィックスを剥がして chmod +x し、HOME を
 # 差し替えて実行する。これにより本物の ~/.claude には一切触れない。
 #
-# 注意(flag dir): flag-paths.sh の claude_flag_dir() は /tmp/claude-sessions 固定で
-# HOME 非依存。フラグ書込は ctx(session_id/transcript_path)依存のため、テストの入力
-# JSON に session_id を含めなければ /tmp への副作用は出ない。Phase 4(#49)で
-# XDG_STATE_HOME 配下へ移すと HOME 差し替えに追従し、この隔離が構造的に保証される。
+# 注意(flag dir): flag-paths.sh の claude_flag_dir() は ${XDG_STATE_HOME:-$HOME/.local/state}/
+# claude-sessions(#49 で /tmp 固定から移行)。install_hooks が HOME を一時ディレクトリへ
+# 差し替えるため state dir も一時 HOME 配下に追従し、本物の ~ には副作用が出ない
+# (XDG_STATE_HOME を明示検証する個別テストはそのテスト内で export して制御する)。
 
 # このヘルパ自身の位置からリポルートを導出(tests/helpers/common.bash)。
 HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -99,7 +99,7 @@ make_no_jq_path() {
   local c p
   for c in bash sh env cat printf echo grep egrep sed tr cut awk \
     basename dirname git mkdir rmdir rm cp mv touch ln find sort comm uniq \
-    date stat wc head tail xargs test true false; do
+    date stat wc head tail xargs test true false shasum cksum chmod id; do
     p="$(command -v "$c" 2>/dev/null)" || continue
     ln -sf "$p" "$shim/$c"
   done
