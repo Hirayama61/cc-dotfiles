@@ -65,7 +65,7 @@ mise run apply:cc-dotfiles
   | `resolve-git-target.sh` | push/commit/merge の実対象 working dir 導出・コマンド字句解析 |
   | `resolve-repo-key.sh` | 論理 repo キー(対象パス → repo キー。ghq フォールバック込み)の導出 |
   | `resolve-base-ref.sh` | 保護ブランチ一覧(`is_protected_branch`)と最近接保護祖先(`resolve_base_ref`) |
-  | `flag-paths.sh` | `/tmp/claude-sessions` の全ゲートフラグのキー導出 |
+  | `flag-paths.sh` | ゲートフラグの state dir(`${XDG_STATE_HOME:-$HOME/.local/state}/claude-sessions`)提供と全キー導出 |
   | `test-patterns.sh` | テストファイル判定・テスト観点カウントの ERE |
   | `design-gate.sh` | 設計レビューゲート(Gate 1/2)の除外判定・フラグ評価・昇格 |
 
