@@ -173,9 +173,9 @@
   <div class="filters" id="filters" hidden>
     <span class="grp"><label class="t">領域</label>
       <span class="seg" id="seg-area">
-        <button data-area="all" aria-pressed="true">全</button>
-        <button data-area="FE" aria-pressed="false">FE</button>
-        <button data-area="BE" aria-pressed="false">BE</button>
+        <button type="button" data-area="all" aria-pressed="true">全</button>
+        <button type="button" data-area="FE" aria-pressed="false">FE</button>
+        <button type="button" data-area="BE" aria-pressed="false">BE</button>
       </span>
     </span>
     <span class="grp"><label class="t">状態</label>
@@ -276,7 +276,7 @@ function render(d) {
   const ix = IX = index(d);
   $("#title").textContent = d.案件 || "(無題)";
   const src = $("#sources"); src.innerHTML = "";
-  const addSrc = (k, v) => { if (!v) return; const w = el("span"); w.appendChild(el("span", "k", k + " ")); const a = el("a"); a.href = v; a.textContent = v.replace(/^https?:\/\//, "").slice(0, 46); a.target = "_blank"; a.rel = "noopener"; w.appendChild(a); src.appendChild(w); };
+  const addSrc = (k, v) => { if (!v) return; const w = el("span"); w.appendChild(el("span", "k", k + " ")); if (/^https?:\/\//i.test(v)) { const a = el("a"); a.href = v; a.textContent = v.replace(/^https?:\/\//, "").slice(0, 46); a.target = "_blank"; a.rel = "noopener"; w.appendChild(a); } else { w.appendChild(document.createTextNode(String(v).slice(0, 60))); } src.appendChild(w); };
   addSrc("要件", d.要件源); addSrc("デザイン", d.デザイン源);
   if (d.着手順根拠) { const w = el("span"); w.appendChild(el("span", "k", "着手順 ")); w.appendChild(document.createTextNode(d.着手順根拠)); src.appendChild(w); }
   $("#upd-at").textContent = (d.更新 && d.更新.at) ? d.更新.at.replace("T", " ").replace(/\+.*/, "") : "—";
@@ -291,7 +291,7 @@ function render(d) {
 }
 
 function renderStats(d, ix) {
-  const feats = d.画面.flatMap(s => s.機能 || []);
+  const feats = (d.画面 || []).flatMap(s => s.機能 || []);
   const tasks = feats.flatMap(f => (f.tasks || []).map(t => ({ ...t, key: f.id + "." + t.領域 })));
   const byStatus = {}; STATUSES.forEach(s => byStatus[s] = 0);
   tasks.forEach(t => { if (byStatus[t.status] != null) byStatus[t.status]++; });
@@ -305,7 +305,7 @@ function renderStats(d, ix) {
     '<div class="ramp-legend">' + STATUSES.map(s => `<span><b style="background:${ST_COLOR[s]}"></b>${s} ${byStatus[s]}</span>`).join("") + '</div>';
 
   $("#stats").innerHTML =
-    card(d.画面.length, "画面 / ストーリー") +
+    card((d.画面 || []).length, "画面 / ストーリー") +
     card(feats.length, "機能") +
     `<div class="stat"><div class="n">${merged}/${total}</div><div class="l">タスク マージ済</div>${ramp}</div>` +
     card(ix.blockedTasks.size, "ブロック中タスク", ix.blockedTasks.size > 0) +
@@ -316,7 +316,7 @@ function card(n, l, alert) { return `<div class="stat${alert ? " alert" : ""}"><
 
 function buildStatusSeg() {
   const seg = $("#seg-status"); if (seg.childElementCount) return;
-  const mk = (val, lbl) => { const b = el("button", null, lbl); b.dataset.status = val; b.setAttribute("aria-pressed", "true"); return b; };
+  const mk = (val, lbl) => { const b = el("button", null, lbl); b.type = "button"; b.dataset.status = val; b.setAttribute("aria-pressed", "true"); return b; };
   seg.appendChild(mk("all", "全"));
   STATUSES.forEach(s => seg.appendChild(mk(s, s)));
   seg.querySelector('[data-status="all"]').addEventListener("click", () => {
@@ -338,7 +338,7 @@ function renderWbs() {
   const d = DATA, ix = IX;
   const pass = (t, blocked) => (filter.area === "all" || t.領域 === filter.area) && filter.status.has(t.status) && (!filter.onlyBlocked || blocked);
   const rows = [];
-  d.画面.slice().sort((a, b) => (a.順序 || 0) - (b.順序 || 0)).forEach(s => {
+  (d.画面 || []).slice().sort((a, b) => (a.順序 || 0) - (b.順序 || 0)).forEach(s => {
     const feats = [];
     (s.機能 || []).forEach(f => {
       const vts = (f.tasks || []).filter(t => pass(t, ix.blockedTasks.has(f.id + "." + t.領域)));
@@ -382,7 +382,7 @@ function renderWbs() {
   $("#tree").innerHTML = rows.length
     ? `<div class="wbs-wrap"><table class="grid"><thead><tr><th>画面 / ストーリー</th><th>機能</th><th>領域</th><th>状態</th><th>PR</th><th>課題</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`
     : `<div class="tbl-wrap"><div class="empty">条件に一致するタスクがありません</div></div>`;
-  $("#wbs-c").textContent = `${d.画面.length} 画面 / ${d.画面.flatMap(s => s.機能 || []).length} 機能`;
+  $("#wbs-c").textContent = `${(d.画面 || []).length} 画面 / ${(d.画面 || []).flatMap(s => s.機能 || []).length} 機能`;
 }
 function applyFilter() { renderWbs(); }
 
