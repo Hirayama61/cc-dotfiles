@@ -3,6 +3,10 @@
 # テストアカウントの認証情報を含むため、リポジトリには絶対に commit しない
 # (機密語リスト sensitive-words.txt と同じ運用)。
 # 初回は fe-qa skill が対話で生成する。手で書く場合はこのファイルを cp して埋める。
+#
+# アカウントは dev / 検証環境の使い捨てテストアカウントのみ。
+# 本番・共用アカウントの資格情報を絶対に書かない。
+# このファイルは chmod 600 で保護する(格納ディレクトリは 700)。
 
 # dev サーバ
 dev_server:
@@ -10,8 +14,11 @@ dev_server:
   base_url: "http://localhost:3000"
   ready_wait_seconds: 15           # 起動から疎通確認までの待ち
 
-# レスポンシブ検査のビューポート幅(px)。省略時の既定は 375 / 768 / 1440
-viewports: [375, 768, 1440]
+# レスポンシブ検査のビューポート(px)。省略時の既定は 375x812 / 768x1024 / 1440x900
+viewports:
+  - {width: 375, height: 812}
+  - {width: 768, height: 1024}
+  - {width: 1440, height: 900}
 
 # 権限ロール別テストアカウント。1 ロールのみならレンズ 7 の権限比較は skip される。
 accounts:
@@ -27,4 +34,6 @@ accounts:
 # 仕様参照の既定(省略可。起動時に会話で上書きできる)
 spec:
   wbs_glob: "~/obsidian/brain/Tasks/<repo>/*-wbs.json"
-  confluence_space: ""             # Atlassian MCP で読む space / ページ ID など
+  confluence:                      # Atlassian MCP で読む対象
+    space_key: ""
+    page_ids: []
