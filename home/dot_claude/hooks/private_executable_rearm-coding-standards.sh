@@ -24,4 +24,9 @@ rm -f "$(cs_injected_flag_prefix "$ctx")"* 2>/dev/null || true
 if type evolve_nudged_flag >/dev/null 2>&1; then
   rm -f "$(evolve_nudged_flag "$ctx")" 2>/dev/null || true
 fi
+# capture-decision.sh の 1 ctx 1 回フラグも同時に再武装する(clear|compact 後の新しい
+# 文脈では判断記録ナッジをもう一度許す)。版ずれ(旧 flag-paths.sh)は無視。
+if type decision_nudged_flag >/dev/null 2>&1; then
+  rm -f "$(decision_nudged_flag "$ctx")" 2>/dev/null || true
+fi
 exit 0
