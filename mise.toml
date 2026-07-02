@@ -11,12 +11,12 @@ description = "bats で hooks/lib を検証(一時 HOME に複製して実行)"
 run = "bats --recursive tests"
 
 [tasks.lint]
-description = "shellcheck で hooks/lib を検査(error レベル)"
-run = "shellcheck --severity=error home/dot_claude/hooks/*.sh home/dot_claude/hooks/lib/*.sh"
+description = "shellcheck で hooks/lib/skills スクリプトを検査(error レベル)"
+run = "shellcheck --severity=error home/dot_claude/hooks/*.sh home/dot_claude/hooks/lib/*.sh home/dot_claude/skills/*/scripts/*.sh"
 
 [tasks.syntax]
-description = "bash 3.2(macOS 同梱)構文チェック"
-run = "find home/dot_claude/hooks -name '*.sh' -print0 | xargs -0 /bin/bash -n"
+description = "bash 3.2(macOS 同梱)構文チェック(hooks/lib + skills スクリプト)"
+run = "find home/dot_claude/hooks home/dot_claude/skills -name '*.sh' -print0 | xargs -0 /bin/bash -n"
 
 [tasks.check]
 description = "test + lint + syntax を一括実行"
