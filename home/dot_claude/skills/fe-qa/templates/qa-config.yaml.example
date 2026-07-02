@@ -1,0 +1,30 @@
+# fe-qa の per-repo 設定雛形。
+# 実体は ~/.config/claude-qa/<repo>.yaml(git 管理外・マシンローカル)。
+# テストアカウントの認証情報を含むため、リポジトリには絶対に commit しない
+# (機密語リスト sensitive-words.txt と同じ運用)。
+# 初回は fe-qa skill が対話で生成する。手で書く場合はこのファイルを cp して埋める。
+
+# dev サーバ
+dev_server:
+  start_command: "pnpm dev"        # リポルートで実行するコマンド
+  base_url: "http://localhost:3000"
+  ready_wait_seconds: 15           # 起動から疎通確認までの待ち
+
+# レスポンシブ検査のビューポート幅(px)。省略時の既定は 375 / 768 / 1440
+viewports: [375, 768, 1440]
+
+# 権限ロール別テストアカウント。1 ロールのみならレンズ 7 の権限比較は skip される。
+accounts:
+  - role: "admin"
+    login_url: "/login"
+    username: "admin@example.com"
+    password: "CHANGE_ME"
+  - role: "member"
+    login_url: "/login"
+    username: "member@example.com"
+    password: "CHANGE_ME"
+
+# 仕様参照の既定(省略可。起動時に会話で上書きできる)
+spec:
+  wbs_glob: "~/obsidian/brain/Tasks/<repo>/*-wbs.json"
+  confluence_space: ""             # Atlassian MCP で読む space / ページ ID など
