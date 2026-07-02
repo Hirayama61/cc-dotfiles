@@ -1,8 +1,9 @@
 #!/usr/bin/env bats
 # capture-decision.sh の E2E。
 # PostToolUse(AskUserQuestion)で判断記録リマインダを additionalContext 注入する。
-# 1 ctx 1 回に抑制(decision-nudged-${ctx} フラグ)。ctx 不明 / jq 不在は fail-open で
-# 毎回注入=現状維持へ倒す。抑制は flag-paths.sh(単一情報源)経由で、rearm で再武装する。
+# 1 ctx 1 回に抑制(decision-nudged-${ctx} フラグ)。fail-open の帰結は経路で異なる:
+# ctx 不明は「毎回注入=現状維持」、jq 不在は hook_init で「無音素通り(注入ゼロ)」。
+# 抑制は flag-paths.sh(単一情報源)経由で、rearm で再武装する。
 #
 # 注: decision-nudged はディスパッチャ未登録のため、フラグの seed/確認は hook 実行の
 # 副作用(2 回目が抑制されるか)で検証する。@test タイトルは ASCII 限定
@@ -84,6 +85,16 @@ assert_injected() {
   run_hook capture-decision.sh "$(_ask_json)"
   [ "$status" -eq 0 ]
   assert_injected
+}
+
+@test "session_id fallback: second call with same session_id is suppressed" {
+  local json='{"tool_name":"AskUserQuestion","session_id":"sess-f","tool_input":{"questions":[{"question":"A or B?"}]}}'
+  run_hook capture-decision.sh "$json"
+  [ "$status" -eq 0 ]
+  assert_injected
+  run_hook capture-decision.sh "$json"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "non-AskUserQuestion tool is ignored" {
