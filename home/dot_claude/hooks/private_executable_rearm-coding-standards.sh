@@ -12,15 +12,16 @@ LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 ( . "$LIB" ) >/dev/null 2>&1 || exit 0
 . "$LIB" 2>/dev/null || exit 0
 hook_init || exit 0
-FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
-[[ -r "$FLAG_LIB" ]] || exit 0
-# shellcheck source=/dev/null
-( . "$FLAG_LIB" ) >/dev/null 2>&1 || exit 0
-. "$FLAG_LIB" 2>/dev/null || exit 0
+source_hook_lib flag-paths.sh || exit 0
 
 ctx="$(hook_field '.transcript_path // .session_id')"
 ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
 [[ -z "$ctx" ]] && exit 0
 
 rm -f "$(cs_injected_flag_prefix "$ctx")"* 2>/dev/null || true
+# evolve-nudge-on-stop.sh の 1 ctx 1 回フラグも同時に再武装する(clear|compact 後の
+# 新しい文脈では区切りナッジをもう一度許す)。版ずれ(旧 flag-paths.sh)は無視。
+if type evolve_nudged_flag >/dev/null 2>&1; then
+  rm -f "$(evolve_nudged_flag "$ctx")" 2>/dev/null || true
+fi
 exit 0
