@@ -8,21 +8,28 @@ load ../helpers/common
 
 setup() {
   install_hooks
+  # 一時 HOME の外(実 XDG state dir)へフラグが漏れないよう明示的に落とす
+  # (flag-lifecycle.bats と同作法。claude_flag_dir は絶対パスの XDG_STATE_HOME を優先する)。
+  unset XDG_STATE_HOME
+  FLAG="$HOME/.claude/hooks/lib/flag-paths.sh"
 }
 
 # ctx にコード編集済みシグナル(cs-injected フラグ)を置く。
-# キーは flag-paths.sh と同じ導出(state dir + cs-injected-<ctx>--<scope>)。
+# キーは手書きせず flag-paths.sh ディスパッチャで導出する(単一情報源)。
 _seed_edited() {
-  local ctx="$1"
-  local dir="$HOME/.local/state/claude-sessions"
-  mkdir -p "$dir"
-  touch "$dir/cs-injected-${ctx}--global"
+  "$FLAG" dir-ensure
+  touch "$("$FLAG" cs-injected "$1" global)"
 }
 
 # candidates に滞留候補を置く。
 _seed_candidate() {
   mkdir -p "$HOME/.claude-evolution/candidates/skills/sample-skill"
   printf '# sample\n' >"$HOME/.claude-evolution/candidates/skills/sample-skill/SKILL.md"
+}
+
+_seed_agent_candidate() {
+  mkdir -p "$HOME/.claude-evolution/candidates/agents"
+  printf '# agent\n' >"$HOME/.claude-evolution/candidates/agents/sample-agent.md"
 }
 
 assert_block() {
@@ -62,6 +69,16 @@ assert_block() {
   [ "$status" -eq 0 ]
   assert_block
   jq -e '.reason | contains("1 件")' <<<"$output" >/dev/null
+}
+
+@test "nudges on agent-only candidates, count aggregates skills and agents" {
+  _seed_candidate
+  _seed_agent_candidate
+  run_hook evolve-nudge-on-stop.sh \
+    '{"stop_hook_active":false,"transcript_path":"/tmp/tp/sess-i.jsonl"}'
+  [ "$status" -eq 0 ]
+  assert_block
+  jq -e '.reason | contains("2 件")' <<<"$output" >/dev/null
 }
 
 @test "no nudge when stop_hook_active is true (1 per stop chain)" {

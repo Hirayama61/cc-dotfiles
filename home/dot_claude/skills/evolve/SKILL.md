@@ -39,7 +39,15 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill
 └── rejected.txt                        # 破棄履歴(1 行 1 件: 日付\t名前\t理由)
 ```
 
-ディレクトリは `mkdir -p` で遅延生成する。パスは固定(env override なし)。
+ディレクトリは遅延生成する。業務情報の平文置き場なので **0700 を強制**する
+(flag dir と同じ posture。umask 依存にしない):
+
+```bash
+mkdir -p ~/.claude-evolution && chmod 700 ~/.claude-evolution
+```
+
+パスは固定(env override なし)。候補名は **`^[a-z0-9-]+$` に限定**する
+(空白・記号入りの名前は evolve-gate の mv/rm 雛形を壊すため生成しない)。
 消費者: evolve(生成)/ evolve-gate(トリアージ)/ evolve-nudge-on-stop hook(件数走査)/
 dotfiles `bin/skills-sync.sh`(active の symlink 反映)。
 
@@ -82,7 +90,7 @@ cat ~/.claude-evolution/rejected.txt 2>/dev/null
   出さない。既存 **active** skill の改善は同名の候補として candidates に置く
   (evolve-gate が承認時に active を置換する「更新候補」)。
 - `rejected.txt` にある名前・責務は再提案しない(人間が一度破棄した判断を蒸し返さない)。
-- 名前予約(不変条件)に従い、実体と同名は避ける。
+- 名前予約(不変条件)に従い、実体と同名は避ける。名前は `^[a-z0-9-]+$`(ディレクトリ規約参照)。
 
 ### 3. 候補の生成
 

@@ -65,7 +65,7 @@ if [[ "$edited" -eq 1 ]]; then
   reason+="このセッションの作業に、skill 化に値する学び(繰り返された指摘・再利用可能な手順・落とし穴)があるか確認せよ。あれば /evolve で候補を生成せよ(候補は candidates/ 止まりで、人間が有効化するまで効力を持たない)。"
 fi
 if [[ "$pending" -gt 0 ]]; then
-  reason+="未処理の候補 skill が ${pending} 件滞留している。都合がよければ /evolve-gate でトリアージを人間に提案せよ。"
+  reason+="未処理の候補(skill/agent)が ${pending} 件滞留している。都合がよければ /evolve-gate でトリアージを人間に提案せよ。"
 fi
 reason+="該当がなければ何もせずそのまま停止してよい(再度停止すればこのナッジは繰り返さない)。"
 

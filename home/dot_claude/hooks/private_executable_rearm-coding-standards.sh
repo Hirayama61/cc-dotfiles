@@ -12,11 +12,7 @@ LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 ( . "$LIB" ) >/dev/null 2>&1 || exit 0
 . "$LIB" 2>/dev/null || exit 0
 hook_init || exit 0
-FLAG_LIB="$HOME/.claude/hooks/lib/flag-paths.sh"
-[[ -r "$FLAG_LIB" ]] || exit 0
-# shellcheck source=/dev/null
-( . "$FLAG_LIB" ) >/dev/null 2>&1 || exit 0
-. "$FLAG_LIB" 2>/dev/null || exit 0
+source_hook_lib flag-paths.sh || exit 0
 
 ctx="$(hook_field '.transcript_path // .session_id')"
 ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
