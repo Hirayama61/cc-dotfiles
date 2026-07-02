@@ -22,14 +22,25 @@ if [ -z "$base_ref" ]; then
   exit 0
 fi
 
+# base_ref が `-` 始まりだと git の diff 引数がオプションとして解釈されうる(オプション注入面)。
+# 正当な ref は `-` で始まらないので弾く。
+case "$base_ref" in
+  -*) echo "Codex: skip(不正な base_ref)"; exit 0 ;;
+esac
+
 if command -v codex >/dev/null 2>&1; then
-  codex_out="$(git diff "${base_ref}...HEAD" \
+  # exit 0 かつ非空の時だけ本文を採用。codex(または git diff)が失敗したら部分出力が
+  # あっても skip(実行失敗)へ倒す(pipefail 下の substitution 終了ステータスで判定)。
+  if codex_out="$(git diff "${base_ref}...HEAD" \
     | codex exec --sandbox read-only \
-        "次の git diff をコードレビューせよ。実装意図は与えない。重大/改善/情報の3段階で、各指摘にファイル:行と理由を付けて出力せよ。" 2>/dev/null)"
-  if [ -n "$codex_out" ]; then
-    printf '%s\n' "$codex_out"
+        "次の git diff をコードレビューせよ。実装意図は与えない。重大/改善/情報の3段階で、各指摘にファイル:行と理由を付けて出力せよ。" 2>/dev/null)"; then
+    if [ -n "$codex_out" ]; then
+      printf '%s\n' "$codex_out"
+    else
+      echo "Codex: skip(空応答 — 未認証/レート制限/ネットワーク疑い)"
+    fi
   else
-    echo "Codex: skip(空応答 — 未認証/レート制限/ネットワーク疑い)"
+    echo "Codex: skip(実行失敗)"
   fi
 else
   echo "Codex: skip(未導入)"

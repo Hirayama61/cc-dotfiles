@@ -256,7 +256,7 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
     | ~/.claude/skills/self-review/scripts/create-review-flag.sh \
         "$tier1_last" "$tier2_last" "$reason1" "$reason2"
   ```
-  スクリプトはフラグキーを `flag-paths.sh`(単一情報源)から引き(repo は `resolve-repo-key.sh` で導出)、`dir-ensure` で state dir を検証し、該当 Tier の ack 理由が空なら中断、既存フラグは中断、noclobber の単一 `>` で作成、作成失敗時は残骸を消して中断する。成功で `pre-push-selfreview-gate.sh` が解除される。
+  スクリプトはフラグキーを `flag-paths.sh`(単一情報源)から引き(repo は `resolve-repo-key.sh` で導出)、`dir-ensure` で state dir を検証し、該当 Tier の ack 理由が空なら中断、既存フラグは中断、原子的作成(一時ファイル → `ln` で配置。既存なら失敗し、既存フラグを消さない)、作成失敗時は一時ファイルのみ消して中断する。成功で `pre-push-selfreview-gate.sh` が解除される。
 - レビュー未実施・トリアージ未了ならフラグを書かない。
 
 ## 原則
