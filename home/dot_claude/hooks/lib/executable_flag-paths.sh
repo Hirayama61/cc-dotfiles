@@ -17,6 +17,7 @@
 #   design-scope-${repo_key}--${safe_branch}         (Tier 3: 宣言スコープ。1行1 path/glob)
 #   design-scope-pending-${repo_key}                 (同: branch 不在時)
 #   cs-injected-${ctx}--${scope}
+#   evolve-nudged-${ctx}                             (ローカル進化ナッジ: 1 ctx 1 回)
 # safe_branch = branch を '/'→'-' サニタイズ + 元 branch の SHA-256 先頭16桁サフィックス
 #   (不可逆置換による feature/a-b ≡ feature-a/b 衝突を解消。#49 B-1)。
 # ctx = transcript_path(無ければ session_id)の basename から末尾 .jsonl を除去。
@@ -98,6 +99,12 @@ cs_injected_flag() {
 # 使い方: rm -f "$(cs_injected_flag_prefix "$ctx")"*
 cs_injected_flag_prefix() {
   printf '%s/cs-injected-%s--' "$(claude_flag_dir)" "${1:-}"
+}
+
+# ローカル進化ナッジ(evolve-nudge-on-stop)の 1 ctx 1 回フラグ。ctx は cs-injected と
+# 同じ flag_ctx_key 導出(transcript_path 基準)。rearm(clear|compact)で削除して再武装する。
+evolve_nudged_flag() {
+  printf '%s/evolve-nudged-%s' "$(claude_flag_dir)" "${1:-}"
 }
 
 # ── 設計レビューゲート(Phase 4)のキー ──
