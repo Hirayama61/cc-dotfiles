@@ -114,6 +114,79 @@ decision_nudged_flag() {
   printf '%s/decision-nudged-%s' "$(claude_flag_dir)" "${1:-}"
 }
 
+# ── 数値カウンタ機構(詰まり検知 P-5 / 委譲ナッジ P-6)──
+# 既存フラグは存在/非存在のブール(review-passed / cs-injected / *-nudged 等)。
+# 詰まり・委譲ナッジは「同種コマンドの連続失敗数」「探索ツールの ctx 累計」を数値で持つ
+# 別機構であり、read-modify-write を伴う。ブールフラグ群と構造的に区別するため、値の
+# 読取/加算をこの lib 関数へ集約する(コメントでなく関数構造で新機構を明示。F-007)。
+# 並行加算はロストアップデートしうる(mkdir のような排他を数値 RMW には掛けない)が、
+# ナッジ発火の at-most-once は claim ディレクトリ(*_nudged_flag を mkdir で atomic に
+# 取る)側で保証する。カウンタの多少のズレは閾値到達 timing に影響するだけで害はない。
+
+# カウンタ値を読む(ファイル不在・非数値・読取失敗はすべて 0)。
+flag_counter_read() {
+  local f="${1:-}" v
+  [[ -n "$f" && -f "$f" ]] || {
+    printf '0'
+    return 0
+  }
+  v="$(cat "$f" 2>/dev/null || printf '0')"
+  case "$v" in
+  '' | *[!0-9]*) v=0 ;;
+  esac
+  printf '%s' "$v"
+}
+
+# カウンタを +1 して新値を stdout に返す。書込不能なら現在値をそのまま返す(進めない)。
+flag_counter_bump() {
+  local f="${1:-}" cur next
+  cur="$(flag_counter_read "$f")"
+  next=$((cur + 1))
+  if printf '%s' "$next" >"$f" 2>/dev/null; then
+    printf '%s' "$next"
+  else
+    printf '%s' "$cur"
+  fi
+}
+
+# 任意文字列を 16 桁(64bit)にハッシュ化する。コマンド種別をファイル名へ直接使わず
+# キー化するのに使う(flag_safe_branch と同じ shasum→cksum フォールバック)。空入力は空のまま。
+flag_hash16() {
+  local raw="${1:-}" h
+  [[ -z "$raw" ]] && return 0
+  h="$(printf '%s' "$raw" | shasum -a 256 2>/dev/null | cut -c1-16)"
+  [[ -z "$h" ]] && h="$(printf '%s' "$raw" | cksum 2>/dev/null | cut -d' ' -f1)"
+  printf '%s' "$h"
+}
+
+# 詰まり検知(stuck-nudge)の種別ごと連続失敗カウンタ。第2引数は種別のハッシュ(flag_hash16)。
+# 種別ごとに独立(別種の失敗はカウンタを共有しない)。同種の成功でその種別のみリセット。
+stuck_count_flag() {
+  printf '%s/stuck-count-%s--%s' "$(claude_flag_dir)" "${1:-}" "${2:-}"
+}
+
+# rearm(clear|compact)が ctx 配下の全種別カウンタを glob 削除するための接頭辞。
+# 使い方: rm -f "$(stuck_count_flag_prefix "$ctx")"*
+stuck_count_flag_prefix() {
+  printf '%s/stuck-count-%s--' "$(claude_flag_dir)" "${1:-}"
+}
+
+# 詰まりナッジの 1 ctx 1 回 claim。ディレクトリ(mkdir で atomic に取得)で、存在=発火済み。
+# 並列失敗でも mkdir に成功した最初の 1 プロセスだけがナッジを出す。
+stuck_nudged_flag() {
+  printf '%s/stuck-nudged-%s' "$(claude_flag_dir)" "${1:-}"
+}
+
+# 委譲ナッジ(delegation-nudge)の探索ツール(Grep/Glob)ctx 累計カウンタ。Agent 使用でリセット。
+delegation_count_flag() {
+  printf '%s/delegation-count-%s' "$(claude_flag_dir)" "${1:-}"
+}
+
+# 委譲ナッジの 1 ctx 1 回 claim(stuck_nudged_flag と同じディレクトリ claim 方式)。
+delegation_nudged_flag() {
+  printf '%s/delegation-nudged-%s' "$(claude_flag_dir)" "${1:-}"
+}
+
 # ── 設計レビューゲート(Phase 4)のキー ──
 # ctx 版のキーは session_id(subagent と共有される性質を利用し、同一セッションの
 # delegate worktree を自然にカバーする。Decisions: Phase4設計レビューゲートの3判断)。
@@ -163,6 +236,11 @@ design_scope_pending_flag() {
 #   flag-paths.sh design-scope <repo_key> <branch>
 #   flag-paths.sh design-scope-pending <repo_key>
 #   flag-paths.sh cs-injected <ctx> <scope>
+#   flag-paths.sh stuck-count <ctx> <kindhash>
+#   flag-paths.sh stuck-nudged <ctx>
+#   flag-paths.sh delegation-count <ctx>
+#   flag-paths.sh delegation-nudged <ctx>
+#   flag-paths.sh hash16 <string>
 #   flag-paths.sh dir
 #   flag-paths.sh dir-ensure          (非 source 文脈から state dir を 0700 で用意・検証)
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
@@ -175,6 +253,11 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   design-scope) design_scope_flag "${2:-}" "${3:-}" ;;
   design-scope-pending) design_scope_pending_flag "${2:-}" ;;
   cs-injected) cs_injected_flag "${2:-}" "${3:-}" ;;
+  stuck-count) stuck_count_flag "${2:-}" "${3:-}" ;;
+  stuck-nudged) stuck_nudged_flag "${2:-}" ;;
+  delegation-count) delegation_count_flag "${2:-}" ;;
+  delegation-nudged) delegation_nudged_flag "${2:-}" ;;
+  hash16) flag_hash16 "${2:-}" ;;
   dir) claude_flag_dir ;;
   dir-ensure) claude_flag_dir_ensure || exit 1; exit 0 ;;
   *)
@@ -187,6 +270,11 @@ Usage: flag-paths.sh <subcommand> <args>
   trivial-override-pending <repo_key>
   design-scope-pending     <repo_key>
   cs-injected              <ctx> <scope>
+  stuck-count              <ctx> <kindhash>
+  stuck-nudged             <ctx>
+  delegation-count         <ctx>
+  delegation-nudged        <ctx>
+  hash16                   <string>
   dir
   dir-ensure
 USAGE
