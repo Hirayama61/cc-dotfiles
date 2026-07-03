@@ -187,7 +187,12 @@ gh api "repos/$owner/$name/issues/$pr/comments" --paginate \
 固定する(FETCH_HEAD のような可変ポインタは並列委譲中に別の fetch が走ると上書きされる):
 
 ```bash
+set -o pipefail   # gh api の失敗を tar の終了コードに握り潰させない
+
 head_oid="$(gh pr view "$pr" -R "$repo" --json headRefOid --jq .headRefOid)"
+# 空/非 hex なら中断。空のまま進むと repos/.../tarball/(末尾空)がデフォルトブランチを
+# 返し、誤ったコードを「正常取得」と誤認するため:
+case "$head_oid" in *[!0-9a-f]* | '') echo "pr-triage: headRefOid を解決できない。中断する" >&2; exit 1 ;; esac
 head_dir="$(mktemp -d)"
 
 # base リポの tarball を展開。失敗したら fork 元(head リポ)から取り直す
