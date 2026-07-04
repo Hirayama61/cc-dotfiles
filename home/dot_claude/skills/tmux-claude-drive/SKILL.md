@@ -31,7 +31,8 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 1. `tmux ls` でセッションを確認し、新ウィンドウで起動する:
    `tmux new-window -t <session>: -n <name> -c <workdir> -d`
    `tmux send-keys -t <session>:<name> 'claude --model <model> --permission-mode acceptEdits' Enter`
-   数秒待って `tmux capture-pane -t ... -p | tail` で起動を確認(モデル名がステータスバーに出る)。
+   数秒待って `tmux capture-pane -t ... -p | tail` で起動を確認(モデル名は Claude の pane 内
+   ステータス行に出る。tmux の status bar ではなく pane 本文なので capture-pane -p で読める)。
 2. 指示は **1行の literal 送信**(改行は送信になる): `tmux send-keys -t ... -l '<指示文>'`
    → `sleep 1` → `tmux send-keys -t ... Enter`。指示文には次を含める:
    - 従うワークフロー/skill 名と、承認ゲートの扱い(ユーザー許可済みである旨を明記)
