@@ -7,7 +7,7 @@ description: >-
   検品するワークフローで発火する。2026-07-03 の小説プロジェクト(Fable 5 が
   Opus 4.8 に第4話を書かせ検品)で確立。dev-pipeline はこれを運転部品として参照する。
 user-invocable: true
-allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 ---
 
 # tmux-claude-drive — 別セッションの Claude Code を運転する

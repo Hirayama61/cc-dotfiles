@@ -43,6 +43,7 @@ PHRASE="${2:-再開して}"
 POLL_INTERVAL="${RLR_POLL_INTERVAL:-60}"
 MAX_ITER="${RLR_MAX_ITER:-0}"
 MAX_RESEND="${RLR_MAX_RESEND:-3}"
+SEND_DELAY="${RLR_SEND_DELAY:-1}"
 TMUX="${RLR_TMUX:-tmux}"
 
 emit() {
@@ -53,9 +54,34 @@ emit() {
   fi
 }
 
+_last_state=""
+emit_state() {
+  # 待機系の反復イベント(limited waiting / 権限プロンプト)は状態変化時だけ出す。
+  # 毎ループ emit すると signal file が肥大し指揮者側で重複ナッジになる。
+  [ "$1" = "$_last_state" ] && return 0
+  _last_state="$1"
+  emit "$1"
+}
+
 tmux_q() {
   # display-message でフォーマット値を 1 行取得。
   "$TMUX" display-message -p -t "$PANE_ID" "$1" 2>/dev/null || true
+}
+
+send_phrase() {
+  # send-keys を set -e で無言死させない。check と送信の間に pane が消滅・置換された
+  # 場合(TOCTOU)、送信失敗を文書化済みの経路 B(exit 2)として明示的に扱う。
+  if ! "$TMUX" send-keys -t "$PANE_ID" -l "$PHRASE"; then
+    emit "route-b send-failed literal"
+    exit 2
+  fi
+  # literal 送信と Enter の間に待ちを挟む(tmux-claude-drive 手順 2 と同じ)。多バイトの
+  # フレーズが TUI 側で確定する前に Enter が先着すると取りこぼし → ack 失敗になるため。
+  [ "$SEND_DELAY" -gt 0 ] 2>/dev/null && sleep "$SEND_DELAY" || true
+  if ! "$TMUX" send-keys -t "$PANE_ID" Enter; then
+    emit "route-b send-failed enter"
+    exit 2
+  fi
 }
 
 is_shell_cmd() {
@@ -71,7 +97,10 @@ has_limit() {
 }
 
 has_permission() {
-  printf '%s' "$1" | grep -qE 'Do you want to proceed|❯ 1\. Yes|^\s*1\. Yes'
+  # プロンプト固有の選択カーソル ❯ + 番号付き選択肢を要求する。旧 `^\s*1\. Yes` は
+  # 被運転の通常出力(markdown 番号リスト等)を誤検知して送信を止めるため外した。
+  # `[[:space:]]` は BSD/GNU grep 両対応(`\s` の GNU 依存を避ける)。
+  printf '%s' "$1" | grep -qE 'Do you want to proceed|❯[[:space:]]*[0-9]+\.'
 }
 
 sleep_interval() {
@@ -94,6 +123,13 @@ resolved="$("$TMUX" display-message -p -t "$TARGET" '#{pane_id}' 2>/dev/null || 
 [ -n "$resolved" ] && PANE_ID="$resolved"
 START_PANE_PID="$(tmux_q '#{pane_pid}')"
 
+# pane を identity 固定できない(target 不在・tmux 応答なし)なら、無限ポーリングや
+# identity ガード無効化に陥る前に経路 B へ倒す(fail-fast)。
+if [ -z "$START_PANE_PID" ]; then
+  emit "route-b pane-unresolved target=$TARGET"
+  exit 2
+fi
+
 sent=0
 resend=0
 seen_limit=0
@@ -109,8 +145,14 @@ while :; do
   cur_cmd="$(tmux_q '#{pane_current_command}')"
   cur_pid="$(tmux_q '#{pane_pid}')"
 
+  # pane の identity を読めない(pane 消失・tmux 一過性障害)→ 状態不明。無限ポーリングや
+  # 別 pane 誤送信を避けるため経路 B へ倒す(起動時 fail-fast の監視中版)。
+  if [ -z "$cur_pid" ]; then
+    emit "route-b pane-lost"
+    exit 2
+  fi
   # identity 変化 = pane が別プロセスに置換 → 経路 B。
-  if [ -n "$START_PANE_PID" ] && [ -n "$cur_pid" ] && [ "$cur_pid" != "$START_PANE_PID" ]; then
+  if [ "$cur_pid" != "$START_PANE_PID" ]; then
     emit "route-b pane-replaced pid=$cur_pid"
     exit 2
   fi
@@ -120,11 +162,17 @@ while :; do
     exit 2
   fi
 
-  text="$("$TMUX" capture-pane -p -t "$PANE_ID" 2>/dev/null || true)"
+  # capture-pane 失敗(空文字)を「banner 消失=ack 成立」と誤認しない。失敗と正当な
+  # 空画面を区別し、失敗時は判定を保留して次周期へ回す。
+  if ! text="$("$TMUX" capture-pane -p -t "$PANE_ID" 2>/dev/null)"; then
+    emit_state "capture-retry"
+    sleep_interval ""
+    continue
+  fi
 
   # 権限プロンプトには絶対に送らない(誤送信・permission laundering 回避)。人間へ。
   if has_permission "$text"; then
-    emit "permission-prompt human-needed"
+    emit_state "permission-prompt human-needed"
     sleep_interval "$text"
     continue
   fi
@@ -134,8 +182,7 @@ while :; do
     if [ "$sent" -eq 1 ]; then
       # 送信後に banner が戻った = ack 失敗 → 上限まで再送。
       if [ "$resend" -lt "$MAX_RESEND" ]; then
-        "$TMUX" send-keys -t "$PANE_ID" -l "$PHRASE"
-        "$TMUX" send-keys -t "$PANE_ID" Enter
+        send_phrase
         resend=$((resend + 1))
         emit "resend n=$resend"
         sleep_interval "$text"
@@ -144,7 +191,7 @@ while :; do
       emit "resend-exhausted n=$resend"
       exit 4
     fi
-    emit "limited waiting"
+    emit_state "limited waiting"
     sleep_interval "$text"
     continue
   fi
@@ -152,8 +199,7 @@ while :; do
   # banner 無し・claude 生存・権限プロンプト無し = 通常状態。
   if [ "$seen_limit" -eq 1 ] && [ "$sent" -eq 0 ]; then
     # 明けた。1 明け = 1 送信。
-    "$TMUX" send-keys -t "$PANE_ID" -l "$PHRASE"
-    "$TMUX" send-keys -t "$PANE_ID" Enter
+    send_phrase
     sent=1
     emit "sent"
     sleep_interval "$text"

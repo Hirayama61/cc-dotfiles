@@ -17,14 +17,14 @@ setup() {
   FP="$HOME/.claude/hooks/lib/flag-paths.sh"
 }
 
-@test "design-reviewed flag is branch-scoped (different branches → different paths)" {
+@test "design-reviewed flag is branch-scoped (different branches -> different paths)" {
   a="$("$FP" design-reviewed cc-dotfiles feat/one)"
   b="$("$FP" design-reviewed cc-dotfiles feat/two)"
   [ -n "$a" ]
   [ "$a" != "$b" ]
 }
 
-@test "design-reviewed flag is session-independent (same repo+branch → identical path)" {
+@test "design-reviewed flag is session-independent (same repo+branch -> identical path)" {
   # 別 session を模して 2 回導出。session_id を含まないなら完全一致する(F-A の要)。
   a="$("$FP" design-reviewed cc-dotfiles feat/dev-pipeline)"
   b="$("$FP" design-reviewed cc-dotfiles feat/dev-pipeline)"

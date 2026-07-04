@@ -54,7 +54,7 @@ EOF
 
   export RLR_TMUX="$FAKE"
   export FAKE_STEPDIR="$STEPDIR" FAKE_SENT="$SENT" FAKE_COUNT="$COUNT"
-  export RLR_POLL_INTERVAL=0
+  export RLR_POLL_INTERVAL=0 RLR_SEND_DELAY=0
 }
 
 # step <n> <cmd> <pid> <text>
@@ -106,6 +106,14 @@ sent_count() {
   [[ "$output" == *"RLR: route-b pane-replaced"* ]]
 }
 
+@test "mid-poll pane lost (empty pane_pid during loop): route-b exit 2" {
+  step 0 node 100 "usage limit reached"
+  step 1 node "" "usage limit reached"
+  RLR_MAX_ITER=5 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"RLR: route-b pane-lost"* ]]
+}
+
 @test "ack fail (banner persists after send): bounded resend then exit 4" {
   step 0 node 100 "usage limit reached"
   step 1 node 100 "assistant is thinking"
@@ -116,6 +124,32 @@ sent_count() {
   [[ "$output" == *"RLR: resend-exhausted"* ]]
   # 初回送信 + 再送 1 = 計 2 回。
   [ "$(sent_count)" -eq 2 ]
+}
+
+@test "startup: unresolvable pane (empty pane_pid) fails fast to route-b exit 2" {
+  step 0 node "" ""
+  RLR_MAX_ITER=5 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"RLR: route-b pane-unresolved"* ]]
+  [ "$(sent_count)" -eq 0 ]
+}
+
+@test "RLR_RESET_PARSE is invoked while limited" {
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 "assistant is thinking"
+  step 2 node 100 "assistant is thinking"
+  marker="$BATS_TEST_TMPDIR/parsed"
+  parser="$BATS_TEST_TMPDIR/parser"
+  cat >"$parser" <<EOF
+#!/usr/bin/env bash
+cat >/dev/null
+printf done >>"$marker"
+echo 0
+EOF
+  chmod +x "$parser"
+  RLR_MAX_ITER=10 RLR_RESET_PARSE="$parser" run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 0 ]
+  [ -f "$marker" ]
 }
 
 @test "RLR_SIGNAL_FILE receives status lines" {

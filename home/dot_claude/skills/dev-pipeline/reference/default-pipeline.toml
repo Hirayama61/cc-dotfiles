@@ -32,7 +32,10 @@ key = "qa"
 skill = "fe-qa"
 gate = "human"
 
+# pr-polish はこのフェーズを回す合成 skill として self-review(push 直前ゲート)を指す。
+# ci-watch は push 後の assess-only(PR 作成・push・修正をしない)ため、この phase の
+# 実行主体には据えない。push 後の CodeRabbit/CI 収穫は hook 起動の ci-watch が別途担う。
 [[phase]]
 key = "pr-polish"
-skill = "ci-watch"
+skill = "self-review"
 gate = "human"
