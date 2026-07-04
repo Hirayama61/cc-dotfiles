@@ -1,0 +1,38 @@
+# dev-pipeline 組込み既定パイプライン(FE repo 版)。
+#
+# 対象リポに .claude/dev-pipeline.toml が無い時にこれを使う。per-repo override は
+# この schema と同形で、dev-pipeline SKILL の信頼境界(allowlist / hard gate 非改変 /
+# 内容ハッシュ単位の初回承認)を通してから読む。
+#
+# schema(Plan v2 §2.4 / §7):
+#   name              必須。パイプライン識別名。
+#   [[phase]]         フェーズ配列。順序が実行順。
+#     key             design | impl | qa | pr-polish。design は Phase 0 予約
+#                     (指揮者が直接実行し window を作らない)。
+#     skill           そのフェーズ全体を回す合成 skill 名(allowlist 内)。phase 内の
+#                     review→修正→再review はこの skill 内に閉じる(schema は 1 skill)。
+#     gate            human | auto。未宣言は human。auto は「遷移判断だけ無人」で、
+#                     被運転の起動承認・権限プロンプト応答は auto でも人間。
+#                     hard gate(design-reviewed / review-passed)は gate 宣言に依らず常に人間。
+
+name = "fe-default"
+
+[[phase]]
+key = "design"
+skill = "grill-with-docs"
+gate = "human"
+
+[[phase]]
+key = "impl"
+skill = "fe-implement"
+gate = "human"
+
+[[phase]]
+key = "qa"
+skill = "fe-qa"
+gate = "human"
+
+[[phase]]
+key = "pr-polish"
+skill = "ci-watch"
+gate = "human"
