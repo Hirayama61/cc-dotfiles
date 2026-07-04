@@ -7,19 +7,22 @@
 #
 # 失敗の載り方(spike 2026-07-03 確定):
 #   失敗 Bash は PostToolUse に来ず、専用イベント PostToolUseFailure に飛ぶ。tool_response の
-#   代わりに文字列 error(例 "Exit code 1")と is_interrupt(bool)を持つ。数値 exit code は無い。
-#   よって PostToolUseFailure を張り、error が "Exit code <n>" 形式のときだけ失敗として数える
-#   (is_interrupt=true や permission 拒否などは数えない)。成功のリセットは PostToolUse で受ける。
+#   代わりに文字列 error と is_interrupt(bool)を持つ。error の文言は形式保証が無い(公式例は
+#   "Command exited with non-zero status code 1")ため文言マッチはしない。失敗判定は
+#   「PostToolUseFailure(Bash)イベントであること + is_interrupt が true でないこと」のみ(F-001)。
+#   成功のリセットは PostToolUse で受ける。
 #
 # 状態機械:
-#   - 種別: コマンド先頭の環境変数代入(VAR=val)と "cd x &&" 前置を除いた最初の実行語。
-#     種別文字列はファイル名へ直接使わず flag_hash16 でハッシュ化してカウンタキーにする。
+#   - 種別: コマンド先頭の否定 "!"・環境変数代入(クォート付き含む)・wrapper 語(sudo/command/
+#     env/nohup/time)・"cd x &&" 前置を剥がした最初の実行語(stuck_command_kind)。種別文字列は
+#     ファイル名へ直接使わず flag_hash16 でハッシュ化してカウント dir キーにする。
 #   - 除外リスト: grep rg test [ [[ diff cmp は非 0 が正常挙動の語なので詰まりに数えない。
-#   - カウンタは種別ごと独立(別種の失敗は連続性を切らない)。同種の成功でその種別をリセット。
+#   - カウントは種別ごと独立(別種の失敗は連続性を切らない)。同種の成功でその種別をリセット。
 #   - 閾値: 同種 3 回連続失敗でナッジ。
 #   - 限界: 種別一致 ≠ 同一問題(git status→git push は同種扱い)。精密化しないことを受容する。
 #
-# 並行安全 / 1 ctx 1 回: カウンタ加算は数値 RMW(並列でロストしうるが害は timing のみ)。
+# 並行安全 / 1 ctx 1 回: カウントは flag-paths のマーカーファイル数え上げ(mktemp で一意ファイルを
+#   atomic 作成、数 = ファイル数)で数値 RMW のロストアップデートを構造的に避ける(F-002)。
 #   ナッジ発火は stuck_nudged_flag を mkdir で atomic に claim した最初の1回だけ(並列失敗でも
 #   高々1回)。claim ディレクトリの存在 = このセッションで発火済み。
 # subagent 抑制: 入力に agent_id があれば(subagent 発。spike S-2)即 exit 0。
@@ -45,7 +48,7 @@ hook_init || exit 0
 
 source_hook_lib flag-paths.sh || exit 0
 # apply 前後の版ずれ(古い flag-paths.sh に新関数が無い)は fail-open。
-type stuck_count_flag >/dev/null 2>&1 || exit 0
+type stuck_count_dir >/dev/null 2>&1 || exit 0
 
 ctx="$(hook_field '.transcript_path // .session_id')"
 ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
@@ -53,21 +56,52 @@ ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
 # ctx は外部入力由来。glob / path に使うためメタ文字を含む値は素通り(正規の basename は通る)。
 [[ "$ctx" =~ ^[A-Za-z0-9._-]+$ ]] || exit 0
 
-# 種別(kind): 環境変数代入と "cd x &&" 前置を剥がした最初の実行語。
+# 種別(kind): 先頭ノイズを剥がした最初の実行語。剥がす対象:
+#   - 否定 "!"、環境変数代入(VAR=val / VAR="a b" / VAR='a b' のクォート付き含む)
+#   - wrapper 語: sudo / command / env / nohup / time
+#   - "cd x &&" 前置(最初の && まで)
+# 既知の限界(深追いしない): wrapper のオプション(sudo -u foo cmd の -u)は剥がさず、
+#   その場合 kind がオプション文字列になりうる。閉じないクォートは非クォート扱いに退避する。
+#   種別一致 ≠ 同一問題(git status→git push は同種)は設計上の受容。
 stuck_command_kind() {
-  local c="${1:-}" head
-  while :; do
-    # 先頭空白を除去
+  local c="${1:-}" tok name
+  c="${c#"${c%%[![:space:]]*}"}"
+  # 先頭の "!"(否定)を剥がす
+  while [[ "$c" == "!"* ]]; do
+    c="${c#!}"
     c="${c#"${c%%[![:space:]]*}"}"
-    head="${c%%[[:space:]]*}"
-    # 先頭が環境変数代入(VAR=... で = が最初の空白より前)なら剥がす
-    case "$head" in
+  done
+  while :; do
+    c="${c#"${c%%[![:space:]]*}"}"
+    tok="${c%%[[:space:]]*}"
+    case "$tok" in
+    # 環境変数代入: VAR= を消してから値をクォート考慮で消費する
     [A-Za-z_]*=*)
-      c="${c#"$head"}"
+      name="${tok%%=*}"
+      case "$name" in *[!A-Za-z0-9_]*) break ;; esac # 識別子でなければ代入でない
+      c="${c#"$name="}"
+      case "$c" in
+      \"*)
+        c="${c#\"}"
+        c="${c#*\"}"
+        ;; # "..." を消費
+      \'*)
+        c="${c#\'}"
+        c="${c#*\'}"
+        ;; # '...' を消費
+      *) c="${c#"${c%%[[:space:]]*}"}" ;; # 非クォート値
+      esac
       continue
       ;;
     esac
-    # 先頭が "cd ... &&" なら最初の && まで剥がす
+    # wrapper 語を剥がす
+    case "$tok" in
+    sudo | command | env | nohup | time)
+      c="${c#"$tok"}"
+      continue
+      ;;
+    esac
+    # "cd ... &&" 前置を最初の && まで剥がす
     case "$c" in
     cd\ *"&&"*)
       c="${c#*&&}"
@@ -93,28 +127,27 @@ esac
 
 khash="$(flag_hash16 "$kind")"
 [[ -n "$khash" ]] || exit 0
-count_file="$(stuck_count_flag "$ctx" "$khash")"
+count_dir="$(stuck_count_dir "$ctx" "$khash")"
 
 event="$(hook_field '.hook_event_name')"
 
 # 成功(PostToolUse): 同種カウンタのみリセット(別種は独立なので触れない)。
 if [[ "$event" == "PostToolUse" ]]; then
-  rm -f "$count_file" 2>/dev/null || true
+  flag_counter_reset "$count_dir"
   exit 0
 fi
 
 # 以降は失敗イベントのみ(matcher で絞るが二重確認)。
 [[ "$event" == "PostToolUseFailure" ]] || exit 0
 
-# 実 exit code 失敗のみ数える(割り込み / permission 拒否 / 非 "Exit code" エラーは除外)。
+# 失敗判定は「PostToolUseFailure(Bash)であること + 割り込みでないこと」のみ(F-001)。
+# error 文字列は形式保証が無い(公式例 "Command exited with non-zero status code 1")ため、
+# 文言マッチはしない。ユーザー割り込みだけは詰まりでないので除外する。
 [[ "$(hook_field '.is_interrupt')" == "true" ]] && exit 0
-err="$(hook_field '.error')"
-exit_re='^Exit code [0-9]+'
-[[ "$err" =~ $exit_re ]] || exit 0
 
 # state dir を用意してからカウント(書込不能なら fail-open)。
 claude_flag_dir_ensure 2>/dev/null || exit 0
-n="$(flag_counter_bump "$count_file")"
+n="$(flag_counter_bump "$count_dir")"
 
 THRESHOLD=3
 [[ "$n" -ge "$THRESHOLD" ]] || exit 0
