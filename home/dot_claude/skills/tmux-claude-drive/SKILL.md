@@ -1,0 +1,87 @@
+---
+name: tmux-claude-drive
+description: >-
+  tmux 越しに別の Claude Code セッション(別モデル・別権限モード)を起動し、
+  指示投入→監視→検品まで運転する手順。「Opus に書かせて」「別セッションで実行して」
+  「tmux でエージェントを回して」、あるいは別モデルの成果物を現セッションが
+  検品するワークフローで発火する。2026-07-03 の小説プロジェクト(Fable 5 が
+  Opus 4.8 に第4話を書かせ検品)で確立。dev-pipeline はこれを運転部品として参照する。
+user-invocable: true
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
+---
+
+# tmux-claude-drive — 別セッションの Claude Code を運転する
+
+現セッション(運転者)が tmux の別ウィンドウに Claude Code(被運転者)を起動し、
+タスクを自律実行させ、成果物を検品して引き取る。
+
+## 前提と安全原則(最初に必ず)
+
+1. **無人運転の明示許可を先に取る**。承認ゲートを事前承認扱いにする指示や
+   `--permission-mode acceptEdits` での無人起動は、auto mode classifier に阻まれる。
+   AskUserQuestion で「編集自動許可+承認ゲートの扱い」をユーザーに確認してから送信する
+   (許可取得後の再送は通る)。
+2. **他セッションの権限プロンプトを代理承認しない**(send-keys で「1」を送るのは
+   classifier がブロックする=permission laundering 防止)。プロンプトが出たら内容を
+   要約してユーザーに押してもらう。頻発するなら、対象リポの settings に読み取り専用
+   Bash の許可ルールを足す提案をする(勝手に足さない)。
+
+## 手順
+
+1. `tmux ls` でセッションを確認し、新ウィンドウで起動する:
+   `tmux new-window -t <session>: -n <name> -c <workdir> -d`
+   `tmux send-keys -t <session>:<name> 'claude --model <model> --permission-mode acceptEdits' Enter`
+   数秒待って `tmux capture-pane -t ... -p | tail` で起動を確認(モデル名は Claude の pane 内
+   ステータス行に出る。tmux の status bar ではなく pane 本文なので capture-pane -p で読める)。
+2. 指示は **1行の literal 送信**(改行は送信になる): `tmux send-keys -t ... -l '<指示文>'`
+   → `sleep 1` → `tmux send-keys -t ... Enter`。指示文には次を含める:
+   - 従うワークフロー/skill 名と、承認ゲートの扱い(ユーザー許可済みである旨を明記)
+   - 対話不能環境での分岐処理(推奨案を自己選択し理由をファイルに記録)
+   - 完了時の合図: 「最後に『<完了フレーズ>』とだけ書いて停止すること」
+3. **Monitor で監視**(sleep ポーリング禁止・完了/停止/失敗の全終端を拾う):
+   45〜60 秒間隔で `tmux capture-pane -p | tail -25` を見て、
+   (a) 完了フレーズ → 終了、(b) 成果物ファイルの出現 → 通知のみ、
+   (c) `Do you want to proceed|❯ 1\. Yes` → 権限プロンプト(ユーザーへ)、
+   (d) `API Error|usage limit` → エラー通知、(e) pane 消失 → 終了。
+   フラグ変数で同一イベントの重複発報を抑止する。
+4. 完了したら**現セッションが検品**する(成果物を通読し、規約・整合を突き合わせ、
+   軽微な違反は直し、学びを規約文書に還元してからユーザーへ引き渡す)。
+5. **後片付け**: `tmux kill-window -t <session>:<name>`。被運転セッションに
+   /loop や cron の残骸があると勝手に再稼働するため、放置しない。
+
+## 落とし穴(実測)
+
+- `codex exec` は非 git ディレクトリでは `--skip-git-repo-check` が必須
+  (無いと "Not inside a trusted directory" で無言失敗する)。
+- capture-pane は描画済みテキストのみ。長い出力は `-S -<行数>` で遡る。
+- 被運転者の作業中にこちらから同一ファイルを編集すると Edit の staleness 競合が起きる。
+  検品前に必ず Read し直す。
+- 指示文に引用符を含める時は send-keys `-l` を使い、シェルのクォート衝突を避ける。
+
+## fail-open
+
+- tmux が無い/セッションが無い環境では、この手順を諦めて `claude -p`(headless)への
+  切り替えを提案する(対話ゲートが要るタスクには不向きと明示する)。
+- Monitor ツールが使えない場合は Bash `run_in_background` の until ループで
+  完了フレーズ検知のみに簡略化する。
+
+## パラメータ(運転元スキル向け・省略で従来挙動)
+
+dev-pipeline 等がこの手順を運転部品として呼ぶ時、次の 4 点を運転元が決める。
+いずれも既定は上の手順そのもの(小説 PJ 等の従来用途は無指定で変わらない)。
+
+- **起動モデル**: 既定は `--model <model>` を明示。運転元が「指揮者のデフォルト
+  モデルを継承させたい」場合は `--model` を**省略**して `claude --permission-mode
+  acceptEdits` で起動する(default model が再解決される)。
+- **完了合図(nonce)**: 手順 2 の `<完了フレーズ>` は固定文字列だと偽完了を拾う。
+  運転元が pipeline/phase ごとに一意な nonce(例 `DONE-<pipeline>-<phase>-<連番>`)を
+  渡し、監視側はその nonce 一致でのみ完了とみなす。再利用しない。
+- **完了後の window 処理**: 既定は手順 5 の `kill-window`。運転元が失敗 window を
+  forensics 用に残したい場合は **retain**(kill せず capture-pane -S でログを吸い出し、
+  赤ラベル相当のリネームで生かす)を選べる。
+- **usage limit 検知時**: 既定は手順 3-(d) の「エラー通知して終了」。運転元が
+  自動再開を持つ場合は、この検知を運転元の **rate-limit hook へ委譲**する
+  (kill せず pane を生かし、別プロセスのタイマーに再開を任せる)。
+
+これらは手順の**分岐点**であって別実装ではない。運転元は上の 1〜5 を踏襲し、
+該当箇所だけ渡された値で振る舞いを変える。
