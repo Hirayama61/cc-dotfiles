@@ -179,6 +179,19 @@
           {
             "type": "command",
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/ciwatch-on-push-nudge.sh"
+          },
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/stuck-nudge.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Grep|Glob|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/delegation-nudge.sh"
           }
         ]
       },
@@ -197,6 +210,17 @@
           {
             "type": "command",
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/large-file-warn.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/stuck-nudge.sh"
           }
         ]
       }
