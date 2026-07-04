@@ -14,7 +14,7 @@ load ../helpers/common
 setup() {
   install_hooks
   # 一時 HOME の外(実 XDG state dir)へフラグが漏れないよう明示的に落とす
-  # (evolve-nudge-on-stop.bats と同作法。claude_flag_dir は絶対 XDG_STATE_HOME を優先)。
+  # (claude_flag_dir は絶対 XDG_STATE_HOME を優先)。
   unset XDG_STATE_HOME
 }
 

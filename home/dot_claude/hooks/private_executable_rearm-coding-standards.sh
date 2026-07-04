@@ -19,11 +19,6 @@ ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
 [[ -z "$ctx" ]] && exit 0
 
 rm -f "$(cs_injected_flag_prefix "$ctx")"* 2>/dev/null || true
-# evolve-nudge-on-stop.sh の 1 ctx 1 回フラグも同時に再武装する(clear|compact 後の
-# 新しい文脈では区切りナッジをもう一度許す)。版ずれ(旧 flag-paths.sh)は無視。
-if type evolve_nudged_flag >/dev/null 2>&1; then
-  rm -f "$(evolve_nudged_flag "$ctx")" 2>/dev/null || true
-fi
 # capture-decision.sh の 1 ctx 1 回フラグも同時に再武装する(clear|compact 後の新しい
 # 文脈では判断記録ナッジをもう一度許す)。版ずれ(旧 flag-paths.sh)は無視。
 if type decision_nudged_flag >/dev/null 2>&1; then
