@@ -2,7 +2,8 @@
 # delegation-nudge.sh の E2E。
 # PostToolUse(Grep|Glob) の ctx 累計が閾値 5 に達したら委譲(scout/researcher/delegate の
 # 出し分け)を促す additionalContext を注入する。PostToolUse(Agent) で累計をリセット。
-# Read は数えない / 1 ctx 1 回 / subagent 抑制(agent_id)/ 並列で高々1回 / fail-open。
+# カウントはマーカーファイル数え上げ(F-002)。Read は数えない / 1 ctx 1 回 / subagent 抑制
+# (agent_id)/ 並列で高々1回 / fail-open。
 # @test タイトルは ASCII 限定(日本語は bats のテスト名解決が壊れる既知の罠)。
 
 load ../helpers/common
@@ -18,11 +19,11 @@ _tool() {
   printf '{"hook_event_name":"PostToolUse","tool_name":"%s","transcript_path":"/tmp/tp/%s.jsonl","tool_input":{"pattern":"x"}}' "$2" "$1"
 }
 
-seed_delegation() {
-  "$FLAG" dir-ensure >/dev/null
-  local cf
-  cf="$("$FLAG" delegation-count "$1")"
-  printf '%s' "$2" >"$cf"
+# 累計カウント dir のマーカー数を返す(ctx)。
+count_markers() {
+  local dir
+  dir="$("$FLAG" delegation-count-dir "$1")"
+  find "$dir" -type f 2>/dev/null | wc -l | tr -d ' '
 }
 
 assert_nudged() {
@@ -51,6 +52,7 @@ assert_nudged() {
     [ "$status" -eq 0 ]
     [ -z "$output" ]
   done
+  [ "$(count_markers sess-r)" -eq 0 ]
 }
 
 @test "Agent use resets the counter" {
@@ -61,6 +63,7 @@ assert_nudged() {
   run_hook delegation-nudge.sh "$(_tool sess-b Agent)"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+  [ "$(count_markers sess-b)" -eq 0 ]
   # リセット後は 4 回探索しても発火しない
   for i in 1 2 3 4; do
     run_hook delegation-nudge.sh "$(_tool sess-b Grep)"
@@ -80,8 +83,7 @@ assert_nudged() {
   [ -z "$output" ]
 }
 
-@test "parallel searches nudge exactly once (mkdir atomic claim)" {
-  seed_delegation sess-p 4
+@test "parallel searches from zero: count reaches 5 and nudge fires exactly once" {
   local outdir="$BATS_TEST_TMPDIR/par"
   mkdir -p "$outdir"
   local hook="$HOME/.claude/hooks/delegation-nudge.sh"
@@ -91,18 +93,23 @@ assert_nudged() {
     ( printf '%s' "$json" | "$hook" >"$outdir/$i" 2>&1 ) &
   done
   wait
+  [ "$(count_markers sess-p)" -eq 5 ]
   local hits
   hits="$(grep -l additionalContext "$outdir"/* 2>/dev/null | wc -l | tr -d ' ')"
   [ "$hits" -eq 1 ]
 }
 
 @test "subagent search is suppressed (agent_id present)" {
-  seed_delegation sess-s 4
+  local i
+  for i in 1 2 3 4; do
+    run_hook delegation-nudge.sh "$(_tool sess-s Grep)"
+  done
   local json
   json="$(printf '{"hook_event_name":"PostToolUse","tool_name":"Grep","agent_id":"a123","agent_type":"general-purpose","transcript_path":"/tmp/tp/sess-s.jsonl","tool_input":{"pattern":"x"}}')"
   run_hook delegation-nudge.sh "$json"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+  [ "$(count_markers sess-s)" -eq 4 ]
 }
 
 @test "session_id fallback: same session_id accumulates" {
@@ -117,7 +124,6 @@ assert_nudged() {
 }
 
 @test "fail-open when jq is absent (no output, exit 0)" {
-  seed_delegation sess-nojq 4
   run_hook_env "$(make_no_jq_path)" delegation-nudge.sh "$(_tool sess-nojq Grep)"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -137,17 +143,18 @@ assert_nudged() {
 @test "rearm re-arms the nudge (re-fire after clear/compact)" {
   local i
   for i in 1 2 3 4 5; do
-    run_hook delegation-nudge.sh "$(_tool sess-r Grep)"
+    run_hook delegation-nudge.sh "$(_tool sess-r2 Grep)"
   done
   assert_nudged
-  run_hook delegation-nudge.sh "$(_tool sess-r Grep)"
+  run_hook delegation-nudge.sh "$(_tool sess-r2 Grep)"
   [ -z "$output" ]
-  run_hook rearm-coding-standards.sh '{"transcript_path":"/tmp/tp/sess-r.jsonl"}'
+  run_hook rearm-coding-standards.sh '{"transcript_path":"/tmp/tp/sess-r2.jsonl"}'
   [ "$status" -eq 0 ]
+  [ "$(count_markers sess-r2)" -eq 0 ]
   for i in 1 2 3 4; do
-    run_hook delegation-nudge.sh "$(_tool sess-r Grep)"
+    run_hook delegation-nudge.sh "$(_tool sess-r2 Grep)"
     [ -z "$output" ]
   done
-  run_hook delegation-nudge.sh "$(_tool sess-r Grep)"
+  run_hook delegation-nudge.sh "$(_tool sess-r2 Grep)"
   assert_nudged
 }
