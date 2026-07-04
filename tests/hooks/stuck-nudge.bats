@@ -116,6 +116,16 @@ assert_nudged() {
   [ -z "$output" ]
 }
 
+@test "success of a different kind does not reset unrelated kind counter" {
+  run_hook stuck-nudge.sh "$(_fail sess-m 'git status')"
+  run_hook stuck-nudge.sh "$(_fail sess-m 'git status')"
+  # 異種コマンド(npm)の成功は git のカウンタに影響しない
+  run_hook stuck-nudge.sh "$(_ok sess-m 'npm test')"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ "$(count_markers sess-m git)" -eq 2 ]
+}
+
 @test "excluded commands (non-zero is normal) are not counted" {
   local c
   for c in grep rg diff cmp; do
