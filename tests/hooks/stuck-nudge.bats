@@ -5,7 +5,7 @@
 # 失敗判定は PostToolUseFailure(Bash) + 非 interrupt のみ(error 文言に依らない。F-001)。
 # カウントはマーカーファイル数え上げ(F-002)。種別パーサは !/wrapper/クォート代入を剥がす(F-004)。
 # 1 ctx 1 回(stuck-nudged-${ctx} claim ディレクトリ)/ subagent 抑制(agent_id)/ fail-open は
-# capture-decision.bats・evolve-nudge.bats と同作法。実 wire 形式(spike-hooks.md)の JSON を fixture に。
+# capture-decision.bats と同作法。実 wire 形式(spike-hooks.md)の JSON を fixture に。
 # @test タイトルは ASCII 限定(日本語は bats のテスト名解決が壊れる既知の罠)。
 
 load ../helpers/common

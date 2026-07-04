@@ -4,8 +4,7 @@ description: >-
   ローカル進化の生成側。セッションの学びと外部脳(Guides/Mistakes/Decisions)から、
   skill/agent 化に値する知見を候補 skill として ~/.claude-evolution/candidates/ へ自動生成する。
   候補は有効化ゲート(/evolve-gate)を通るまで一切効力を持たない。
-  「学びを skill 化」「候補を生成」「skill に昇華」、`/evolve` での起動、
-  または evolve-nudge-on-stop hook のナッジで発火する。
+  「学びを skill 化」「候補を生成」「skill に昇華」、`/evolve` での起動で発火する。
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill
 ---
@@ -52,7 +51,7 @@ mkdir -p ~/.claude-evolution && chmod 700 ~/.claude-evolution
 
 パスは固定(env override なし)。候補名は **`^[a-z0-9-]+$` に限定**する
 (空白・記号入りの名前は evolve-gate の mv/rm 雛形を壊すため生成しない)。
-消費者: evolve(生成)/ evolve-gate(トリアージ)/ evolve-nudge-on-stop hook(件数走査)/
+消費者: evolve(生成)/ evolve-gate(トリアージ)/
 dotfiles `bin/skills-sync.sh`(active の symlink 反映)。
 
 ## guide-capture との振り分け(学びの行き先)
