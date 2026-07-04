@@ -10,7 +10,8 @@
 # Agent ツールの matcher 名は "Agent"(spike S-3 確定。Task ではない)。
 #
 # 並行安全 / 1 ctx 1 回 / subagent 抑制 / fail-open は stuck-nudge.sh と同一機構(lib 共有):
-#   - カウンタ加算は数値 RMW(並列ロストは timing のみに影響)。
+#   - カウントは flag-paths のマーカーファイル数え上げ(mktemp で一意ファイルを atomic 作成、
+#     数 = ファイル数)で数値 RMW のロストアップデートを構造的に避ける(F-002)。
 #   - ナッジ発火は delegation_nudged_flag を mkdir で atomic に claim した最初の1回だけ。
 #   - agent_id があれば(subagent 発。spike S-2)即 exit 0。
 #   - rearm-coding-standards.sh(clear|compact)がカウンタ・claim を破棄して再武装する。
@@ -32,20 +33,20 @@ hook_init || exit 0
 
 source_hook_lib flag-paths.sh || exit 0
 # 版ずれ(古い flag-paths.sh に新関数が無い)は fail-open。
-type delegation_count_flag >/dev/null 2>&1 || exit 0
+type delegation_count_dir >/dev/null 2>&1 || exit 0
 
 ctx="$(hook_field '.transcript_path // .session_id')"
 ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
 [[ -n "$ctx" ]] || exit 0
 [[ "$ctx" =~ ^[A-Za-z0-9._-]+$ ]] || exit 0
 
-count_file="$(delegation_count_flag "$ctx")"
+count_dir="$(delegation_count_dir "$ctx")"
 tool="$(hook_tool_name)"
 
 case "$tool" in
 Agent)
   # 委譲が起きた: 累計をリセット(claim は 1 ctx 1 回のまま維持する)。
-  rm -f "$count_file" 2>/dev/null || true
+  flag_counter_reset "$count_dir"
   exit 0
   ;;
 Grep | Glob) ;;
@@ -54,7 +55,7 @@ esac
 
 # state dir を用意してからカウント(書込不能なら fail-open)。
 claude_flag_dir_ensure 2>/dev/null || exit 0
-n="$(flag_counter_bump "$count_file")"
+n="$(flag_counter_bump "$count_dir")"
 
 THRESHOLD=5
 [[ "$n" -ge "$THRESHOLD" ]] || exit 0
