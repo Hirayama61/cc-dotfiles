@@ -72,6 +72,35 @@ assert_nudged() {
   assert_nudged
 }
 
+@test "negation prefix normalizes to git kind (F-012)" {
+  # "! git fetch" の否定前置が剥がされ、種別 git のカウント dir にマーカーが入る。
+  run_hook stuck-nudge.sh "$(_fail sess-neg '! git fetch')"
+  [ "$status" -eq 0 ]
+  [ "$(count_markers sess-neg git)" -eq 1 ]
+}
+
+@test "cd-prefix normalizes to git kind (F-012)" {
+  # "cd foo && git push" の cd 前置が剥がされ、種別 git に集約される。
+  run_hook stuck-nudge.sh "$(_fail sess-cd 'cd foo && git push')"
+  [ "$status" -eq 0 ]
+  [ "$(count_markers sess-cd git)" -eq 1 ]
+}
+
+@test "excluded words test and double-bracket are not counted (F-012)" {
+  local i
+  for i in 1 2 3 4 5; do
+    run_hook stuck-nudge.sh "$(_fail sess-t 'test -f x')"
+    [ -z "$output" ]
+  done
+  for i in 1 2 3 4 5; do
+    run_hook stuck-nudge.sh "$(_fail sess-br '[[ -n x ]]')"
+    [ -z "$output" ]
+  done
+  # 除外語は count dir 自体が作られない(早期 exit)ので 0。
+  [ "$(count_markers sess-t test)" -eq 0 ]
+  [ "$(count_markers sess-br '[[')" -eq 0 ]
+}
+
 @test "same-kind success resets the counter" {
   run_hook stuck-nudge.sh "$(_fail sess-b 'git status')"
   run_hook stuck-nudge.sh "$(_fail sess-b 'git status')"
@@ -119,9 +148,10 @@ assert_nudged() {
   [ -z "$output" ]
 }
 
-@test "parallel failures from zero: count reaches 5 and nudge fires exactly once" {
-  # シード 0 から 5 並列で失敗させる。マーカー数え上げなのでロストせずカウント 5、
-  # 閾値 3 到達で mkdir claim を取れた 1 プロセスだけがナッジ(F-002)。
+@test "parallel failures from zero: threshold reached, nudge fires exactly once" {
+  # シード 0 から 5 並列で失敗させる。マーカー数え上げなので数値 RMW と違い必ず閾値 3 に到達
+  # する(ロストして 1 に落ちない)。mkdir claim を取れた 1 プロセスだけがナッジ(F-002)。
+  # 発火後は F-010 の早期 exit で残りのカウントが止まるため、最終マーカー数は [3, 5] に入る。
   local outdir="$BATS_TEST_TMPDIR/par"
   mkdir -p "$outdir"
   local hook="$HOME/.claude/hooks/stuck-nudge.sh"
@@ -131,7 +161,10 @@ assert_nudged() {
     ( printf '%s' "$json" | "$hook" >"$outdir/$i" 2>&1 ) &
   done
   wait
-  [ "$(count_markers sess-p git)" -eq 5 ]
+  local markers
+  markers="$(count_markers sess-p git)"
+  [ "$markers" -ge 3 ]
+  [ "$markers" -le 5 ]
   local hits
   hits="$(grep -l additionalContext "$outdir"/* 2>/dev/null | wc -l | tr -d ' ')"
   [ "$hits" -eq 1 ]

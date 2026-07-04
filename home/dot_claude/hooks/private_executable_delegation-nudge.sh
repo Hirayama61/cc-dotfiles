@@ -53,6 +53,10 @@ Grep | Glob) ;;
 *) exit 0 ;;
 esac
 
+# 既にこの ctx で発火済み(claim ディレクトリが存在)なら、以降のカウント/mktemp/find は
+# 無駄なので早期に抜ける(F-010。1 ctx 1 回なので発火後のマーカー累積は不要)。
+[[ -d "$(delegation_nudged_flag "$ctx")" ]] && exit 0
+
 # state dir を用意してからカウント(書込不能なら fail-open)。
 claude_flag_dir_ensure 2>/dev/null || exit 0
 n="$(flag_counter_bump "$count_dir")"

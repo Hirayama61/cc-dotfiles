@@ -123,6 +123,9 @@ decision_nudged_flag() {
 # リセット = dir 削除、とする(F-002)。ブールフラグ群とは別機構であることを関数構造で明示する。
 # ナッジ発火の at-most-once は別途 claim ディレクトリ(*_nudged_flag を mkdir で atomic に取る)
 # 側で保証する。
+# 既知の限界(F-009): bump(追加)と reset(dir 削除)は互いに排他しない。成功/失敗(stuck)や
+# Agent/探索(delegation)が同一並列バッチに混在すると、reset と bump のすれ違いでマーカーが
+# ±1 ずれうる。助言ナッジの閾値精度としては受容する(ロック導入はこの用途のレイテンシに見合わない)。
 
 # カウント dir にマーカーを1つ atomic 追加し、現在のマーカー数を stdout に返す。
 # dir を作れない/mktemp 失敗(書込不能)は 0(進めない=fail-open)。並列安全。
