@@ -152,6 +152,113 @@ EOF
   [ -f "$marker" ]
 }
 
+@test "permission stuck: gives up with exit 5 after RLR_PERMSTUCK_MAX_ITERS" {
+  step 0 node 100 "Do you want to proceed?"
+  step 1 node 100 "Do you want to proceed?"
+  step 2 node 100 "Do you want to proceed?"
+  RLR_MAX_ITER=20 RLR_PERMSTUCK_MAX_ITERS=2 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 5 ]
+  [[ "$output" == *"RLR: permission-stuck"* ]]
+  [ "$(sent_count)" -eq 0 ]
+}
+
+# 内蔵リセット時刻パーサ(--parse-reset 自己テストフック。ループを回さず stdin を評価)。
+parse_reset() { printf '%s' "$1" | bash "$SCRIPT" --parse-reset; }
+
+@test "reset parser: 'in 2 hours' -> 7200" {
+  [ "$(parse_reset 'usage limit. try again in 2 hours')" -eq 7200 ]
+}
+
+@test "reset parser: 'in 15 minutes' -> 900" {
+  [ "$(parse_reset 'rate limit reached, resets in 15 minutes')" -eq 900 ]
+}
+
+@test "reset parser: no time -> 0 (interval fallback)" {
+  [ "$(parse_reset 'usage limit reached')" -eq 0 ]
+}
+
+@test "reset parser: relative time only in limit context ('try again in 2 hours' -> 7200)" {
+  [ "$(parse_reset 'usage limit. try again in 2 hours')" -eq 7200 ]
+}
+
+@test "reset parser: unrelated 'completed in 2 hours' is ignored -> 0" {
+  [ "$(parse_reset 'the build completed in 2 hours, nice')" -eq 0 ]
+}
+
+@test "reset parser: invalid clock 'at 25:99pm' -> 0" {
+  [ "$(parse_reset 'reset available again at 25:99pm')" -eq 0 ]
+}
+
+@test "reset parser: out-of-range value in limit context -> 0 (range guard)" {
+  # limit 文脈を満たした上で 999h(>6h)が範囲ガードで 0 になることを検証。
+  [ "$(parse_reset 'usage limit, try again in 999 hours')" -eq 0 ]
+}
+
+@test "reset parser: 'at 5pm' without minutes does not crash (numeric out)" {
+  n="$(parse_reset 'reset available again at 5pm')"
+  [[ "$n" =~ ^[0-9]+$ ]]
+}
+
+@test "reset parser: absolute 'at H:MM(am|pm)' yields 0 or a bounded second count" {
+  n="$(parse_reset 'available again at 11:30pm')"
+  [[ "$n" =~ ^[0-9]+$ ]]
+  # 内蔵ガードにより 0(=interval)か 60..21600 のいずれか(clock 依存)。
+  [ "$n" -eq 0 ] || { [ "$n" -ge 60 ] && [ "$n" -le 21600 ]; }
+}
+
+@test "permission detect: ASCII cursor '> 1. Yes' is treated as prompt (never sends)" {
+  step 0 node 100 "> 1. Yes"
+  step 1 node 100 "> 1. Yes"
+  RLR_MAX_ITER=2 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"permission-prompt human-needed"* ]]
+  [ "$(sent_count)" -eq 0 ]
+}
+
+@test "permission detect: normal output '> 123 files changed' is NOT a prompt (sends on clear)" {
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 "> 123 files changed and other normal output"
+  step 2 node 100 "> 123 files changed and other normal output"
+  RLR_MAX_ITER=10 run bash "$SCRIPT" "sess:win.0"
+  # limit→通常出力(誤検知しない)なら明けたとみなして送信し resumed。
+  [ "$status" -eq 0 ]
+  [ "$(sent_count)" -eq 1 ]
+}
+
+@test "reset parser: leading-zero minutes 'in 08 minutes' -> 480 (10# base-10, no octal crash)" {
+  [ "$(parse_reset 'try again in 08 minutes')" -eq 480 ]
+}
+
+@test "reset parser: leading-zero hours 'in 05 hours' -> 18000" {
+  [ "$(parse_reset 'usage limit. in 05 hours')" -eq 18000 ]
+}
+
+@test "reset parser: leading-zero clock 'at 08:09am' does not crash (numeric out)" {
+  n="$(parse_reset 'available again at 08:09am')"
+  [[ "$n" =~ ^[0-9]+$ ]]
+}
+
+@test "reset deadline is computed once, not re-parsed every poll" {
+  # 全ポーリングで limited を返す。相対時刻を毎回再解釈するバグなら parser が複数回呼ばれる。
+  step 0 node 100 "usage limit, try again soon"
+  step 1 node 100 "usage limit, try again soon"
+  step 2 node 100 "usage limit, try again soon"
+  step 3 node 100 "usage limit, try again soon"
+  cnt="$BATS_TEST_TMPDIR/pcnt"
+  echo 0 >"$cnt"
+  parser="$BATS_TEST_TMPDIR/pincr"
+  cat >"$parser" <<EOF
+#!/usr/bin/env bash
+cat >/dev/null
+n=\$(cat "$cnt"); echo \$((n + 1)) >"$cnt"
+echo 1
+EOF
+  chmod +x "$parser"
+  RLR_MAX_ITER=4 RLR_RESET_PARSE="$parser" run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 3 ]
+  [ "$(cat "$cnt")" -eq 1 ]
+}
+
 @test "RLR_SIGNAL_FILE receives status lines" {
   step 0 node 100 "usage limit reached"
   step 1 node 100 "ready"
