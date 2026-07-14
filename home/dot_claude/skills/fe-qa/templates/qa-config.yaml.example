@@ -33,7 +33,6 @@ accounts:
 
 # 仕様参照の既定(省略可。起動時に会話で上書きできる)
 spec:
-  wbs_glob: "~/obsidian/brain/Tasks/<repo>/*-wbs.json"
-  confluence:                      # Atlassian MCP で読む対象
+  confluence:                      # Atlassian MCP で読む対象(仕様源)
     space_key: ""
     page_ids: []
