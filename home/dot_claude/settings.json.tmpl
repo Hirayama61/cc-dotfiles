@@ -162,6 +162,15 @@
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/block-repo-doc.sh"
           }
         ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/inject-guide-review.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -221,6 +230,16 @@
           {
             "type": "command",
             "command": "{{ .chezmoi.homeDir }}/.claude/hooks/stuck-nudge.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.claude/hooks/inject-guide-review.sh"
           }
         ]
       }
