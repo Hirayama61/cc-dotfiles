@@ -36,9 +36,10 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    (permission-mode は指定しない。前提 1 のとおり defaultMode=auto に任せる)
    数秒待って `tmux capture-pane -t ... -p | tail` で起動を確認(モデル名は Claude の pane 内
    ステータス行に出る。tmux の status bar ではなく pane 本文なので capture-pane -p で読める)。
-   **権限モードも同時に確認する** — pane に「auto mode on」が出ていること。被運転 cwd の
-   project settings 等で別モード(bypassPermissions 等)に化けていたら送信せず停止して
-   ユーザーに報告する。
+   **権限モードも同時に確認する** — 直近出力(`tail` 範囲)の**現在のステータス行**に
+   「⏵⏵ auto mode on」が出ていることを確認する(scrollback の古い表示や別文脈の部分一致を
+   合格にしない)。この完全一致が取れない場合 — 別モード(bypassPermissions / 格下げ含む)・
+   表示欠落・部分一致のみ — は送信せず停止してユーザーに報告する。
 2. 指示は **1行の literal 送信**(改行は送信になる): `tmux send-keys -t ... -l '<指示文>'`
    → `sleep 1` → `tmux send-keys -t ... Enter`。指示文には次を含める:
    - 従うワークフロー/skill 名と、承認ゲートの扱い(**何が許可済みかの範囲を区別して明記する**:
