@@ -45,9 +45,13 @@ skip だらけの QA は QA ではない — 3 レンズ以上 skip なら人間
 ## 1. 入力確定
 
 - 対象: 変更画面・機能の一覧(fe-implement のハンドオフ、または diff / 人間から)。
-- 仕様: **Confluence(Atlassian MCP)**を読む。設定の `spec.confluence`(space_key /
-  page_ids)を既定とし、起動時の会話で上書きできる。参照先が特定できなければ人間に確認する
-  (仕様源不明のまま検査を始めない)。
+- 仕様: **Confluence** を読む(取得経路は Atlassian MCP、MCP 不在時は WebFetch
+  フォールバック)。設定の `spec.confluence`(space_key / page_ids)を既定とし、
+  起動時の会話で上書きできる。仕様源の扱いは 2 つを区別する:
+  - **参照先が未特定**(どのページが仕様か分からない)… 人間に確認して**停止**する
+    (仕様源不明のまま検査を始めない)。
+  - **特定済みだが取得不能**(MCP/WebFetch とも読めない)… QA 全体は中断せず、
+    レンズ 6 のみ skip(仕様源なし)として記録する。
 - dev サーバは **Bash の run_in_background で起動**し、`ready_wait_seconds` を上限とした
   ポーリングで base URL の疎通を確認する。起動不能なら QA 全体を中断して人間に報告する
   (壊れた環境で「QA 済み」を作らない)。**QA 終了時(中断を含む)に、起動したプロセスを
