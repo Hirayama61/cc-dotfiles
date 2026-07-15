@@ -36,9 +36,14 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    (permission-mode は指定しない。前提 1 のとおり defaultMode=auto に任せる)
    数秒待って `tmux capture-pane -t ... -p | tail` で起動を確認(モデル名は Claude の pane 内
    ステータス行に出る。tmux の status bar ではなく pane 本文なので capture-pane -p で読める)。
+   **権限モードも同時に確認する** — pane に「auto mode on」が出ていること。被運転 cwd の
+   project settings 等で別モード(bypassPermissions 等)に化けていたら送信せず停止して
+   ユーザーに報告する。
 2. 指示は **1行の literal 送信**(改行は送信になる): `tmux send-keys -t ... -l '<指示文>'`
    → `sleep 1` → `tmux send-keys -t ... Enter`。指示文には次を含める:
-   - 従うワークフロー/skill 名と、承認ゲートの扱い(ユーザー許可済みである旨を明記)
+   - 従うワークフロー/skill 名と、承認ゲートの扱い(**何が許可済みかの範囲を区別して明記する**:
+     許可済みなのはこの依頼・タスク自体で、被運転側の hard ゲート(push/設計レビュー等)や
+     権限プロンプトは事前承認済みにならない)
    - 対話不能環境での分岐処理(推奨案を自己選択し理由をファイルに記録)
    - 完了時の合図: 「最後に『<完了フレーズ>』とだけ書いて停止すること」
 3. **Monitor で監視**(sleep ポーリング禁止・完了/停止/失敗の全終端を拾う):
