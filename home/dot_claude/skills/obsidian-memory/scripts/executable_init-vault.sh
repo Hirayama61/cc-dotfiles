@@ -63,7 +63,8 @@ write_readme_if_absent "$VAULT/Guides/_README.md" \
   "" \
   "context(repo 又は _topics)ごとの運用知を常に最新の状態で保つ場所。" \
   "ルートガイド \`<repo>/<repo>-ガイド.md\` が SessionStart 注入の対象。" \
-  "サブ doc は分割で創発し [[link]] でルートから接続する(遅延分割・創発グラフ)。" \
+  "ルートは常時規範 + トリガ付きインデックス行で構成し、知見の実体はサブ doc に置く(ハイブリッド構造)。" \
+  "サブ doc は 1 ドキュメント 1 コンテンツで、ルートから [[link]] で接続する。" \
   "横断知は \`_topics/<トピック>.md\` ハブに置き、複数 repo のルートから [[link]] する。" \
   "書込は guide-capture skill 経由(人間ゲート付き)。自動上書きしない。" \
   "Decisions(なぜ=append-only 履歴)とは直交し疎結合で並走する。"
