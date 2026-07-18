@@ -6,7 +6,7 @@ description: >-
   経緯は渡さない=思い込みの遮断)。6 観点で反証的に検査し、指摘のみ報告する。
   実装も Plan の書き換えもしない。
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: opus
 effort: xhigh # モデルの推論エフォート(重い reviewer は xhigh に固定する規約)
 ---
 

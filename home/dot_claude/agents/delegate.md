@@ -8,7 +8,7 @@ description: >-
   コンテキスト保護のために使う
   (委譲基準はグローバル CLAUDE.md「オーケストレーション」節)。
 tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, Skill
-model: inherit
+model: opus
 ---
 
 # delegate — 単一タスク実行エージェント
