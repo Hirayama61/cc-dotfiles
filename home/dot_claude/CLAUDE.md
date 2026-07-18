@@ -36,8 +36,8 @@ hook で守れる事項は書かない。
 - **委譲先の使い分け(コスト最適化)**: 実装・設計の中核と独立検証・反証レビュー(基準4)は `delegate`(model: inherit、親と同格)。
   検索・読込だけなら `scout`(haiku 固定)、Web/ドキュメントの定型調査は `researcher`(sonnet 固定)、
   仕様確定済みの機械的編集・定型実装は `worker`(sonnet 固定)。
-  専用レビュアー(code-reviewer / security-reviewer / design-reviewer)は各 skill の定義どおり起動する。
-  ティア固定は各エージェント定義側にあるため、メインのモデルに依らず同じ定義で動く。
+  専用レビュアー(code-reviewer / security-reviewer / design-reviewer / guide-reviewer)は各 skill の定義どおり起動する。
+  これらは `model: inherit`(delegate と同じく親と同格)で起動する。ティア固定なのは scout/researcher/worker のみ。
   実装・設計の中核を委譲する時はモデルを下げない(`worker` に設計判断をさせない)。
 - **委譲前の外部脳検索(種渡し)**: 関連知見が判断に影響しうる委譲では、事前に `~/obsidian/brain` を keyword 検索し、関連ノートを「既知の前提」として委譲先に渡す。
 - **プランレビューゲート**: 委譲した破壊的・外向き・広範囲・業務判断を含むタスクは先出しプランを軽量レビュー(再立案はしない)。
