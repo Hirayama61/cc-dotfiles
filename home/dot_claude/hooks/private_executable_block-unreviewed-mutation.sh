@@ -80,14 +80,18 @@ if design_gate_pass "$repo_key" "$sid" "$branch" 1; then
   exit 0
 fi
 
-# 未通過 = 警告を注入して編集は通す。同一コンテキストへは 1 回だけ(design-gate-warned
-# フラグ)。ctx は capture-decision と同じ transcript_path 基準(session_id は subagent と
-# 共有される)。flag-paths.sh 不達 / 版ずれ / ctx 不明は ctx 空のまま = 毎編集で警告へ倒す
-# (警告欠落より毎回警告を選ぶ。抑制はベストエフォート)。
+# 未通過 = 警告を注入して編集は通す。同一 ctx × 同一 repo へは 1 回だけ(design-gate-warned
+# フラグ。キーは ctx--repo_key)。ctx は capture-decision と同じ transcript_path 基準
+# (session_id は subagent と共有される)。flag-paths.sh 不達 / 版ずれ / ctx 不明は ctx 空の
+# まま = 毎編集で警告へ倒す(警告欠落より毎回警告を選ぶ。抑制はベストエフォート)。
+# 抑制判定は regular file のみ(-f は symlink を辿るため、予測可能パスへの symlink 設置で
+# 警告を握り潰される。design-gate.sh の読取側硬化 _design_gate_flag_ok と対称)。
 ctx="$(hook_field '.transcript_path // .session_id')"
 ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
-[[ -n "$ctx" ]] && type design_gate_warned_flag >/dev/null 2>&1 &&
-  [[ -f "$(design_gate_warned_flag "$ctx")" ]] && exit 0
+if [[ -n "$ctx" ]] && type design_gate_warned_flag >/dev/null 2>&1; then
+  wflag="$(design_gate_warned_flag "$ctx" "$repo_key")"
+  [[ -f "$wflag" && ! -L "$wflag" ]] && exit 0
+fi
 
 warn_body="$(cat <<EOF
 [設計レビューゲート Gate 2 / 警告のみ] 設計レビュー未通過のコード repo(${repo_key})を編集した。この編集はブロックしていない(2026-07-11 監査トリアージ 争点2 で警告化。終端の砦は push 前の self-review ゲート)。まとまった変更・新規実装なら、手を止めて Plan を立て /design-review を通すのが本則。この警告はこのコンテキストで 1 回だけ出す。今後の警告も不要な軽微変更なら、人間の明示承認を得た理由付き override を立ててよい(理由はフラグ内容として監査可能):
@@ -99,7 +103,11 @@ EOF
 printf '%s' "$warn_body" |
   jq -Rs '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:.}}' 2>/dev/null || exit 0
 
-# mark は出力成功後(出力前だと jq 失敗時にフラグだけ残り警告が欠落する)。
-[[ -n "$ctx" ]] && type design_gate_warned_flag >/dev/null 2>&1 &&
-  { claude_flag_dir_ensure && touch "$(design_gate_warned_flag "$ctx")"; } 2>/dev/null || true
+# mark は出力成功後(出力前だと jq 失敗時にフラグだけ残り警告が欠落する)。書込前に symlink を
+# 弾く(touch が symlink を辿って別ファイルの mtime を更新するのを防ぐ。design-gate.sh の
+# 書込側硬化と対称)。
+if [[ -n "$ctx" ]] && type design_gate_warned_flag >/dev/null 2>&1; then
+  wflag="$(design_gate_warned_flag "$ctx" "$repo_key")"
+  [[ -L "$wflag" ]] || { claude_flag_dir_ensure && touch "$wflag"; } 2>/dev/null || true
+fi
 exit 0

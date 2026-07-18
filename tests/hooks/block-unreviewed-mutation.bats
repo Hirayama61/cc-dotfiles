@@ -49,6 +49,25 @@ write_design_reviewed() {
   touch "$("$FLAG" design-reviewed "$REPO_KEY" feature/gate2)"
 }
 
+# design-gate-warned のパスを単一情報源(flag-paths.sh)の関数から得る。
+# 第1引数 = ctx(transcript basename)、第2引数 = repo_key。
+warned_flag() {
+  ( . "$HOME/.claude/hooks/lib/flag-paths.sh" && design_gate_warned_flag "$1" "$2" )
+}
+
+# 第2の git repo を作り、その f.txt への Edit 入力 JSON を stdout に返す。
+# 第1引数 = transcript_path 断片。REPO2 をグローバルに設定する。
+make_repo2_edit_json() {
+  REPO2="$BATS_TEST_TMPDIR/repo2"
+  mkdir -p "$REPO2"
+  git -C "$REPO2" init -q
+  git -C "$REPO2" config user.email t@example.com
+  git -C "$REPO2" config user.name t
+  git -C "$REPO2" checkout -q -b feature/gate2
+  ( cd "$REPO2" && : >f.txt && git add f.txt && git -c core.hooksPath=/dev/null commit -qm init )
+  printf '{"tool_name":"Edit","transcript_path":"/tmp/tp/%s.jsonl","tool_input":{"file_path":"%s/f.txt","old_string":"","new_string":"x"}}' "${1:-}" "$REPO2"
+}
+
 @test "never blocks: unreviewed edit returns non-2 (warn, not block)" {
   run_hook block-unreviewed-mutation.sh "$(_edit_json sess-a)"
   [ "$status" -ne 2 ]
@@ -134,4 +153,27 @@ write_design_reviewed() {
   run_hook_env "$(make_no_jq_path)" block-unreviewed-mutation.sh "$(_edit_json sess-j)"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+@test "same ctx but different repo warns again (per-repo key)" {
+  run_hook block-unreviewed-mutation.sh "$(_edit_json sess-k)"
+  assert_warned
+  run_hook block-unreviewed-mutation.sh "$(make_repo2_edit_json sess-k)"
+  [ "$status" -eq 0 ]
+  assert_warned
+}
+
+@test "symlink at warned-flag path does not suppress and is not followed on write" {
+  "$FLAG" dir-ensure
+  decoy="$BATS_TEST_TMPDIR/decoy"
+  : > "$decoy"
+  touch -t 200001010000 "$decoy"
+  old_mt="$(stat -f %m "$decoy")"
+  wf="$(warned_flag sess-l "$REPO_KEY")"
+  ln -s "$decoy" "$wf"
+  run_hook block-unreviewed-mutation.sh "$(_edit_json sess-l)"
+  [ "$status" -eq 0 ]
+  assert_warned
+  [ -L "$wf" ]
+  [ "$(stat -f %m "$decoy")" -eq "$old_mt" ]
 }
