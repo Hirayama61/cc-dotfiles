@@ -18,6 +18,7 @@
 #   design-scope-pending-${repo_key}                 (同: branch 不在時)
 #   cs-injected-${ctx}--${scope}
 #   decision-nudged-${ctx}                           (判断記録ナッジ: 1 ctx 1 回)
+#   design-gate-warned-${ctx}                        (Gate 2 設計レビュー未通過の警告注入: 1 ctx 1 回)
 # safe_branch = branch を '/'→'-' サニタイズ + 元 branch の SHA-256 先頭16桁サフィックス
 #   (不可逆置換による feature/a-b ≡ feature-a/b 衝突を解消。#49 B-1)。
 # ctx = transcript_path(無ければ session_id)の basename から末尾 .jsonl を除去。
@@ -105,6 +106,13 @@ cs_injected_flag_prefix() {
 # 同じ flag_ctx_key 導出(transcript_path 基準)。rearm(clear|compact)で削除して再武装する。
 decision_nudged_flag() {
   printf '%s/decision-nudged-%s' "$(claude_flag_dir)" "${1:-}"
+}
+
+# 設計レビューゲート Gate 2(block-unreviewed-mutation)が設計レビュー未通過の警告を
+# additionalContext 注入する際の 1 ctx 1 回フラグ。ctx は decision-nudged と同じ
+# flag_ctx_key 導出(transcript_path 基準)。rearm(clear|compact)で削除して再武装する。
+design_gate_warned_flag() {
+  printf '%s/design-gate-warned-%s' "$(claude_flag_dir)" "${1:-}"
 }
 
 # ── カウンタ機構(マーカーファイル数え上げ / 詰まり検知 P-5・委譲ナッジ P-6)──

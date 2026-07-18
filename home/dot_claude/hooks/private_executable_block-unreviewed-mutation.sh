@@ -2,17 +2,23 @@
 # PreToolUse(Edit|Write|MultiEdit|NotebookEdit): 設計レビューゲート Gate 2
 # (参謀ゲート Phase 4。Plan-skip 穴の閉鎖)。
 #
-# コード repo への mutation を、design-reviewed フラグ(branch / ctx / fresh pending)
-# も trivial-override(ctx / fresh pending)も無い状態でブロックする。mutation を
-# 契機にすることで read-only の調査・Agent 調査委譲は素通り(research/実装の意味判定を
-# フックから追い出す=計画仕様)。脱出口は (a) Plan → /design-review、
+# コード repo への mutation が、design-reviewed フラグ(branch / ctx / fresh pending)
+# も trivial-override(ctx / fresh pending)も無いなら、編集はブロックせず設計レビュー
+# 未通過の警告を additionalContext で注入する(2026-07-11 監査トリアージ 争点2 で
+# ブロックから警告へ格下げ。理由は commit / Decisions)。終端の砦は push 前の
+# self-review ゲートが担う。警告は同一コンテキストで 1 回だけ出す(design-gate-warned
+# フラグ。rearm-coding-standards が clear|compact で再武装)。
+# mutation を契機にすることで read-only の調査・Agent 調査委譲は素通り(research/実装の
+# 意味判定をフックから追い出す=計画仕様)。警告の抑制口は (a) Plan → /design-review、
 # (b) 人間の承認を得た理由付き trivial-override(理由をフラグ内容に記録・監査可能)。
 #
-# 判定核は design-gate.sh、キーは flag-paths.sh が単一情報源。
+# 判定核は design-gate.sh、キーは flag-paths.sh が単一情報源。Gate 1
+# (block-unreviewed-plan)と design-gate.sh / フラグ機構の共有部分は不変。
 # 除外 = git repo 外 / ~/obsidian 配下 / repo root が一時領域(/tmp・/private/tmp・
 # ~/.claude/jobs)。コード repo だけを守る(判断②)。
 #
-# 安全側設計: jq 無し / lib 不達・破損 / 相対パス / repo 不明なら exit 0(通す)。
+# 安全側設計: 警告注入の失敗で編集を止めない。jq 無し / lib 不達・破損 / 相対パス /
+# repo 不明はすべて exit 0(無音で通す)。PreToolUse だが exit 2 は一切返さない。
 set -euo pipefail
 
 # git 判定核を環境変数注入で狂わされないよう無効化(block-main-clone-edit と同作法)。
@@ -74,12 +80,26 @@ if design_gate_pass "$repo_key" "$sid" "$branch" 1; then
   exit 0
 fi
 
-cat >&2 <<EOF
-ブロック: 設計レビューも trivial-override も無いコード repo(${repo_key})への編集。人間に確認して次のどちらかを取ること:
-(a) Plan を立てて /design-review を通す(設計レビューゲートの本則)。
-(b) 軽微な変更なら、人間の明示承認を得た上で理由付き override を立てる:
+# 未通過 = 警告を注入して編集は通す。同一コンテキストへは 1 回だけ(design-gate-warned
+# フラグ)。ctx は capture-decision と同じ transcript_path 基準(session_id は subagent と
+# 共有される)。flag-paths.sh 不達 / 版ずれ / ctx 不明は ctx 空のまま = 毎編集で警告へ倒す
+# (警告欠落より毎回警告を選ぶ。抑制はベストエフォート)。
+ctx="$(hook_field '.transcript_path // .session_id')"
+ctx="$(flag_ctx_key "$ctx" 2>/dev/null || true)"
+[[ -n "$ctx" ]] && type design_gate_warned_flag >/dev/null 2>&1 &&
+  [[ -f "$(design_gate_warned_flag "$ctx")" ]] && exit 0
+
+warn_body="$(cat <<EOF
+[設計レビューゲート Gate 2 / 警告のみ] 設計レビュー未通過のコード repo(${repo_key})を編集した。この編集はブロックしていない(2026-07-11 監査トリアージ 争点2 で警告化。終端の砦は push 前の self-review ゲート)。まとまった変更・新規実装なら、手を止めて Plan を立て /design-review を通すのが本則。この警告はこのコンテキストで 1 回だけ出す。今後の警告も不要な軽微変更なら、人間の明示承認を得た理由付き override を立ててよい(理由はフラグ内容として監査可能):
     "\$HOME/.claude/hooks/lib/flag-paths.sh" dir-ensure
     printf '%s\n' '<人間が承認した理由>' > "\$("\$HOME/.claude/hooks/lib/flag-paths.sh" trivial-override-pending '${repo_key}')"
-    (次の編集時に自セッションへ取り込まれて解除。理由が空だと通らない。フラグ内容として監査可能)
 EOF
-exit 2
+)"
+
+printf '%s' "$warn_body" |
+  jq -Rs '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:.}}' 2>/dev/null || exit 0
+
+# mark は出力成功後(出力前だと jq 失敗時にフラグだけ残り警告が欠落する)。
+[[ -n "$ctx" ]] && type design_gate_warned_flag >/dev/null 2>&1 &&
+  { claude_flag_dir_ensure && touch "$(design_gate_warned_flag "$ctx")"; } 2>/dev/null || true
+exit 0

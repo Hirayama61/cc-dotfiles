@@ -24,6 +24,11 @@ rm -f "$(cs_injected_flag_prefix "$ctx")"* 2>/dev/null || true
 if type decision_nudged_flag >/dev/null 2>&1; then
   rm -f "$(decision_nudged_flag "$ctx")" 2>/dev/null || true
 fi
+# block-unreviewed-mutation.sh(Gate 2 設計レビュー未通過の警告)の 1 ctx 1 回フラグも
+# 同時に再武装する(clear|compact 後の新しい文脈ではもう一度警告を許す)。版ずれは無視。
+if type design_gate_warned_flag >/dev/null 2>&1; then
+  rm -f "$(design_gate_warned_flag "$ctx")" 2>/dev/null || true
+fi
 # stuck-nudge.sh の種別ごとカウント dir と 1 ctx 1 回 claim を破棄する
 # (clear|compact 後の新しい文脈では詰まり検知をやり直す)。版ずれは無視。
 if type stuck_count_dir_prefix >/dev/null 2>&1; then
