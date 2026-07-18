@@ -11,6 +11,11 @@ allowed-tools: Read, Write, Edit, Grep, Glob
 
 `~/obsidian/brain` を外部脳とし、知見・判断・状態・好み・ミスを永続記憶へ書き込む。
 
+> **`user-invocable` を持たないのは意図的設計**。この skill は上記トリガ語(「覚えておいて」
+> 「方針として」「訂正」等)の自動発火で「記録すべき瞬間」に走らせるものであり、`/名前` の
+> 明示起動を入口にしない(記録は思い出した時でなく発生した瞬間に行うため)。欠落ではないので
+> `user-invocable: true` を足さない。
+
 > 翻案注記(原本からの差分): 原本「1.読み取り」は MCP でセッション開始時に毎回
 > 読む前提だが、本 skill では **SessionStart hook が Preferences + 当該 repo の
 > ルートガイド(`Guides/<repo>/<repo>-ガイド.md`)を上限(約20KB)まで自動注入**する方式に
