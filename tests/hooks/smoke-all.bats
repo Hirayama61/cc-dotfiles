@@ -6,7 +6,7 @@
 # 無害入力・空入力・jq 不在のいずれでも、どの hook も exit 2 を返してはならない。
 #
 # PR-3 適用後の不変条件:
-#   - block-secret-files / pipe-stage-permissions は jq 不在でも exit 0(ガード追加済)。
+#   - block-secret-files は jq 不在でも exit 0(ガード追加済)。
 #   - 共有 lib(hook-input.sh / resolve-git-target.sh)が構文破損しても、各 hook の
 #     source_hook_lib 経路が握って exit 2 を出さない(A-1 修正の全 hook スモーク)。
 

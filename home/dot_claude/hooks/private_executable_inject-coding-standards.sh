@@ -3,7 +3,6 @@
 #
 # コンテキストごとに初回のコード編集でコーディング規約を additionalContext として注入する。
 # 注入順 = ① グローバル正典(~/.claude/coding-standards.md)→ ② 作業 repo 固有規約。
-# additionalContext の出力形は pipe-stage-permissions.sh を流用。
 #
 # repo-aware(issue #42): 編集対象 file_path の git toplevel を辿り、AGENTS.md(無ければ
 # project ルートの CLAUDE.md)があればグローバル規約の後ろに追記する。delegate / 独立

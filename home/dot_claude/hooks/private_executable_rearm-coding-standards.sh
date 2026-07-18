@@ -30,15 +30,4 @@ fi
 if type design_gate_warned_flag_prefix >/dev/null 2>&1; then
   rm -f "$(design_gate_warned_flag_prefix "$ctx")"* 2>/dev/null || true
 fi
-# stuck-nudge.sh の種別ごとカウント dir と 1 ctx 1 回 claim を破棄する
-# (clear|compact 後の新しい文脈では詰まり検知をやり直す)。版ずれは無視。
-if type stuck_count_dir_prefix >/dev/null 2>&1; then
-  rm -rf "$(stuck_count_dir_prefix "$ctx")"* 2>/dev/null || true
-  rm -rf "$(stuck_nudged_flag "$ctx")" 2>/dev/null || true
-fi
-# delegation-nudge.sh の探索累計カウント dir と claim も同時に再武装する。版ずれは無視。
-if type delegation_count_dir >/dev/null 2>&1; then
-  rm -rf "$(delegation_count_dir "$ctx")" 2>/dev/null || true
-  rm -rf "$(delegation_nudged_flag "$ctx")" 2>/dev/null || true
-fi
 exit 0
