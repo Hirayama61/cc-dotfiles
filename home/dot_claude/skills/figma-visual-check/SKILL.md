@@ -5,7 +5,7 @@ description: >-
   Figma MCP の読取値は照合が済むまで未検証扱いとし、色・余白・タイポグラフィ・整列を
   項目別に突き合わせて差分を潰す。fe-implement(コンポーネント単位)から呼ばれ、
   fe-qa(全画面パス。未導入環境では fe-implement からのみ)からも呼ばれる。
-  「Figma と照合」「見た目を突き合わせ」「視覚チェック」でも発火する。
+  「Figma と照合」「見た目を突き合わせ」「視覚チェック」、`/figma-visual-check` での起動でも発火する。
 user-invocable: true
 allowed-tools: Read, Grep, Glob, AskUserQuestion
 ---
