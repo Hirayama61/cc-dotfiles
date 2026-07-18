@@ -167,34 +167,6 @@ flag_hash16() {
   printf '%s' "$h"
 }
 
-# 詰まり検知(stuck-nudge)の種別ごと連続失敗カウント dir。第2引数は種別のハッシュ(flag_hash16)。
-# 種別ごとに独立(別種の失敗はカウントを共有しない)。同種の成功でその種別の dir のみ削除。
-stuck_count_dir() {
-  printf '%s/stuck-count-%s--%s' "$(claude_flag_dir)" "${1:-}" "${2:-}"
-}
-
-# rearm(clear|compact)が ctx 配下の全種別カウント dir を glob 削除するための接頭辞。
-# 使い方: rm -rf "$(stuck_count_dir_prefix "$ctx")"*
-stuck_count_dir_prefix() {
-  printf '%s/stuck-count-%s--' "$(claude_flag_dir)" "${1:-}"
-}
-
-# 詰まりナッジの 1 ctx 1 回 claim。ディレクトリ(mkdir で atomic に取得)で、存在=発火済み。
-# 並列失敗でも mkdir に成功した最初の 1 プロセスだけがナッジを出す。
-stuck_nudged_flag() {
-  printf '%s/stuck-nudged-%s' "$(claude_flag_dir)" "${1:-}"
-}
-
-# 委譲ナッジ(delegation-nudge)の探索ツール(Grep/Glob)ctx 累計カウント dir。Agent 使用でリセット。
-delegation_count_dir() {
-  printf '%s/delegation-count-%s' "$(claude_flag_dir)" "${1:-}"
-}
-
-# 委譲ナッジの 1 ctx 1 回 claim(stuck_nudged_flag と同じディレクトリ claim 方式)。
-delegation_nudged_flag() {
-  printf '%s/delegation-nudged-%s' "$(claude_flag_dir)" "${1:-}"
-}
-
 # ── 設計レビューゲート(Phase 4)のキー ──
 # ctx 版のキーは session_id(subagent と共有される性質を利用し、同一セッションの
 # delegate worktree を自然にカバーする。Decisions: Phase4設計レビューゲートの3判断)。
@@ -244,10 +216,6 @@ design_scope_pending_flag() {
 #   flag-paths.sh design-scope <repo_key> <branch>
 #   flag-paths.sh design-scope-pending <repo_key>
 #   flag-paths.sh cs-injected <ctx> <scope>
-#   flag-paths.sh stuck-count-dir <ctx> <kindhash>
-#   flag-paths.sh stuck-nudged <ctx>
-#   flag-paths.sh delegation-count-dir <ctx>
-#   flag-paths.sh delegation-nudged <ctx>
 #   flag-paths.sh hash16 <string>
 #   flag-paths.sh dir
 #   flag-paths.sh dir-ensure          (非 source 文脈から state dir を 0700 で用意・検証)
@@ -261,10 +229,6 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   design-scope) design_scope_flag "${2:-}" "${3:-}" ;;
   design-scope-pending) design_scope_pending_flag "${2:-}" ;;
   cs-injected) cs_injected_flag "${2:-}" "${3:-}" ;;
-  stuck-count-dir) stuck_count_dir "${2:-}" "${3:-}" ;;
-  stuck-nudged) stuck_nudged_flag "${2:-}" ;;
-  delegation-count-dir) delegation_count_dir "${2:-}" ;;
-  delegation-nudged) delegation_nudged_flag "${2:-}" ;;
   hash16) flag_hash16 "${2:-}" ;;
   dir) claude_flag_dir ;;
   dir-ensure) claude_flag_dir_ensure || exit 1; exit 0 ;;
@@ -278,10 +242,6 @@ Usage: flag-paths.sh <subcommand> <args>
   trivial-override-pending <repo_key>
   design-scope-pending     <repo_key>
   cs-injected              <ctx> <scope>
-  stuck-count-dir          <ctx> <kindhash>
-  stuck-nudged             <ctx>
-  delegation-count-dir     <ctx>
-  delegation-nudged        <ctx>
   hash16                   <string>
   dir
   dir-ensure
