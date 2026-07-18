@@ -107,94 +107,6 @@ decision_nudged_flag() {
   printf '%s/decision-nudged-%s' "$(claude_flag_dir)" "${1:-}"
 }
 
-# ── カウンタ機構(マーカーファイル数え上げ / 詰まり検知 P-5・委譲ナッジ P-6)──
-# 既存フラグは存在/非存在のブール(review-passed / cs-injected / *-nudged 等)。
-# 詰まり・委譲ナッジは「同種コマンドの連続失敗数」「探索ツールの ctx 累計」という数値を
-# 持つ別機構だが、数値の read-modify-write(値を読んで +1 して書き戻す)は並列イベントで
-# ロストアップデートする(複数プロセスが同じ値を読み同じ値を書く)。これを構造的に避けるため、
-# カウント dir 内へイベントごとに mktemp で一意ファイルを atomic 作成し、カウント = ファイル数、
-# リセット = dir 削除、とする(F-002)。ブールフラグ群とは別機構であることを関数構造で明示する。
-# ナッジ発火の at-most-once は別途 claim ディレクトリ(*_nudged_flag を mkdir で atomic に取る)
-# 側で保証する。
-# 既知の限界(F-009): bump(追加)と reset(dir 削除)は互いに排他しない。成功/失敗(stuck)や
-# Agent/探索(delegation)が同一並列バッチに混在すると、reset と bump のすれ違いでマーカーが
-# ±1 ずれうる。助言ナッジの閾値精度としては受容する(ロック導入はこの用途のレイテンシに見合わない)。
-
-# カウント dir にマーカーを1つ atomic 追加し、現在のマーカー数を stdout に返す。
-# dir を作れない/mktemp 失敗(書込不能)は 0(進めない=fail-open)。並列安全。
-flag_counter_bump() {
-  local dir="${1:-}"
-  [[ -n "$dir" ]] || {
-    printf '0'
-    return 0
-  }
-  mkdir -p "$dir" 2>/dev/null || {
-    printf '0'
-    return 0
-  }
-  mktemp "$dir/m.XXXXXXXX" >/dev/null 2>&1 || {
-    printf '0'
-    return 0
-  }
-  flag_counter_count "$dir"
-}
-
-# カウント dir 内のマーカー数を返す(dir 不在は 0)。
-flag_counter_count() {
-  local dir="${1:-}" n
-  [[ -n "$dir" && -d "$dir" ]] || {
-    printf '0'
-    return 0
-  }
-  n="$(find "$dir" -type f 2>/dev/null | wc -l)"
-  printf '%s' "$((n))"
-}
-
-# カウンタをリセット(dir ごと削除)。
-flag_counter_reset() {
-  local dir="${1:-}"
-  [[ -n "$dir" ]] || return 0
-  rm -rf "$dir" 2>/dev/null || true
-}
-
-# 任意文字列を 16 桁(64bit)にハッシュ化する。コマンド種別をファイル名へ直接使わず
-# キー化するのに使う(flag_safe_branch と同じ shasum→cksum フォールバック)。空入力は空のまま。
-flag_hash16() {
-  local raw="${1:-}" h
-  [[ -z "$raw" ]] && return 0
-  h="$(printf '%s' "$raw" | shasum -a 256 2>/dev/null | cut -c1-16)"
-  [[ -z "$h" ]] && h="$(printf '%s' "$raw" | cksum 2>/dev/null | cut -d' ' -f1)"
-  printf '%s' "$h"
-}
-
-# 詰まり検知(stuck-nudge)の種別ごと連続失敗カウント dir。第2引数は種別のハッシュ(flag_hash16)。
-# 種別ごとに独立(別種の失敗はカウントを共有しない)。同種の成功でその種別の dir のみ削除。
-stuck_count_dir() {
-  printf '%s/stuck-count-%s--%s' "$(claude_flag_dir)" "${1:-}" "${2:-}"
-}
-
-# rearm(clear|compact)が ctx 配下の全種別カウント dir を glob 削除するための接頭辞。
-# 使い方: rm -rf "$(stuck_count_dir_prefix "$ctx")"*
-stuck_count_dir_prefix() {
-  printf '%s/stuck-count-%s--' "$(claude_flag_dir)" "${1:-}"
-}
-
-# 詰まりナッジの 1 ctx 1 回 claim。ディレクトリ(mkdir で atomic に取得)で、存在=発火済み。
-# 並列失敗でも mkdir に成功した最初の 1 プロセスだけがナッジを出す。
-stuck_nudged_flag() {
-  printf '%s/stuck-nudged-%s' "$(claude_flag_dir)" "${1:-}"
-}
-
-# 委譲ナッジ(delegation-nudge)の探索ツール(Grep/Glob)ctx 累計カウント dir。Agent 使用でリセット。
-delegation_count_dir() {
-  printf '%s/delegation-count-%s' "$(claude_flag_dir)" "${1:-}"
-}
-
-# 委譲ナッジの 1 ctx 1 回 claim(stuck_nudged_flag と同じディレクトリ claim 方式)。
-delegation_nudged_flag() {
-  printf '%s/delegation-nudged-%s' "$(claude_flag_dir)" "${1:-}"
-}
-
 # ── 設計レビューゲート(Phase 4)のキー ──
 # ctx 版のキーは session_id(subagent と共有される性質を利用し、同一セッションの
 # delegate worktree を自然にカバーする。Decisions: Phase4設計レビューゲートの3判断)。
@@ -244,11 +156,6 @@ design_scope_pending_flag() {
 #   flag-paths.sh design-scope <repo_key> <branch>
 #   flag-paths.sh design-scope-pending <repo_key>
 #   flag-paths.sh cs-injected <ctx> <scope>
-#   flag-paths.sh stuck-count-dir <ctx> <kindhash>
-#   flag-paths.sh stuck-nudged <ctx>
-#   flag-paths.sh delegation-count-dir <ctx>
-#   flag-paths.sh delegation-nudged <ctx>
-#   flag-paths.sh hash16 <string>
 #   flag-paths.sh dir
 #   flag-paths.sh dir-ensure          (非 source 文脈から state dir を 0700 で用意・検証)
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
@@ -261,11 +168,6 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   design-scope) design_scope_flag "${2:-}" "${3:-}" ;;
   design-scope-pending) design_scope_pending_flag "${2:-}" ;;
   cs-injected) cs_injected_flag "${2:-}" "${3:-}" ;;
-  stuck-count-dir) stuck_count_dir "${2:-}" "${3:-}" ;;
-  stuck-nudged) stuck_nudged_flag "${2:-}" ;;
-  delegation-count-dir) delegation_count_dir "${2:-}" ;;
-  delegation-nudged) delegation_nudged_flag "${2:-}" ;;
-  hash16) flag_hash16 "${2:-}" ;;
   dir) claude_flag_dir ;;
   dir-ensure) claude_flag_dir_ensure || exit 1; exit 0 ;;
   *)
@@ -278,11 +180,6 @@ Usage: flag-paths.sh <subcommand> <args>
   trivial-override-pending <repo_key>
   design-scope-pending     <repo_key>
   cs-injected              <ctx> <scope>
-  stuck-count-dir          <ctx> <kindhash>
-  stuck-nudged             <ctx>
-  delegation-count-dir     <ctx>
-  delegation-nudged        <ctx>
-  hash16                   <string>
   dir
   dir-ensure
 USAGE
