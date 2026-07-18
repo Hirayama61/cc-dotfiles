@@ -55,7 +55,7 @@ mise run apply:cc-dotfiles
   そのファイル冒頭ヘッダ。ここに hook の手書き一覧は置かない(陳腐化するため)。
   分類だけ示す: `block-*`(PreToolUse の遮断系)/ `inject-* · rearm-*`(規約注入)/
   `ciwatch-*`(CI 監視の起動・ナッジ)/ `pre-push-* · postcommit-*`(push ゲートの
-  フラグ読取・無効化)/ `capture-* · load-* · create-* · pipe-* · pre-edit-* ·
+  フラグ読取・無効化)/ `capture-* · load-* · create-* · pre-edit-* ·
   large-file-*`(個別ヘッダ参照)。
 - **lib は共有判定の単一情報源**(キー・判定の完全一致が生命線。インライン複製を
   作らない):
