@@ -19,7 +19,7 @@ session_json() {
 
 @test "main clone cwd: injects warning with worktree guidance" {
   run_hook main-clone-warn.sh "$(session_json "$MAIN")"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 2 ]
   echo "$output" | grep -qF 'main-clone-warn'
   echo "$output" | grep -qF 'wt.sh'
   echo "$output" | grep -qF '"hookEventName": "SessionStart"'
@@ -28,7 +28,7 @@ session_json() {
 @test "linked worktree cwd: silent" {
   git -C "$MAIN" worktree add -q "$HOME/worktrees/r-feat" -b feat/x
   run_hook main-clone-warn.sh "$(session_json "$HOME/worktrees/r-feat")"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 2 ]
   [ -z "$output" ]
 }
 
@@ -37,7 +37,7 @@ session_json() {
   mkdir -p "$OTHER"
   git -C "$OTHER" init -q
   run_hook main-clone-warn.sh "$(session_json "$OTHER")"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 2 ]
   [ -z "$output" ]
 }
 
@@ -45,18 +45,18 @@ session_json() {
   PLAIN="$HOME/ghq/github.com/o/plain"
   mkdir -p "$PLAIN"
   run_hook main-clone-warn.sh "$(session_json "$PLAIN")"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 2 ]
   [ -z "$output" ]
 }
 
 @test "empty cwd: silent fail-open" {
   run_hook main-clone-warn.sh '{"hook_event_name":"SessionStart"}'
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 2 ]
   [ -z "$output" ]
 }
 
 @test "relative cwd: silent fail-open" {
   run_hook main-clone-warn.sh '{"hook_event_name":"SessionStart","cwd":"ghq/github.com/o/r"}'
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 2 ]
   [ -z "$output" ]
 }

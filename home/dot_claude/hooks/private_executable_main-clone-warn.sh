@@ -7,7 +7,7 @@
 # 「作業の最後に編集して初めてブロックされ、そこまでの作業が無駄になる」手戻りを防ぐ
 # (2026-07-11 監査トリアージ 争点3 で起案・確定。理由は Decisions)。
 #
-# 判定核は block-main-clone-edit.sh と同一(--git-dir == --git-common-dir でプライマリ判定)。
+# 判定核は lib/resolve-main-clone.sh(単一情報源。block-main-clone-edit.sh と共有)。
 # 対象が file_path でなく cwd である点だけが違う。
 #
 # 安全側設計: 警告注入の失敗でセッションを止めない。jq 不在 / lib 不達 / cwd 不明 /
@@ -31,26 +31,13 @@ cwd="$(hook_cwd)"
 ccwd="$(cd "$cwd" 2>/dev/null && pwd -P || true)"
 [[ -z "$ccwd" ]] && exit 0
 
-# scope: $HOME/ghq/ 配下のみ(~/worktrees/・~/obsidian 等は非一致で無音)。
-# cwd 側は pwd -P で canonical 化済みなので HOME 側も canonical 化して比較する
-# (macOS の /var→/private/var 等の symlink で接頭辞照合が外れるのを防ぐ)。
-chome="$(cd "$HOME" 2>/dev/null && pwd -P || printf '%s' "$HOME")"
-case "$ccwd" in
-"$chome"/ghq/*) ;;
-*) exit 0 ;;
-esac
+# main clone 判定は lib が単一情報源(scope: canonical $HOME/ghq/ 配下 + プライマリ作業ツリー。
+# linked worktree・非 ghq・非 git は非該当で無音)。
+source_hook_lib resolve-main-clone.sh || exit 0
+type is_main_clone >/dev/null 2>&1 || exit 0
+is_main_clone "$ccwd" || exit 0
 
-# プライマリ作業ツリーのみ警告(linked worktree は許可領域なので無音)。
-# 出力 == true 判定・空 git-dir 弾きは block-main-clone-edit と同じ理由。
-[[ "$(git -C "$ccwd" rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] || exit 0
-rel_gd="$(git -C "$ccwd" rev-parse --git-dir 2>/dev/null || true)"
-rel_gcd="$(git -C "$ccwd" rev-parse --git-common-dir 2>/dev/null || true)"
-[[ -z "$rel_gd" || -z "$rel_gcd" ]] && exit 0
-gd="$(cd "$ccwd" && cd "$rel_gd" 2>/dev/null && pwd -P || true)"
-gcd="$(cd "$ccwd" && cd "$rel_gcd" 2>/dev/null && pwd -P || true)"
-[[ -z "$gd" || -z "$gcd" || "$gd" != "$gcd" ]] && exit 0
-
-command -v jq >/dev/null 2>&1 || exit 0
+# jq は hook_init が存在を担保済み(不在なら上で exit 0 している)。
 
 BODY="[main-clone-warn] 現在の作業ディレクトリ(${ccwd})は main clone(~/ghq/ のプライマリ作業ツリー)で、Claude からのファイル編集は block-main-clone-edit hook がブロックする(read/集約専用)。このリポのファイルを編集する作業なら、着手前に worktree を作ってそこで行うこと: cd \"\$(~/ghq/github.com/Hirayama61/dotfiles/bin/wt.sh <branch>)\"。読み取り・調査だけならこのままでよい。"
 
