@@ -5,6 +5,7 @@ description: >-
   AI スロップを検査し、信頼度の高い指摘のみ報告する。self-review skill が差分のみを
   渡して並列起動する(実装意図・会話履歴は渡さない=コンテキスト隔離)。修正はしない。
 tools: Read, Grep, Glob, Bash
+model: opus
 effort: xhigh # モデルの推論エフォート。本文の effort 引数(報告閾値)とは別物
 ---
 

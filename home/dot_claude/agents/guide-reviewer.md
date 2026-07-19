@@ -9,6 +9,7 @@ description: >-
   注入する(実装意図・会話履歴は渡さない=コンテキスト隔離)。
   全項目の遵守/違反/未遵拠/該当なしを出力し、修正はしない。常に網羅的。
 tools: Read, Grep, Glob
+model: opus
 effort: xhigh # モデルの推論エフォート(重い reviewer は xhigh に固定する規約)
 ---
 

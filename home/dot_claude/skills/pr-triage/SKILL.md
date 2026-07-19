@@ -191,8 +191,8 @@ head_dir="$(~/.claude/skills/pr-triage/scripts/extract-pr-head.sh "$owner" "$nam
 
 ティアは finding の性質で振り分ける:
 
-- **既定 `delegate`(model: inherit)** — 指摘が妥当か誤検知かの**判断**を伴うもの。
-  CodeRabbit 指摘の妥当性検証は独立検証寄りなので親同格で回す。
+- **既定 `delegate`(opus 固定)** — 指摘が妥当か誤検知かの**判断**を伴うもの。
+  CodeRabbit 指摘の妥当性検証は独立検証寄りなので opus で回す。
 - **`scout`(haiku)** — 「該当箇所はどこ / このファイルを読んで要約」レベルの軽い読み取りに
   収まるもの。
 - **`researcher`(sonnet, 出典付き)** — 外部ライブラリ/API 仕様への依存が論点になるもの。
