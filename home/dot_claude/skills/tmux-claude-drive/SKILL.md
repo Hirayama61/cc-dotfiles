@@ -90,9 +90,10 @@ dev-pipeline / task-fleet 等がこの手順を運転部品として呼ぶ時、
 - **起動先ターゲット(window / pane split)**: 既定は手順 1 の `tmux new-window`
   (1 セッション = 1 window に被運転 1 つ)。運転元が同一 window 内へ複数被運転を並べたい
   場合は **pane split** を選べる。この時 pane は生成 id を決定論的に取る形で作り
-  (`pane_id="$(tmux split-window -d -P -F '#{pane_id}' -t <session>:<window> -c <workdir>)"`。
+  (`pane_id="$(tmux split-window -d -P -F '#{pane_id}' -t <session>:<window> -c "$workdir")"`。
   `-d` で管理 pane からフォーカスを奪わない、`-P -F '#{pane_id}'` で新 pane id を直接受ける。
-  後付けの display-message で「どれが新 pane か」を当てない=誤 pane 送信の穴を塞ぐ)、以後の
+  後付けの display-message で「どれが新 pane か」を当てない=誤 pane 送信の穴を塞ぐ。split は
+  pane 最小高を割ると失敗して空を返すので、生成直後に `%NN` 形かを検査して空なら中止する)、以後の
   **send-keys / capture-pane / Monitor / 後片付け(kill)を、window 名でなくこの `pane_id`
   (`%NN`)に固定する**。rate-limit-resume.sh は pane 指定(`session:window.pane` or `%pane_id`)を
   受け起動時に `%pane_id` へ固定するので整合する。
