@@ -91,8 +91,10 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 
 - tmux が無い/セッションが無い環境では、この手順を諦めて `claude -p`(headless)への
   切り替えを提案する(対話ゲートが要るタスクには不向きと明示する)。
-- Monitor ツールが使えない場合は Bash `run_in_background` の until ループで
-  完了フレーズ検知のみに簡略化する。
+- Monitor ツールが使えない場合は Bash `run_in_background` の until ループに簡略化する
+  (検知対象を完了のみに絞ってよいが、判定条件は手順 3 と同じ
+  「スピナー不在 AND フレーズ(単独行一致+指示文断片の除外)」を維持する —
+  フレーズ単独では完了扱いしない)。
 
 ## パラメータ(運転元スキル向け・省略で従来挙動)
 
