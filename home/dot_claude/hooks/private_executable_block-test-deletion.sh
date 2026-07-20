@@ -44,7 +44,7 @@ if [[ "$tool_name" == "Bash" ]]; then
     [[ -z "$seg" ]] && continue
     printf '%s' "$seg" | grep -qE '(^|[[:space:]])(rm|git[[:space:]]+rm)([[:space:]]|$)' || continue
     if printf '%s' "$seg" | grep -qE "$test_file_pattern"; then
-      echo "ブロック: テストファイルの削除は禁止。テストが失敗するならテストコードを修正すること。" >&2
+      echo "ブロック: テストファイルの削除は禁止。テストが失敗するならテストコードを修正すること。なぜこのテストを削除しようとしたのか、意図と経緯をユーザーへ説明すること。" >&2
       exit 2
     fi
   done <<<"$seg_stream"
@@ -68,7 +68,7 @@ if [[ "$tool_name" == "Edit" ]]; then
   printf '%s' "$old_string" | grep -qE "$assertion_pattern" || exit 0
 
   if [[ -z "$new_string" ]]; then
-    echo "ブロック: テストコード(アサーション)の削除は禁止。失敗するならテストを修正すること。" >&2
+    echo "ブロック: テストコード(アサーション)の削除は禁止。失敗するならテストを修正すること。なぜこのアサーションを削除しようとしたのか、意図と経緯をユーザーへ説明すること。" >&2
     exit 2
   fi
 

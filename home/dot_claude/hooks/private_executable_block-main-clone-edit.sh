@@ -47,25 +47,14 @@ cdir="$(cd "$dir" 2>/dev/null && pwd -P || true)"
 [[ -z "$cdir" ]] && exit 0
 cfp="$cdir/$base"
 
-# scope 判定: $HOME/ghq/ 配下のみ対象(~/worktrees/・~/obsidian/brain は非一致で素通り)。
-case "$cfp" in
-"$HOME"/ghq/*) ;;
-*) exit 0 ;;
-esac
-
-# ~/ghq 配下でも、ブロックするのは *プライマリ作業ツリー(main clone 本体)* のみ。
-# linked worktree(--git-dir != --git-common-dir)は per-branch 隔離されているので許可する。
-# 非 git ディレクトリ(main clone ではない)も許可。比較は cd+pwd -P で絶対化し相対表記/version 差を避ける。
-# --is-inside-work-tree は work-tree 外(例 .git/ 配下)でも exit 0 + 出力 "false" を返すので
-# exit code でなく出力 == true を見る。git-dir/common-dir が空だと cd "" で cwd 据え置き →
-# 誤一致(誤ブロック)になるため空を明示的に弾く。
-[[ "$(git -C "$cdir" rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] || exit 0
-rel_gd="$(git -C "$cdir" rev-parse --git-dir 2>/dev/null || true)"
-rel_gcd="$(git -C "$cdir" rev-parse --git-common-dir 2>/dev/null || true)"
-[[ -z "$rel_gd" || -z "$rel_gcd" ]] && exit 0
-gd="$(cd "$cdir" && cd "$rel_gd" 2>/dev/null && pwd -P || true)"
-gcd="$(cd "$cdir" && cd "$rel_gcd" 2>/dev/null && pwd -P || true)"
-[[ -z "$gd" || -z "$gcd" || "$gd" != "$gcd" ]] && exit 0
+# scope + プライマリ作業ツリー判定は lib が単一情報源(main-clone-warn.sh と共有。
+# canonical $HOME/ghq/ 配下 かつ --git-dir == --git-common-dir の main clone 本体のみ block、
+# linked worktree・非 git・非 ghq は許可。判定理由の詳細は lib のコメント参照)。
+# 2026-07-19: HOME 側も canonical 化する lib へ集約(生 $HOME 照合だった旧実装は、HOME に
+# symlink 要素がある環境で接頭辞照合が外れ fail-open だった)。
+source_hook_lib resolve-main-clone.sh || exit 0
+type is_main_clone >/dev/null 2>&1 || exit 0
+is_main_clone "$cdir" || exit 0
 
 {
   echo "ブロック: main clone(~/ghq/... のプライマリ作業ツリー)のファイルは Claude から編集できません: $cfp"
