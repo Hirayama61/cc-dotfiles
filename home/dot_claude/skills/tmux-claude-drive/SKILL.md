@@ -101,13 +101,16 @@ dev-pipeline / task-fleet 等がこの手順を運転部品として呼ぶ時、
   window でなく `kill-pane <pane_id>` で畳む**(同一 window に管理 pane や兄弟 pane が同居する
   ため、window ごと kill すると巻き添えで自壊する)。失敗した window/pane を forensics 用に
   残したい場合は **retain** を選べる。retain が残すのは**スクロールバックだけ**で、順序は
-  (1) `capture-pane -J -p -S -2000 -t <pane_id>` でログを取り redaction を通して 0600 のファイルへ
-  書き出す → (2) 被運転プロセスを終了させる → (3) 赤ラベル相当のリネームで pane / window を
-  生かす、に固定する。**capture を先に済ませる** — tmux は pane のコマンドが終了すると既定
-  (`remain-on-exit` off)で pane ごと消し、スクロールバックも同時に失われるため、先に終了させると
-  保全対象そのものが消える。(2) は pane 内のセッションを終わらせるだけにし、`kill-pane` は
-  ログ吸い出し後の「畳む」操作としてのみ使う。**被運転プロセスを生かしたまま残さない** — auto mode の
-  セッションが放置されると、後から別作業で誤って入力・再開される(task-fleet §10 と同一の契約)。
+  (1) `capture-pane -J -p -S -2000 -t <pane_id>` でログを取り、
+  `<skills>/dev-pipeline/scripts/redact-forensics.sh` を通して 0600 のファイルへ書き出す →
+  (2) 赤ラベル相当のリネームで失敗マークを付ける → (3) 被運転プロセスを終了させる、に固定する。
+  redaction は必ずこの canonical スクリプトを使い、独自の実装で代替しない。
+  **capture とリネームを終了より先に済ませる** — pane のコマンドとして直接 `claude` を起動した
+  場合、その終了で pane ごと消えてスクロールバックもリネーム対象も失われる(既定は
+  `remain-on-exit` off)。シェル経由で起動していれば pane は残るが、順序を固定しておけば
+  どちらの起動方法でも安全側になる。`kill-pane` はログ吸い出し後の「畳む」操作としてのみ使う。
+  **被運転プロセスを生かしたまま残さない** — auto mode のセッションが放置されると、後から別作業で
+  誤って入力・再開される(task-fleet §10 と同一の契約)。
 - **usage limit 検知時**: 既定は手順 3-(d) の「エラー通知して終了」。運転元が
   自動再開を持つ場合は、この検知を運転元の **rate-limit hook へ委譲**する
   (kill せず pane を生かし、別プロセスのタイマーに再開を任せる)。並列 pane を同一アカウントで
