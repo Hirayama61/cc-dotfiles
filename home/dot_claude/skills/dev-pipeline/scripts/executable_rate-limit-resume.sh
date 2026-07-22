@@ -8,6 +8,7 @@
 #
 # Usage: rate-limit-resume.sh <target> [<phrase>]
 #        rate-limit-resume.sh --parse-reset   (stdin の banner から明けまで秒を stdout。自己テスト用)
+#        rate-limit-resume.sh --print-permission-ere   (権限プロンプト検知 ERE を stdout。運転元の単一情報源)
 #   <target>  tmux の pane 指定(session:window.pane または %pane_id)。起動時に一度
 #             %pane_id へ解決し、以後の送信・監視はすべて解決済み pane_id に固定する。
 #   <phrase>  再開時に送る 1 行(既定「再開して」)。
@@ -108,6 +109,14 @@ default_reset_seconds() {
 # 自己テストフック: 内蔵リセット時刻パーサを stdin で単体検証する(ループを回さない)。
 if [ "${1:-}" = "--parse-reset" ]; then
   default_reset_seconds "$(cat)"
+  exit 0
+fi
+
+# 公開口: 権限プロンプト検知 ERE を 1 行で出力する(ループを回さない)。
+# home-claude-drive 等の運転元がナッジ送信前の機械照合に使う単一情報源。
+# ERE を転記・grep 抽出で複製せず、必ずこの口から取得する。
+if [ "${1:-}" = "--print-permission-ere" ]; then
+  printf '%s\n' "$PERMISSION_ERE"
   exit 0
 fi
 

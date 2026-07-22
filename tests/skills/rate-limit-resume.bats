@@ -268,3 +268,13 @@ EOF
   [ "$status" -eq 0 ]
   grep -q "RLR: resumed" "$sig"
 }
+
+@test "--print-permission-ere: emits non-empty single-line ERE matching known prompts" {
+  run bash "$SCRIPT" --print-permission-ere
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+  [ "${#lines[@]}" -eq 1 ]
+  printf '%s' '❯ 1. Yes' | grep -qiE "$output"
+  printf '%s' 'Do you want to proceed' | grep -qiE "$output"
+  ! printf '%s' '> 123 files changed' | grep -qiE "$output"
+}
