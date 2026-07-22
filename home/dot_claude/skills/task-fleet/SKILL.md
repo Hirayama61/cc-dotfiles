@@ -216,8 +216,12 @@ tmux-claude-drive を参照し、次を渡す:
    **pane id(`%NN`)宛**にして生成 pane id を決定論的に受け取る。初回タスク(右列がまだ無い)は
    管理 pane を `-h` で割って右列を作り、2 本目以降は直前に `list-panes` で取り直した右列
    最下段の pane を `-v` で割る(選定は座標で行う:
-   `tmux list-panes -t '<window>' -F '#{pane_id} #{pane_left} #{pane_top}'` で
-   `pane_left > 0`(左端列以外)のうち `pane_top` 最大の pane。index・記憶で選ばない):
+   `tmux list-panes -t '<管理paneの%NN>' -F '#{pane_id} #{pane_left} #{pane_top}'` で
+   `pane_left` が**最大の列**のうち `pane_top` 最大の pane。list の `-t` も pane id 宛にする =
+   その pane が属する window の一覧が返るので、window 名・index への依存が消える。
+   index・記憶で選ばない)。
+   **spillover 副 window(§3。管理 pane を持たない)は場合分けする** — 初回タスクは
+   副 window 作成時の単一 pane をそのまま使い、2 本目以降のみ同じ座標選定で `-v` 縦積みする:
    `pane_id="$(tmux split-window -d -P -F '#{pane_id}' <-h|-v> -t '%NN' -c "$task_worktree")"`
    (**window 宛(`-t <session>:<window>`)にしない** — window 宛はアクティブ pane =
    左列の管理 pane を分割対象にしてしまい、§3 の「左列は以後分割しない」を破る。
