@@ -75,8 +75,8 @@ task-fleet)」節が正典。状態真実源・レートリミット再開・for
   タスク pane は**右列を `split-window -v` で横割りして縦に積む**(2 本目以降は右列の
   既存 pane を `-t '%NN'` 指定で分割)。左列は以後分割しない — 管理 pane の位置と幅が
   タスク数に依らず一定になり、どの案件 window でも同じ場所を見れば管理と対話できる。
-  分割対象の pane 指定は tmux-claude-drive の不変 id 原則(手順 1 の `@NN` 固定と
-  パラメータ節の pane split)と同じく、直前に `list-panes` で取り直した不変 id(`%NN`)宛で
+  分割対象の pane 指定は tmux-claude-drive の不変 pane id 原則(手順 1・パラメータ節の
+  pane split)と同じく、直前に `list-panes` で取り直した不変 id(`%NN`)宛で
   行う(index・記憶宛にしない)。
 - **1 pane = 1 branch = 1 worktree**(既存規約)。複数タスク並列の案件は epic ブランチを
   派生させ、`~/ghq/github.com/Hirayama61/dotfiles/bin/wt.sh "<task-branch>" "<base-ref>"` で
@@ -215,7 +215,9 @@ tmux-claude-drive を参照し、次を渡す:
 1. **pane を作る(起動先ターゲット = pane split)**: §3 の既定レイアウトに従い、分割対象を
    **pane id(`%NN`)宛**にして生成 pane id を決定論的に受け取る。初回タスク(右列がまだ無い)は
    管理 pane を `-h` で割って右列を作り、2 本目以降は直前に `list-panes` で取り直した右列
-   最下段の pane を `-v` で割る:
+   最下段の pane を `-v` で割る(選定は座標で行う:
+   `tmux list-panes -t '<window>' -F '#{pane_id} #{pane_left} #{pane_top}'` で
+   `pane_left > 0`(左端列以外)のうち `pane_top` 最大の pane。index・記憶で選ばない):
    `pane_id="$(tmux split-window -d -P -F '#{pane_id}' <-h|-v> -t '%NN' -c "$task_worktree")"`
    (**window 宛(`-t <session>:<window>`)にしない** — window 宛はアクティブ pane =
    左列の管理 pane を分割対象にしてしまい、§3 の「左列は以後分割しない」を破る。
