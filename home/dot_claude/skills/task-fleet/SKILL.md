@@ -70,6 +70,13 @@ task-fleet)」節が正典。状態真実源・レートリミット再開・for
 
 - **1 案件 = 1 tmux window**。中を**管理セッション pane + タスク pane 群**に分割する
   (相談役が隣で同時に見えること自体が価値のため pane 分割を採る)。
+- **既定レイアウトは「左 1 列 = 管理、右列を縦積み」**(縦長モニタ前提。LG DualUp 等):
+  最初に `split-window -h` で左右 2 列を作り、左列を管理セッション pane として固定する。
+  タスク pane は**右列を `split-window -v` で横割りして縦に積む**(2 本目以降は右列の
+  既存 pane を `-t '%NN'` 指定で分割)。左列は以後分割しない — 管理 pane の位置と幅が
+  タスク数に依らず一定になり、どの案件 window でも同じ場所を見れば管理と対話できる。
+  分割対象の pane 指定は tmux-claude-drive 手順 1 と同じく、直前に `list-panes` で
+  取り直した不変 id(`%NN`)宛で行う(index・記憶宛にしない)。
 - **1 pane = 1 branch = 1 worktree**(既存規約)。複数タスク並列の案件は epic ブランチを
   派生させ、`~/ghq/github.com/Hirayama61/dotfiles/bin/wt.sh "<task-branch>" "<base-ref>"` で
   タスク別 worktree を base-ref 明示で作る(単一タスクの案件は feature 1 本でよい)。

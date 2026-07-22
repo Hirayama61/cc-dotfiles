@@ -30,9 +30,14 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 
 ## 手順
 
-1. `tmux ls` でセッションを確認し、新ウィンドウで起動する:
-   `tmux new-window -t <session>: -n <name> -c <workdir> -d`
-   `tmux send-keys -t <session>:<name> 'claude --model <model>' Enter`
+1. **作成の直前に** `tmux ls` / `tmux list-windows -t <session>` で現在の状態を取り直してから
+   (セッション冒頭に読んだ一覧の記憶で操作しない — window index/名前は閉じる・並べ替えで
+   振り直され、古い記憶宛の操作は誤 window への作成・送信になる)、新ウィンドウを
+   **不変 id を受け取る形で**起動する:
+   `window_id="$(tmux new-window -P -F '#{window_id}' -t <session>: -n <name> -c <workdir> -d)"`
+   `tmux send-keys -t "$window_id" 'claude --model <model>' Enter`
+   以後の send-keys / capture-pane / Monitor / kill はすべてこの `@NN` 形の `window_id` 宛に
+   固定する(pane split 起動の `pane_id` 固定と同じ原則。名前・index 宛は使わない)。
    (permission-mode は指定しない。前提 1 のとおり defaultMode=auto に任せる)
    数秒待って `tmux capture-pane -t ... -p | tail` で起動を確認(モデル名は Claude の pane 内
    ステータス行に出る。tmux の status bar ではなく pane 本文なので capture-pane -p で読める)。
@@ -63,6 +68,11 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    含まれる(エコーが pane に残る)ため、フレーズの**単独行一致**+指示文断片(鉤括弧等)の
    除外も併用する(2026-07-18 実測: 部分一致単独では投入直後に即偽完了した)。
    本物の完了出力は行頭が `⏺ ` や字下げで始まる点も絞り込みに使える。
+   **入力エリアの文字は判定から除外する** — capture 末尾には被運転の入力欄
+   (`❯` プロンプト行とその枠線内)が含まれ、停止時に Claude Code が次作業の予測
+   サジェストをプレースホルダとして表示することがある。これを「ユーザーが入力途中で
+   放置している」「被運転の出力」と解釈しない(未送信のまま放置される入力は無い前提で
+   運用する)。判定対象は入力枠より**上**の本文のみ。
 4. 完了したら**現セッションが検品**する(成果物を通読し、規約・整合を突き合わせ、
    軽微な違反は直し、学びを規約文書に還元してからユーザーへ引き渡す)。
    検品後は**引き渡し報告を次の型で締める**(被運転が何を作り、こちらが何を直したかを
@@ -75,7 +85,8 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    直した点: <こちらで直した軽微違反。無ければ「なし」>
    要判断: <人間の判断が要る残件。無ければ「なし」>
    ```
-5. **後片付け**: `tmux kill-window -t <session>:<name>`。被運転セッションに
+5. **後片付け**: `tmux kill-window -t "$window_id"`(手順 1 で取得した id 宛。
+   名前・index 宛の kill は振り直しで別 window を巻き添えにしうる)。被運転セッションに
    /loop や cron の残骸があると勝手に再稼働するため、放置しない。
 
 ## 落とし穴(実測)
@@ -86,6 +97,11 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 - 被運転者の作業中にこちらから同一ファイルを編集すると Edit の staleness 競合が起きる。
   検品前に必ず Read し直す。
 - 指示文に引用符を含める時は send-keys `-l` を使い、シェルのクォート衝突を避ける。
+- window index/名前は不変ではない(閉じる・並べ替え・同名作成で指す先が変わる)。
+  セッション冒頭に取った一覧の記憶で `-t` を組み立てると誤 window への作成・送信が起きる
+  (実測で多発)。作成直前の取り直し + `@NN`/`%NN` の不変 id 固定(手順 1)で潰す。
+- 停止中の被運転の入力欄には予測サジェストのプレースホルダが出ることがある。capture 結果の
+  入力枠内テキストを状態判定に使わない(手順 3)。
 
 ## fail-open
 
