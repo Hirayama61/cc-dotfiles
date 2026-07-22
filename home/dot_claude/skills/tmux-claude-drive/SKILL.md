@@ -62,7 +62,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    - 対話不能環境での分岐処理(推奨案を自己選択し理由をファイルに記録)
    - 完了時の合図: 「最後に『<完了フレーズ>』とだけ書いて停止すること」
 3. **Monitor で監視**(sleep ポーリング禁止・完了/停止/失敗の全終端を拾う):
-   45〜60 秒間隔で `tmux capture-pane -p | tail -25` を見て、
+   45〜60 秒間隔で `tmux capture-pane -t "$pane_id" -p | tail -25` を見て、
    (a) 完了フレーズ → 終了、(b) 成果物ファイルの出現 → 通知のみ、
    (c) `Do you want to proceed|❯ 1\. Yes` → 権限プロンプト(ユーザーへ)、
    (d) `API Error|usage limit` → エラー通知、(e) pane 消失 → 終了。
