@@ -95,7 +95,10 @@ FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
   ```
 - `status` ∈ `backlog | running | waiting-human | blocked | done`。
 - `tmux_window`(`@NN`)/ `tmux_pane`(`%NN`)は不変 id。`window_name` = `id`(命名規約 §5)。
-  未配車(backlog)はいずれも `""`。
+  未配車(backlog)はいずれも `""`。「不変」は tmux がその id を振り直さない(常に同一
+  window/pane を指す)ことであって、**タスクの生涯で値が固定という意味ではない** —
+  現場監督の新セッション退避(§5)などで pane が替わったら、現行 writer が新しい id に
+  更新する(古い id を使い続けない)。
 - `next_action`: waiting-human のとき**人間がやること**を書く(プレビューの最重要列)。
 - `context_pct`: 現場監督の自己申告(statusline からの機械書出は後続バックログ)。
 - GitHub issue があれば `"issue": "<URL>"` を任意で持つ(リンクのみ。正にしない)。
@@ -184,6 +187,9 @@ FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
   覗く。原因に応じて: 書き忘れ → 督促ナッジ / 停止 → 再開ナッジ / 権限プロンプト(§1 の
   機械検知) → 人間へ要約提示 / pane 消失 → タスクを引き取り status=blocked + 人間へ報告。
 - ナッジは 1 タスクにつき連続 2 回まで。効かなければ人間へ上げる(無限に突つかない)。
+  この回数は**統括セッション内の best-effort カウント**で、fleet 状態ファイルへは永続化
+  しない(running ファイルの writer は現場監督 — 単一 writer 契約 §2 を優先)。統括の
+  compact / 再起動でカウントは消えうるが、「効かなければ人間へ」の出口があるため有界。
 
 ## 7. 人間への提示
 
