@@ -34,12 +34,18 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    (セッション冒頭に読んだ一覧の記憶で操作しない — window index/名前は閉じる・並べ替えで
    振り直され、古い記憶宛の操作は誤 window への作成・送信になる)、新ウィンドウを
    **不変 id を受け取る形で**起動する:
-   `window_id="$(tmux new-window -P -F '#{window_id}' -t <session>: -n <name> -c <workdir> -d)"`
+   `window_id="$(tmux new-window -P -F '#{window_id}' -t <session>: -n "<name>" -c "<workdir>" -d)"`
+   `case "$window_id" in @[0-9]*) ;; *) echo "window 生成に失敗。投入を中止" >&2; exit 1 ;; esac`
    `tmux send-keys -t "$window_id" 'claude --model <model>' Enter`
+   (形検査は必須 — new-window 失敗時の `window_id` は空で、空ターゲットの send-keys は
+   アクティブ pane へ流れる。pane split 経路の `%NN` 検査と同じ契約)。
    以後の send-keys / capture-pane / Monitor / kill はすべてこの `@NN` 形の `window_id` 宛に
    固定する(pane split 起動の `pane_id` 固定と同じ原則。名前・index 宛は使わない)。
+   ただし**管理 pane 等と同居する複数 pane window**(task-fleet §3 レイアウト)では
+   window_id 宛でなく pane_id(`%NN`)宛に落とす — window 宛 send-keys はアクティブ pane に
+   届き、kill-window は兄弟 pane を巻き添えにする(パラメータ節の pane split を参照)。
    (permission-mode は指定しない。前提 1 のとおり defaultMode=auto に任せる)
-   数秒待って `tmux capture-pane -t ... -p | tail` で起動を確認(モデル名は Claude の pane 内
+   数秒待って `tmux capture-pane -t "$window_id" -p | tail` で起動を確認(モデル名は Claude の pane 内
    ステータス行に出る。tmux の status bar ではなく pane 本文なので capture-pane -p で読める)。
    **権限モードも同時に確認する** — 直近出力(`tail` 範囲)の**現在のステータス行**に
    「⏵⏵ auto mode on」が出ていることを確認する(scrollback の古い表示や別文脈の部分一致を
@@ -68,11 +74,6 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    含まれる(エコーが pane に残る)ため、フレーズの**単独行一致**+指示文断片(鉤括弧等)の
    除外も併用する(2026-07-18 実測: 部分一致単独では投入直後に即偽完了した)。
    本物の完了出力は行頭が `⏺ ` や字下げで始まる点も絞り込みに使える。
-   **入力エリアの文字は判定から除外する** — capture 末尾には被運転の入力欄
-   (`❯` プロンプト行とその枠線内)が含まれ、停止時に Claude Code が次作業の予測
-   サジェストをプレースホルダとして表示することがある。これを「ユーザーが入力途中で
-   放置している」「被運転の出力」と解釈しない(未送信のまま放置される入力は無い前提で
-   運用する)。判定対象は入力枠より**上**の本文のみ。
 4. 完了したら**現セッションが検品**する(成果物を通読し、規約・整合を突き合わせ、
    軽微な違反は直し、学びを規約文書に還元してからユーザーへ引き渡す)。
    検品後は**引き渡し報告を次の型で締める**(被運転が何を作り、こちらが何を直したかを
@@ -100,8 +101,10 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 - window index/名前は不変ではない(閉じる・並べ替え・同名作成で指す先が変わる)。
   セッション冒頭に取った一覧の記憶で `-t` を組み立てると誤 window への作成・送信が起きる
   (実測で多発)。作成直前の取り直し + `@NN`/`%NN` の不変 id 固定(手順 1)で潰す。
-- 停止中の被運転の入力欄には予測サジェストのプレースホルダが出ることがある。capture 結果の
-  入力枠内テキストを状態判定に使わない(手順 3)。
+- 停止中の入力欄に出る予測サジェスト(prompt suggestions)は settings の
+  `env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: "false"` で全セッション無効化済み。設定が
+  効いていない環境(未 apply のマシン等)では入力枠にプレースホルダが出るので、
+  それを本文・完了フレーズ・「ユーザーの入力途中」と誤読しない。
 
 ## fail-open
 
