@@ -30,11 +30,23 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 
 ## 手順
 
-1. `tmux ls` でセッションを確認し、新ウィンドウで起動する:
-   `tmux new-window -t <session>: -n <name> -c <workdir> -d`
-   `tmux send-keys -t <session>:<name> 'claude --model <model>' Enter`
+1. **作成の直前に** `tmux ls` / `tmux list-windows -t <session>` で現在の状態を取り直してから
+   (セッション冒頭に読んだ一覧の記憶で操作しない — window index/名前は閉じる・並べ替えで
+   振り直され、古い記憶宛の操作は誤 window への作成・送信になる)、新ウィンドウを
+   **不変 pane id を受け取る形で**起動する:
+   `pane_id="$(tmux new-window -P -F '#{pane_id}' -t <session>: -n "<name>" -c "<workdir>" -d)"`
+   `case "$pane_id" in %[0-9]*) ;; *) echo "window 生成に失敗。投入を中止" >&2; exit 1 ;; esac`
+   `tmux send-keys -t "$pane_id" 'claude --model <model>' Enter`
+   (形検査は必須 — new-window 失敗時の `pane_id` は空で、空ターゲットの send-keys は
+   アクティブ pane へ流れる。pane split 経路の `%NN` 検査と同じ契約)。
+   以後の send-keys / capture-pane / Monitor / 後片付けはすべてこの `%NN` 形の `pane_id` 宛に
+   固定する(名前・index 宛は使わない)。window id(`@NN`)宛にもしない — pane 対象コマンドに
+   window を渡すと「その window の**アクティブ pane**」へ解決され、途中で pane が増えたり
+   フォーカスが動くと誤 pane へ入力・監視する。`%NN` 宛なら単独 pane でも複数 pane 同居の
+   window でも同じ書き方で正しい pane に届く(実測: `new-window -P -F '#{pane_id}'` は
+   新 window の pane id を直接返す)。
    (permission-mode は指定しない。前提 1 のとおり defaultMode=auto に任せる)
-   数秒待って `tmux capture-pane -t ... -p | tail` で起動を確認(モデル名は Claude の pane 内
+   数秒待って `tmux capture-pane -t "$pane_id" -p | tail` で起動を確認(モデル名は Claude の pane 内
    ステータス行に出る。tmux の status bar ではなく pane 本文なので capture-pane -p で読める)。
    **権限モードも同時に確認する** — 直近出力(`tail` 範囲)の**現在のステータス行**に
    「⏵⏵ auto mode on」が出ていることを確認する(scrollback の古い表示や別文脈の部分一致を
@@ -50,7 +62,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    - 対話不能環境での分岐処理(推奨案を自己選択し理由をファイルに記録)
    - 完了時の合図: 「最後に『<完了フレーズ>』とだけ書いて停止すること」
 3. **Monitor で監視**(sleep ポーリング禁止・完了/停止/失敗の全終端を拾う):
-   45〜60 秒間隔で `tmux capture-pane -p | tail -25` を見て、
+   45〜60 秒間隔で `tmux capture-pane -t "$pane_id" -p | tail -25` を見て、
    (a) 完了フレーズ → 終了、(b) 成果物ファイルの出現 → 通知のみ、
    (c) `Do you want to proceed|❯ 1\. Yes` → 権限プロンプト(ユーザーへ)、
    (d) `API Error|usage limit` → エラー通知、(e) pane 消失 → 終了。
@@ -75,7 +87,10 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
    直した点: <こちらで直した軽微違反。無ければ「なし」>
    要判断: <人間の判断が要る残件。無ければ「なし」>
    ```
-5. **後片付け**: `tmux kill-window -t <session>:<name>`。被運転セッションに
+5. **後片付け**: `tmux kill-window -t "$pane_id"`(手順 1 で取得した pane id 宛。
+   kill-window は pane 指定でその pane が属する window ごと閉じる=実測確認済み。
+   名前・index 宛の kill は振り直しで別 window を巻き添えにしうる。pane split で起動した
+   被運転はパラメータ節どおり `kill-pane` を使う)。被運転セッションに
    /loop や cron の残骸があると勝手に再稼働するため、放置しない。
 
 ## 落とし穴(実測)
@@ -86,6 +101,13 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 - 被運転者の作業中にこちらから同一ファイルを編集すると Edit の staleness 競合が起きる。
   検品前に必ず Read し直す。
 - 指示文に引用符を含める時は send-keys `-l` を使い、シェルのクォート衝突を避ける。
+- window index/名前は不変ではない(閉じる・並べ替え・同名作成で指す先が変わる)。
+  セッション冒頭に取った一覧の記憶で `-t` を組み立てると誤 window への作成・送信が起きる
+  (実測で多発)。作成直前の取り直し + 不変 pane id(`%NN`)固定(手順 1)で潰す。
+- 停止中の入力欄に出る予測サジェスト(prompt suggestions)は settings の
+  `env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: "false"` で全セッション無効化済み。設定が
+  効いていない環境(未 apply のマシン等)では入力枠にプレースホルダが出るので、
+  それを本文・完了フレーズ・「ユーザーの入力途中」と誤読しない。
 
 ## fail-open
 
@@ -110,7 +132,10 @@ dev-pipeline / task-fleet 等がこの手順を運転部品として呼ぶ時、
 - **起動先ターゲット(window / pane split)**: 既定は手順 1 の `tmux new-window`
   (1 セッション = 1 window に被運転 1 つ)。運転元が同一 window 内へ複数被運転を並べたい
   場合は **pane split** を選べる。この時 pane は生成 id を決定論的に取る形で作り
-  (`pane_id="$(tmux split-window -d -P -F '#{pane_id}' -t <session>:<window> -c "$workdir")"`。
+  (`pane_id="$(tmux split-window -d -P -F '#{pane_id}' -t '<分割対象paneの%NN>' -c "$workdir")"`。
+  `-t` は **window 宛にしない** — window 宛はアクティブ pane を分割対象にし、運転元の
+  レイアウト規定(task-fleet §3 の「左列 = 管理 pane を分割しない」等)を壊す。分割対象 pane は
+  運転元の規定に従い直前の `list-panes` から選ぶ。
   `-d` で管理 pane からフォーカスを奪わない、`-P -F '#{pane_id}'` で新 pane id を直接受ける。
   後付けの display-message で「どれが新 pane か」を当てない=誤 pane 送信の穴を塞ぐ。split は
   pane 最小高を割ると失敗して空を返すので、生成直後に `%NN` 形かを検査して空なら中止する)、以後の

@@ -70,6 +70,14 @@ task-fleet)」節が正典。状態真実源・レートリミット再開・for
 
 - **1 案件 = 1 tmux window**。中を**管理セッション pane + タスク pane 群**に分割する
   (相談役が隣で同時に見えること自体が価値のため pane 分割を採る)。
+- **既定レイアウトは「左 1 列 = 管理、右列を縦積み」**(縦長モニタ前提。LG DualUp 等):
+  最初に `split-window -h` で左右 2 列を作り、左列を管理セッション pane として固定する。
+  タスク pane は**右列を `split-window -v` で横割りして縦に積む**(2 本目以降は右列の
+  既存 pane を `-t '%NN'` 指定で分割)。左列は以後分割しない — 管理 pane の位置と幅が
+  タスク数に依らず一定になり、どの案件 window でも同じ場所を見れば管理と対話できる。
+  分割対象の pane 指定は tmux-claude-drive の不変 pane id 原則(手順 1・パラメータ節の
+  pane split)と同じく、直前に `list-panes` で取り直した不変 id(`%NN`)宛で
+  行う(index・記憶宛にしない)。
 - **1 pane = 1 branch = 1 worktree**(既存規約)。複数タスク並列の案件は epic ブランチを
   派生させ、`~/ghq/github.com/Hirayama61/dotfiles/bin/wt.sh "<task-branch>" "<base-ref>"` で
   タスク別 worktree を base-ref 明示で作る(単一タスクの案件は feature 1 本でよい)。
@@ -204,10 +212,20 @@ done
 各タスク = 1 pane(または spillover 副 window の 1 pane)= 1 被運転セッション。運転手順は
 tmux-claude-drive を参照し、次を渡す:
 
-1. **pane を作る(起動先ターゲット = pane split)**: 管理 pane のある案件 window を split し、
-   生成 pane id を決定論的に受け取る:
-   `pane_id="$(tmux split-window -d -P -F '#{pane_id}' -t <session>:<window> -c "$task_worktree")"`
-   (`-d` でフォーカスを管理 pane から奪わない、`-P -F '#{pane_id}'` で新 pane の id を直接取る。
+1. **pane を作る(起動先ターゲット = pane split)**: §3 の既定レイアウトに従い、分割対象を
+   **pane id(`%NN`)宛**にして生成 pane id を決定論的に受け取る。初回タスク(右列がまだ無い)は
+   管理 pane を `-h` で割って右列を作り、2 本目以降は直前に `list-panes` で取り直した右列
+   最下段の pane を `-v` で割る(選定は座標で行う:
+   `tmux list-panes -t '<管理paneの%NN>' -F '#{pane_id} #{pane_left} #{pane_top}'` で
+   `pane_left` が**最大の列**のうち `pane_top` 最大の pane。list の `-t` も pane id 宛にする =
+   その pane が属する window の一覧が返るので、window 名・index への依存が消える。
+   index・記憶で選ばない)。
+   **spillover 副 window(§3。管理 pane を持たない)は場合分けする** — 初回タスクは
+   副 window 作成時の単一 pane をそのまま使い、2 本目以降のみ同じ座標選定で `-v` 縦積みする:
+   `pane_id="$(tmux split-window -d -P -F '#{pane_id}' <-h|-v> -t '%NN' -c "$task_worktree")"`
+   (**window 宛(`-t <session>:<window>`)にしない** — window 宛はアクティブ pane =
+   左列の管理 pane を分割対象にしてしまい、§3 の「左列は以後分割しない」を破る。
+   `-d` でフォーカスを管理 pane から奪わない、`-P -F '#{pane_id}'` で新 pane の id を直接取る。
    後付けの display-message で「どれが新 pane か」を当てない = 誤 pane 送信の穴を塞ぐ)。以後の
    send-keys / capture-pane / Monitor / 後片付けは、この `pane_id`(`%NN`)を対象に固定する。
    **生成直後に `pane_id` の形を検査して、空なら投入を中止する**:
