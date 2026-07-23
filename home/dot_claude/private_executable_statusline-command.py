@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 # ---------- 定数 ----------
@@ -113,6 +114,56 @@ def time_until(resets_at) -> str:
         return f"{minutes}m"
 
 
+def ctx_key(transcript_path: str) -> str:
+    """transcript_path から ctx キーを導出する。
+
+    hooks/lib/context-paths.sh の claude_ctx_key と同一導出(等価性は
+    tests/lib/context-paths.bats の二言語契約テストで固定)。
+    不正な segment(空 / . / .. / スラッシュ残存)は空を返す。
+    """
+    if not transcript_path:
+        return ""
+    raw = transcript_path
+    if raw.endswith(".jsonl"):
+        raw = raw[: -len(".jsonl")]
+    key = os.path.basename(raw)
+    if key in ("", ".", "..") or "/" in key:
+        return ""
+    return key
+
+
+def write_usage(data: dict) -> None:
+    """コンテキスト使用率を hook 群へ受け渡す usage.json を書く。
+
+    hook の stdin には使用率が来ないため、statusline がここで cache へ書き出し
+    context-pressure 系 hook が読む(唯一の供給源)。used_percentage は会話開始前
+    null になる(実測 2026-07-23)ので、その間は書かない(0 と未計測を区別する)。
+    失敗は statusline 描画を壊さないためすべて握る(hook 側は fail-open で素通し)。
+    """
+    try:
+        pct = data.get("context_window", {}).get("used_percentage")
+        transcript_path = data.get("transcript_path") or ""
+        ctx = ctx_key(transcript_path)
+        if pct is None or not ctx:
+            return
+        base = os.environ.get("XDG_CACHE_HOME") or ""
+        if not base.startswith("/"):
+            base = os.path.join(os.path.expanduser("~"), ".cache")
+        ctx_dir = os.path.join(base, "claude-context", ctx)
+        os.makedirs(ctx_dir, mode=0o700, exist_ok=True)
+        payload = {
+            "pct": float(pct),
+            "transcript_path": transcript_path,
+            "updated_at": int(time.time()),
+        }
+        tmp = os.path.join(ctx_dir, ".usage.json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(payload, f)
+        os.replace(tmp, os.path.join(ctx_dir, "usage.json"))
+    except Exception:
+        pass
+
+
 def main():
     # ---------- stdinからJSON読み込み ----------
     try:
@@ -121,6 +172,8 @@ def main():
     except (json.JSONDecodeError, ValueError):
         print("parse error", end="")
         return
+
+    write_usage(data)
 
     # ---------- フィールドのパース ----------
     model_name = data.get("model", {}).get("display_name", "Unknown")
