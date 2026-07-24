@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# dev-pipeline レートリミット自動再開タイマー(経路 A)。
+# レートリミット自動再開タイマー(経路 A)。tmux-claude-drive の付属部品で、
+# 運転元(pane-claude-drive / home-claude-drive 等)が pane ごとに起動する。
 #
 # 被運転セッションが usage limit で止まったとき、素のシェル(Claude のレートリミットを
-# 消費しない)が対象 pane を周期監視し、明けたら再開フレーズを 1 度送る。指揮者が
+# 消費しない)が対象 pane を周期監視し、明けたら再開フレーズを 1 度送る。運転元が
 # Monitor でこの出力を回収し、経路 B 切替などの遷移判断を行う(このスクリプト自身は
-# 経路 B へ遷移しない)。設計の状態機械は Plan v2 §2.3 / §7.4。
+# 経路 B へ遷移しない)。運転元から見た経路 A / B の切り分けは
+# pane-claude-drive SKILL §9、usage limit 検知の委譲は tmux-claude-drive パラメータ節。
 #
 # Usage: rate-limit-resume.sh <target> [<phrase>]
 #        rate-limit-resume.sh --parse-reset   (stdin の banner から明けまで秒を stdout。自己テスト用)
@@ -18,7 +20,7 @@
 #   2  経路 B が必要(pane が別プロセスに置換 / claude 消失 / pane 解決不能)
 #   3  タイムアウト(RLR_MAX_ITER 到達)
 #   4  再送上限到達(RLR_MAX_RESEND 回送っても banner が残る)
-#   5  権限プロンプト滞留(誰も答えないまま RLR_PERMSTUCK_MAX_ITERS 回。指揮者へ委譲)
+#   5  権限プロンプト滞留(誰も答えないまま RLR_PERMSTUCK_MAX_ITERS 回。運転元へ委譲)
 #   1  使用方法エラー
 #
 # 環境変数(既定は実運用値):
@@ -30,7 +32,7 @@
 #   RLR_TMUX                tmux コマンド(既定 tmux)。テストは PATH shim か明示注入。
 #   RLR_RESET_PARSE         指定時、banner 全文を stdin で渡して「明けまでの sleep 秒」を
 #                           stdout に返す外部コマンド(内蔵パーサより優先)。
-#   RLR_SIGNAL_FILE         指定時、状態行を追記する合図ファイル(指揮者が回収)。
+#   RLR_SIGNAL_FILE         指定時、状態行を追記する合図ファイル(運転元が回収)。
 set -euo pipefail
 
 PROG="${0##*/}"
@@ -57,7 +59,14 @@ has_limit() {
 # カーソル+選択肢は番号の直後に . か ) を必須にする(`> 123 files` 等の通常出力の誤検知回避)。
 PERMISSION_ERE='do you want to|do you trust|allow this (command|tool|edit|action)|approve (running|this)|overwrite (the |existing |this )|[❯▶►>][[:space:]]*([0-9]+[.)]|yes\b|no\b)|\[y/n\]|\(y/n\)|press .*to (confirm|approve)|(実行|続行|作成|変更|適用|削除|上書き|許可)して?も?(よろしいですか|いいですか|よろしいでしょうか)|しますか[?？]'
 has_permission() {
-  printf '%s' "$1" | grep -qiE "$PERMISSION_ERE"
+  # 照合不能(不正 ERE・grep 不在・pipefail 下の SIGPIPE 等)を「プロンプト無し」に倒すと
+  # 権限プロンプトへ再開フレーズを送る。rc=1(不一致)だけを「無し」に割り当て、それ以外は
+  # 滞留側へ倒す。過検知で送れない状態が続いても PERMSTUCK_MAX_ITERS の exit 5 が受ける。
+  # -a は agent shell 等の -I 付き grep が不正 UTF-8 を含む pane をバイナリ扱いして
+  # 一致を rc=1 に化けさせるのを防ぐ。
+  prc=0
+  grep -aqiE -e "$PERMISSION_ERE" <<<"$1" || prc=$?
+  [ "$prc" -ne 1 ]
 }
 
 default_reset_seconds() {
@@ -248,7 +257,7 @@ while :; do
   # よる権限誤検知・リセット時刻の誤マッチを避ける。
   text="$(printf '%s\n' "$screen" | tail -n 25)"
 
-  # 権限プロンプトには絶対に送らない。滞留し続けたら exit 5 で指揮者へ委譲(無限ループ回避)。
+  # 権限プロンプトには絶対に送らない。滞留し続けたら exit 5 で運転元へ委譲(無限ループ回避)。
   if has_permission "$text"; then
     perm_iters=$((perm_iters + 1))
     if [ "$PERMSTUCK_MAX_ITERS" -gt 0 ] && [ "$perm_iters" -ge "$PERMSTUCK_MAX_ITERS" ]; then

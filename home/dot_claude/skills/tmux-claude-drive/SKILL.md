@@ -5,7 +5,8 @@ description: >-
   指示投入→監視→検品まで運転する手順。「Opus に書かせて」「別セッションで実行して」
   「tmux でエージェントを回して」、`/tmux-claude-drive` での起動、あるいは別モデルの成果物を
   現セッションが検品するワークフローで発火する。2026-07-03 の小説プロジェクト(Fable 5 が
-  Opus 4.8 に第4話を書かせ検品)で確立。dev-pipeline はこれを運転部品として参照する。
+  Opus 4.8 に第4話を書かせ検品)で確立。claude-drive シリーズの基底 skill で、
+  pane-claude-drive / home-claude-drive はこれを運転部品として参照する。
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 ---
@@ -120,12 +121,12 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 
 ## パラメータ(運転元スキル向け・省略で従来挙動)
 
-dev-pipeline / task-fleet 等がこの手順を運転部品として呼ぶ時、次の 5 点を運転元が決める。
+pane-claude-drive / home-claude-drive 等がこの手順を運転部品として呼ぶ時、次の 5 点を運転元が決める。
 いずれも既定は上の手順そのもの(小説 PJ 等の従来用途は無指定で変わらない)。
 
-- **起動モデル**: 既定は `--model <model>` を明示。運転元が「指揮者のデフォルト
-  モデルを継承させたい」場合は `--model` を**省略**して `claude` 単体で起動する
-  (default model が再解決される)。
+- **起動モデル**: 既定は `--model <model>` を明示。運転元が「起動先の default model に
+  任せたい」場合は `--model` を**省略**して `claude` 単体で起動する(起動先で default model が
+  再解決される。運転元セッションの現モデルを直接引き継ぐわけではない)。
 - **完了合図(nonce)**: 手順 2 の `<完了フレーズ>` は固定文字列だと偽完了を拾う。
   運転元が pipeline/phase ごとに一意な nonce(例 `DONE-<pipeline>-<phase>-<連番>`)を
   渡し、監視側はその nonce 一致でのみ完了とみなす。再利用しない。
@@ -134,20 +135,20 @@ dev-pipeline / task-fleet 等がこの手順を運転部品として呼ぶ時、
   場合は **pane split** を選べる。この時 pane は生成 id を決定論的に取る形で作り
   (`pane_id="$(tmux split-window -d -P -F '#{pane_id}' -t '<分割対象paneの%NN>' -c "$workdir")"`。
   `-t` は **window 宛にしない** — window 宛はアクティブ pane を分割対象にし、運転元の
-  レイアウト規定(task-fleet §3 の「左列 = 管理 pane を分割しない」等)を壊す。分割対象 pane は
+  レイアウト規定(pane-claude-drive §3 の「左列 = 現場監督 pane を分割しない」等)を壊す。分割対象 pane は
   運転元の規定に従い直前の `list-panes` から選ぶ。
-  `-d` で管理 pane からフォーカスを奪わない、`-P -F '#{pane_id}'` で新 pane id を直接受ける。
+  `-d` で運転元 pane からフォーカスを奪わない、`-P -F '#{pane_id}'` で新 pane id を直接受ける。
   後付けの display-message で「どれが新 pane か」を当てない=誤 pane 送信の穴を塞ぐ。split は
   pane 最小高を割ると失敗して空を返すので、生成直後に `%NN` 形かを検査して空なら中止する)、以後の
   **send-keys / capture-pane / Monitor / 後片付け(kill)を、window 名でなくこの `pane_id`
-  (`%NN`)に固定する**。rate-limit-resume.sh は pane 指定(`session:window.pane` or `%pane_id`)を
-  受け起動時に `%pane_id` へ固定するので整合する。
+  (`%NN`)に固定する**。付属部品の `scripts/rate-limit-resume.sh` は pane 指定
+  (`session:window.pane` or `%pane_id`)を受け、起動時に `%pane_id` へ固定するので整合する。
 - **完了後の window/pane 処理**: 既定は手順 5 の `kill-window`。**pane split で起動した被運転は
-  window でなく `kill-pane <pane_id>` で畳む**(同一 window に管理 pane や兄弟 pane が同居する
+  window でなく `kill-pane <pane_id>` で畳む**(同一 window に運転元 pane や兄弟 pane が同居する
   ため、window ごと kill すると巻き添えで自壊する)。失敗した window/pane を forensics 用に
   残したい場合は **retain** を選べる。retain が残すのは**スクロールバックだけ**で、順序は
   (1) `capture-pane -J -p -S -2000 -t <pane_id>` でログを取り、
-  `<skills>/dev-pipeline/scripts/redact-forensics.sh` を通して 0600 のファイルへ書き出す →
+  `<skills>/tmux-claude-drive/scripts/redact-forensics.sh` を通して 0600 のファイルへ書き出す →
   (2) 赤ラベル相当のリネームで失敗マークを付ける → (3) 被運転プロセスを終了させる、に固定する。
   redaction は必ずこの canonical スクリプトを使い、独自の実装で代替しない。
   **capture とリネームを終了より先に済ませる** — pane のコマンドとして直接 `claude` を起動した
@@ -159,7 +160,7 @@ dev-pipeline / task-fleet 等がこの手順を運転部品として呼ぶ時、
   なお pane が消える起動方法では失敗マークも一緒に消えるので、**後から辿る手がかりは forensics
   ログのファイル名側に持たせる**(pane 名だけを回収の頼りにしない)。
   **被運転プロセスを生かしたまま残さない** — auto mode のセッションが放置されると、後から別作業で
-  誤って入力・再開される(task-fleet §10 と同一の契約)。
+  誤って入力・再開される(pane-claude-drive §10 と同一の契約)。
 - **usage limit 検知時**: 既定は手順 3-(d) の「エラー通知して終了」。運転元が
   自動再開を持つ場合は、この検知を運転元の **rate-limit hook へ委譲**する
   (kill せず pane を生かし、別プロセスのタイマーに再開を任せる)。並列 pane を同一アカウントで
@@ -167,7 +168,7 @@ dev-pipeline / task-fleet 等がこの手順を運転部品として呼ぶ時、
   対策は**同時稼働本数を絞ること**(リミット中は稼働 pane を減らし、明けたら順に再投入する)。
   **「再開の時間差化」を単独の対策として当てにしない** — `rate-limit-resume.sh` の送信時刻は
   banner から算出した deadline で決まるため、タイマーの起動時刻をずらしても送信は banner 消失から
-  1 ポーリング間隔以内に固まる(task-fleet §9 と同一の契約)。
+  1 ポーリング間隔以内に固まる(pane-claude-drive §9 と同一の契約)。
 
 これらは手順の**分岐点**であって別実装ではない。運転元は上の 1〜5 を踏襲し、
 該当箇所だけ渡された値で振る舞いを変える。

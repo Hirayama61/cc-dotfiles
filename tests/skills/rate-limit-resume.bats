@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# dev-pipeline の rate-limit-resume.sh の状態機械を固定する(Plan v2 §2.3 / §7.4)。
+# tmux-claude-drive 付属の rate-limit-resume.sh の状態機械を固定する。
 #
 # tmux は RLR_TMUX で fake に差し替える(実 tmux に触れない)。fake は stateful:
 # capture-pane 呼び出しごとにステップカウンタを進め、各ステップの
@@ -11,7 +11,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd)"
-  SCRIPT="$REPO_ROOT/home/dot_claude/skills/dev-pipeline/scripts/executable_rate-limit-resume.sh"
+  SCRIPT="$REPO_ROOT/home/dot_claude/skills/tmux-claude-drive/scripts/executable_rate-limit-resume.sh"
 
   STEPDIR="$BATS_TEST_TMPDIR/steps"
   mkdir -p "$STEPDIR"
@@ -88,6 +88,44 @@ sent_count() {
   [ "$status" -eq 3 ]
   [[ "$output" == *"RLR: permission-prompt human-needed"* ]]
   [ "$(sent_count)" -eq 0 ]
+}
+
+@test "permission detect error: grep failure is treated as prompt (never sends)" {
+  # PERMISSION_ERE の照合だけを rc=2(照合エラー)に化けさせる grep shim。
+  # 他の grep は実物へ委譲する(現ステップ列では到達しないが、ステップを足した時に
+  # usage limit 検知まで巻き込まないための保険)。実 grep は PATH 差し替え前に解決する
+  # (自己再帰の回避 + gnubin 等で grep を差し替えた開発機で実装を固定しないため)。
+  real_grep="$(command -v grep)"
+  shim="$BATS_TEST_TMPDIR/bin"
+  marker="$BATS_TEST_TMPDIR/shim-fired"
+  mkdir -p "$shim"
+  cat >"$shim/grep" <<EOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+  *"do you trust"*) : >"$marker"; exit 2 ;;
+  esac
+done
+exec "$real_grep" "\$@"
+EOF
+  chmod +x "$shim/grep"
+
+  # 画面は PERMISSION_ERE に一致しない文言にする。shim が発火しなくなった時に実 grep が
+  # rc=1(不一致)を返して送信に回り、テストが空洞化せず落ちるようにするため
+  # (プロンプト文言のままだと実 grep も rc=0 になり、shim 不発でも同じ観測結果になる)。
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 "usage limit reached"
+  step 2 node 100 "assistant is thinking"
+  step 3 node 100 "assistant is thinking"
+  run env PATH="$shim:$PATH" RLR_MAX_ITER=4 bash "$SCRIPT" "sess:win.0"
+  # shim が実際に照合エラー経路を通したことを固定する(通っていなければ以下は無意味)。
+  [ -f "$marker" ]
+  # 滞留のまま RLR_MAX_ITER に到達する経路を固定する(exit 5 の permission-stuck へ
+  # 流れる変化を素通しにしない)。
+  [ "$status" -eq 3 ]
+  # 照合不能を「プロンプト無し」に倒すと再開フレーズを送ってしまう(permission laundering)。
+  [ "$(sent_count)" -eq 0 ]
+  [[ "$output" == *"permission-prompt human-needed"* ]]
 }
 
 @test "claude gone (shell foreground): route-b exit 2, no send" {

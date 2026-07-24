@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# dev-pipeline forensics 用の決定論的 redaction(SKILL §8)。
+# forensics 用の決定論的 redaction。tmux-claude-drive の付属部品で、失敗 pane の
+# スクロールバックを書き出す運転元(パラメータ節「完了後の window/pane 処理」)が通す。
 #
 # 失敗 window の capture-pane スクロールバックを handoff / 別ログへ書き出す前に、
 # トークン・資格情報らしき文字列を機械的にマスクし、行数上限を掛ける。モデルの善意に
 # 頼らずコードで秘密衛生を強制する 1 段。**過剰マスク寄り(安全側)**に倒す。
 # 注意: 行単位マスクなので、折り返しで分割されたトークンは取りこぼす。呼び出し側は
-# `capture-pane -J`(折り返し結合)で渡すこと(SKILL §8 の例)。best-effort であり、
+# `capture-pane -J`(折り返し結合)で渡すこと。best-effort であり、
 # 短い/未知形式の秘密は残りうる。書き出し先ログは 0600・非共有 dir に置くこと。
 #
 # Usage: redact-forensics.sh [max_lines]   (stdin → 加工済みを stdout)
