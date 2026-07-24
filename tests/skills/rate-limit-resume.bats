@@ -94,23 +94,29 @@ sent_count() {
   # PERMISSION_ERE の照合だけを rc=2(照合エラー)に化けさせる grep shim。banner 判定など
   # 他の grep は実物へ委譲する(全部落とすと usage limit 検知まで壊れて別経路になる)。
   shim="$BATS_TEST_TMPDIR/bin"
+  marker="$BATS_TEST_TMPDIR/shim-fired"
   mkdir -p "$shim"
-  cat >"$shim/grep" <<'EOF'
+  cat >"$shim/grep" <<EOF
 #!/usr/bin/env bash
-for a in "$@"; do
-  case "$a" in
-  *"do you trust"*) exit 2 ;;
+for a in "\$@"; do
+  case "\$a" in
+  *"do you trust"*) : >"$marker"; exit 2 ;;
   esac
 done
-exec /usr/bin/grep "$@"
+exec /usr/bin/grep "\$@"
 EOF
   chmod +x "$shim/grep"
 
+  # 画面は PERMISSION_ERE に一致しない文言にする。shim が発火しなくなった時に実 grep が
+  # rc=1(不一致)を返して送信に回り、テストが空洞化せず落ちるようにするため
+  # (プロンプト文言のままだと実 grep も rc=0 になり、shim 不発でも同じ観測結果になる)。
   step 0 node 100 "usage limit reached"
   step 1 node 100 "usage limit reached"
-  step 2 node 100 "Do you want to proceed?"
-  step 3 node 100 "Do you want to proceed?"
+  step 2 node 100 "assistant is thinking"
+  step 3 node 100 "assistant is thinking"
   PATH="$shim:$PATH" RLR_MAX_ITER=4 run bash "$SCRIPT" "sess:win.0"
+  # shim が実際に照合エラー経路を通したことを固定する(通っていなければ以下は無意味)。
+  [ -f "$marker" ]
   # 照合不能を「プロンプト無し」に倒すと再開フレーズを送ってしまう(permission laundering)。
   [ "$(sent_count)" -eq 0 ]
   [[ "$output" == *"permission-prompt human-needed"* ]]
