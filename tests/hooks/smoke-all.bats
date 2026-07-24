@@ -83,3 +83,11 @@ assert_no_block_for() {
   assert_no_block_for "corrupt-resolve-git-target" \
     '{"tool_name":"Bash","tool_input":{"command":"git push --force"},"cwd":"/tmp"}'
 }
+
+@test "corrupt context-paths.sh: no hook blocks (context-pressure fail-open)" {
+  # context-pressure 系 6 hook が source する context-paths.sh の構文破損でも、
+  # source_hook_lib の subshell 試験が握りどの hook も exit 2 を出さない。
+  printf '%s' '{ broken bash (' >"$HOME/.claude/hooks/lib/context-paths.sh"
+  assert_no_block_for "corrupt-context-paths" \
+    '{"tool_name":"Edit","transcript_path":"/tmp/ctx-x.jsonl","tool_input":{"file_path":"/tmp/f"},"cwd":"/tmp"}'
+}
