@@ -38,7 +38,8 @@ claude_ctx_key() {
 }
 
 # accessor は SKILL からの直接実行(dispatcher)にも公開されるため、caller の
-# claude_ctx_key 検証に依存せずここでも segment を再検証する(不正は空を返す)。
+# claude_ctx_key 検証に依存せずここでも segment を再検証する
+# (不正は空 stdout + 非ゼロ終了。dispatcher 経由では set -e により無出力で終了する)。
 claude_ctx_cache_dir() {
   case "${1:-}" in
   "" | . | .. | */*) return 1 ;;
