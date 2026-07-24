@@ -42,6 +42,19 @@ sl_input() {
   [ "$perms" = "700" ]
 }
 
+@test "symlinked ctx dir: does not write through the link" {
+  mkdir -p "$HOME/.cache/claude-context" "$BATS_TEST_TMPDIR/evil"
+  ln -s "$BATS_TEST_TMPDIR/evil" "$HOME/.cache/claude-context/sl-ctx"
+  printf '%s' "$(sl_input 10)" | python3 "$PY" > /dev/null
+  [ -z "$(ls "$BATS_TEST_TMPDIR/evil" 2>/dev/null)" ]
+}
+
+@test "usage.json created with 0600" {
+  printf '%s' "$(sl_input 10)" | python3 "$PY" > /dev/null
+  perms="$(stat -f '%Lp' "$HOME/.cache/claude-context/sl-ctx/usage.json")"
+  [ "$perms" = "600" ]
+}
+
 @test "broken json input: renders parse error without crash" {
   out="$(printf 'not json' | python3 "$PY")"
   [ "$out" = "parse error" ]

@@ -34,6 +34,8 @@ ExitPlanMode | AskUserQuestion) ;;
 *) exit 0 ;;
 esac
 
+# 決定ログには機密が混じりうるため、作るファイルはすべて 0600 に固める
+umask 077
 claude_ctx_cache_ensure "$ctx" || exit 0
 
 turn="$(cat "$(ctx_turn_file "$ctx")" 2>/dev/null || echo 0)"

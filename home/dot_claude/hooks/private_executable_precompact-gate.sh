@@ -51,6 +51,9 @@ if [[ -f "$state_file" ]]; then
 fi
 [[ -n "$state_ok" ]] && exit 0
 
-claude_ctx_cache_ensure "$ctx" && touch "$blocked_marker" 2>/dev/null || true
+# marker を書けない環境でブロックすると「2 回目は通る」が成立せず恒久ブロックに
+# なるため、書けない時はブロック自体を諦める(fail-open)。
+umask 077
+{ claude_ctx_cache_ensure "$ctx" && touch "$blocked_marker"; } 2>/dev/null || exit 0
 echo "ブロック: state file(${state_file})が無い・古い・または構造が不完全なまま /compact しようとした。先に compact-prep skill(/compact-prep)を実行して判断構造を退避してから /compact をやり直すこと。それでも素の compact を行いたい場合は、もう一度 /compact を実行すれば通る(このブロックは 1 回のみ)。" >&2
 exit 2

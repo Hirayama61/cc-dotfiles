@@ -66,14 +66,20 @@ case "$turn" in "" | *[!0-9]*) exit 0 ;; esac
 grace_file="$(ctx_grace_turn_file "$ctx")"
 grace="$(cat "$grace_file" 2>/dev/null || true)"
 
+# Claude はセッション内から自分の transcript_path を知れないため、compact-prep が
+# 使う実パスは hook が文面に埋め込んで渡す(推測名でファイルを作らせない)。
+state_file="$(ctx_state_file "$ctx")"
+decisions_file="$(ctx_decisions_file "$ctx")"
+
 if [[ -z "$grace" ]]; then
   # 検知ターン: 猶予を記録し、警告注入つきで通す
+  umask 077
   claude_ctx_cache_ensure "$ctx" || exit 0
   printf '%s' "$turn" > "$grace_file" 2>/dev/null || exit 0
-  jq -n '{
+  jq -n --arg body "コンテキスト使用率 50% 超(最終通告ライン)。猶予はこのターンのみ。現在の作業単位を閉じることだけを行い、新規の作業単位を開始するな。作業単位を閉じたら compact-prep skill を実行して state file(${state_file})を書き(決定ログ: ${decisions_file})、人間に /compact の実行を依頼せよ。次のターンから編集系ツールはブロックされる。" '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
-      additionalContext: "コンテキスト使用率 50% 超(最終通告ライン)。猶予はこのターンのみ。現在の作業単位を閉じることだけを行い、新規の作業単位を開始するな。作業単位を閉じたら compact-prep skill を実行して state file を書き、人間に /compact の実行を依頼せよ。次のターンから編集系ツールはブロックされる。"
+      additionalContext: $body
     }
   }' || exit 0
   exit 0
@@ -82,5 +88,5 @@ fi
 case "$grace" in "" | *[!0-9]*) exit 0 ;; esac
 (( turn <= grace )) && exit 0
 
-echo "ブロック: コンテキスト使用率 50% 超で猶予ターンを過ぎた。これ以上の編集は行えない。compact-prep skill を実行して state file を書き、人間に /compact の実行を依頼せよ(/compact 後に自動で解除される)。" >&2
+echo "ブロック: コンテキスト使用率 50% 超で猶予ターンを過ぎた。これ以上の編集は行えない。compact-prep skill を実行して state file(${state_file})を書き(決定ログ: ${decisions_file}。この 2 パスへの Write は通る)、人間に /compact の実行を依頼せよ(/compact 後に自動で解除される)。" >&2
 exit 2

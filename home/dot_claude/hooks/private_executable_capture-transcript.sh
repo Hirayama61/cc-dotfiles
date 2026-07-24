@@ -28,6 +28,8 @@ ctx="$(claude_ctx_key "$(hook_field '.transcript_path')")"
 prompt="$(hook_field '.prompt')"
 [[ -z "$prompt" ]] && exit 0
 
+# 決定ログには機密が混じりうるため、作るファイルはすべて 0600 に固める
+umask 077
 claude_ctx_cache_ensure "$ctx" || exit 0
 
 # ターンカウンタ(50% ゲートの猶予 1 ターン判定が読む)

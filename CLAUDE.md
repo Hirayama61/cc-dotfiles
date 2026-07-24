@@ -69,6 +69,7 @@ mise run apply:cc-dotfiles
   | `test-patterns.sh` | テストファイル判定・テスト観点カウントの ERE |
   | `design-gate.sh` | 設計レビューゲート(Gate 1/2)の除外判定・フラグ評価・昇格 |
   | `resolve-main-clone.sh` | main clone(canonical `~/ghq/` 配下のプライマリ作業ツリー)判定(`is_main_clone`) |
+  | `context-paths.sh` | コンテキスト逼迫対策(context-pressure)の cache パス(`~/.cache/claude-context/<ctx>/`)と ctx キー導出 |
 
 - **ゲートに止められた時の解除手順**: push ゲート = `/self-review`(skill 参照)、
   設計レビューゲート = `/design-review` または人間承認の理由付き trivial-override

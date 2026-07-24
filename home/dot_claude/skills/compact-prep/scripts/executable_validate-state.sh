@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate-state.sh — state file の構造検証(compact-prep 手順 4 / precompact-gate が使用)
 #
-# 5 見出しが定義順にすべて存在し、各節が非空(空白のみ// コメントのみでない)ことを検査する。
+# 5 見出しが定義順にすべて存在し、各節に空白以外の行があることを検査する。
 # 出力: PASS / FAIL(理由付き)。exit 0 = PASS、exit 1 = FAIL、exit 2 は使わない
 # (PreToolUse のブロックと紛れさせない)。引数不正・ファイル不在も FAIL(exit 1)。
 set -euo pipefail

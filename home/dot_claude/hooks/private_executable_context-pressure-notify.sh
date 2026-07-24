@@ -27,6 +27,7 @@ type claude_ctx_key >/dev/null 2>&1 || exit 0
 
 ctx="$(claude_ctx_key "$(hook_field '.transcript_path')")"
 [[ -z "$ctx" ]] && exit 0
+umask 077
 
 inject() {
   jq -n --arg body "$1" '{
@@ -61,9 +62,14 @@ now="$(date +%s)"
 pct_int="${pct%%.*}"
 case "$pct_int" in "" | *[!0-9]*) exit 0 ;; esac
 
+# Claude はセッション内から自分の transcript_path を知れないため、compact-prep が
+# 使う実パスは hook が文面に埋め込んで渡す(推測名でファイルを作らせない)。
+state_file="$(ctx_state_file "$ctx")"
+decisions_file="$(ctx_decisions_file "$ctx")"
+
 # 2. 最終通告(50%)
 if (( pct_int >= 50 )); then
-  inject "コンテキスト使用率が ${pct_int}% に達した(最終通告ライン)。このターンで現在の作業単位を閉じよ。新規の作業単位を開始してはならない。作業単位を閉じたら compact-prep skill を実行して state file を書き、人間に /compact の実行を依頼せよ。次のターン以降、編集系ツールはブロックされる。" || true
+  inject "コンテキスト使用率が ${pct_int}% に達した(最終通告ライン)。このターンで現在の作業単位を閉じよ。新規の作業単位を開始してはならない。作業単位を閉じたら compact-prep skill を実行して state file(${state_file})を書き(決定ログ: ${decisions_file})、人間に /compact の実行を依頼せよ。次のターン以降、編集系ツールはブロックされる。" || true
   exit 0
 fi
 
@@ -73,7 +79,7 @@ if (( pct_int >= 30 )); then
   notified="$(cat "$notified_file" 2>/dev/null || echo 0)"
   case "$notified" in "" | *[!0-9]*) notified=0 ;; esac
   if (( notified == 0 || pct_int - notified >= 5 )); then
-    if inject "コンテキスト使用率が ${pct_int}% を超えた(提案ライン)。判断力が保たれている今のうちに、作業の区切りで compact-prep skill を実行して state file を書き、人間に /compact を提案せよ。大量出力を伴う調査はサブエージェントへの委譲を検討せよ。50% に達すると編集がブロックされる。"; then
+    if inject "コンテキスト使用率が ${pct_int}% を超えた(提案ライン)。判断力が保たれている今のうちに、作業の区切りで compact-prep skill を実行して state file(${state_file})を書き(決定ログ: ${decisions_file})、人間に /compact を提案せよ。大量出力を伴う調査はサブエージェントへの委譲を検討せよ。50% に達すると編集がブロックされる。"; then
       claude_ctx_cache_ensure "$ctx" && printf '%s' "$pct_int" > "$notified_file" 2>/dev/null || true
     fi
   fi

@@ -7,6 +7,7 @@ stdinからJSONを受け取り、Braille文字のプログレスバーで
 
 import json
 import os
+import stat as stat_mod
 import subprocess
 import sys
 import time
@@ -151,13 +152,21 @@ def write_usage(data: dict) -> None:
             base = os.path.join(os.path.expanduser("~"), ".cache")
         ctx_dir = os.path.join(base, "claude-context", ctx)
         os.makedirs(ctx_dir, mode=0o700, exist_ok=True)
+        # bash 側 claude_ctx_cache_ensure と同じ検証(非 symlink・自ユーザ所有)。
+        # 既存 dir が symlink 等で不正ならリンク先へ書かず中止する。
+        st = os.lstat(ctx_dir)
+        if stat_mod.S_ISLNK(st.st_mode) or not stat_mod.S_ISDIR(st.st_mode):
+            return
+        if st.st_uid != os.getuid():
+            return
         payload = {
             "pct": float(pct),
             "transcript_path": transcript_path,
             "updated_at": int(time.time()),
         }
         tmp = os.path.join(ctx_dir, ".usage.json.tmp")
-        with open(tmp, "w") as f:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
             json.dump(payload, f)
         os.replace(tmp, os.path.join(ctx_dir, "usage.json"))
     except Exception:
