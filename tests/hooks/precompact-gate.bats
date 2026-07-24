@@ -83,6 +83,16 @@ EOF
   [ "$status" -eq 2 ]
 }
 
+@test "manual without state, marker unwritable: allowed (fail-open, no permanent block)" {
+  # ctx dir を実ファイルで塞ぎ、ensure/touch を失敗させる(marker を書けない環境の再現)。
+  # marker を書けないままブロックすると「2 回目は通る」が成立せず恒久ブロックになるため
+  # ブロック自体を諦めることを固定する。
+  rm -rf "$CACHE"
+  touch "$CACHE"
+  run_hook precompact-gate.sh "$(compact_json manual)"
+  [ "$status" -ne 2 ]
+}
+
 @test "manual, validator missing: degrades to mtime only" {
   rm -f "$VALID_DIR/validate-state.sh"
   printf 'anything fresh\n' > "$CACHE/state.md"

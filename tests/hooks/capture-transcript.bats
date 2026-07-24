@@ -26,9 +26,14 @@ prompt_json() {
   tail -1 "$CACHE/decisions.jsonl" | jq -e '.turn == 2' >/dev/null
 }
 
-@test "override phrase writes override marker" {
-  run_hook capture-transcript.sh "$(prompt_json "emergency: context-gate-override please")"
+@test "override phrase as standalone line writes override marker" {
+  run_hook capture-transcript.sh "$(prompt_json "continue this work\\ncontext-gate-override")"
   [ -f "$CACHE/override" ]
+}
+
+@test "override phrase mentioned mid-sentence does not trigger" {
+  run_hook capture-transcript.sh "$(prompt_json "emergency: context-gate-override please")"
+  [ ! -f "$CACHE/override" ]
 }
 
 @test "normal prompt does not write override marker" {

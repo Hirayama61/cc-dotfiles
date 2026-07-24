@@ -70,6 +70,17 @@ decisions_file="$(ctx_decisions_file "$ctx")"
 # 2. 最終通告(50%)
 if (( pct_int >= 50 )); then
   inject "コンテキスト使用率が ${pct_int}% に達した(最終通告ライン)。このターンで現在の作業単位を閉じよ。新規の作業単位を開始してはならない。作業単位を閉じたら compact-prep skill を実行して state file(${state_file})を書き(決定ログ: ${decisions_file})、人間に /compact の実行を依頼せよ。次のターン以降、編集系ツールはブロックされる。" || true
+  # 通知ターン = 猶予ターン。ここで grace を初期化しないと、このターンに編集が
+  # 無かった場合に次ターンの初回編集が「検知ターン」扱いになり猶予が 1 ターン延びる
+  # (「次のターンからブロック」の宣言と実態がずれる)。
+  grace_file="$(ctx_grace_turn_file "$ctx")"
+  if [[ ! -f "$grace_file" ]]; then
+    turn="$(cat "$(ctx_turn_file "$ctx")" 2>/dev/null || true)"
+    case "$turn" in
+    "" | *[!0-9]*) : ;;
+    *) claude_ctx_cache_ensure "$ctx" && printf '%s' "$turn" > "$grace_file" 2>/dev/null || true ;;
+    esac
+  fi
   exit 0
 fi
 

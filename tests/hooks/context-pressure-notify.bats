@@ -50,11 +50,23 @@ prompt_json() {
   [ "$(cat "$CACHE/notified-pct")" = "38" ]
 }
 
-@test "at 50: final notice" {
+@test "at 50: final notice with state file path and grace initialized" {
   write_usage 52
+  echo 4 > "$CACHE/turn"
   run_hook context-pressure-notify.sh "$(prompt_json)"
   echo "$output" | grep -qF '最終通告'
   echo "$output" | grep -qF 'compact-prep'
+  echo "$output" | grep -qF "$CACHE/state.md"
+  # 通知ターン = 猶予ターン(このターンに編集が無くても次ターンから deny)
+  [ "$(cat "$CACHE/grace-turn")" = "4" ]
+}
+
+@test "at 50: existing grace-turn is not overwritten" {
+  write_usage 52
+  echo 9 > "$CACHE/turn"
+  echo 4 > "$CACHE/grace-turn"
+  run_hook context-pressure-notify.sh "$(prompt_json)"
+  [ "$(cat "$CACHE/grace-turn")" = "4" ]
 }
 
 @test "compacted marker: recovery injection wins and marker consumed" {

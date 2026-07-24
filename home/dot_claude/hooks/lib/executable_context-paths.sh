@@ -37,8 +37,13 @@ claude_ctx_key() {
   printf '%s' "$key"
 }
 
+# accessor は SKILL からの直接実行(dispatcher)にも公開されるため、caller の
+# claude_ctx_key 検証に依存せずここでも segment を再検証する(不正は空を返す)。
 claude_ctx_cache_dir() {
-  printf '%s/%s' "$(claude_ctx_cache_base)" "${1:-}"
+  case "${1:-}" in
+  "" | . | .. | */*) return 1 ;;
+  esac
+  printf '%s/%s' "$(claude_ctx_cache_base)" "$1"
 }
 
 # ctx dir を 0700 で用意・検証する。python 側(statusline)の mkdir も 0700 で揃える。
@@ -58,15 +63,21 @@ claude_ctx_cache_ensure() {
   return 0
 }
 
-ctx_usage_file() { printf '%s/usage.json' "$(claude_ctx_cache_dir "${1:-}")"; }
-ctx_state_file() { printf '%s/state.md' "$(claude_ctx_cache_dir "${1:-}")"; }
-ctx_decisions_file() { printf '%s/decisions.jsonl' "$(claude_ctx_cache_dir "${1:-}")"; }
-ctx_turn_file() { printf '%s/turn' "$(claude_ctx_cache_dir "${1:-}")"; }
-ctx_notified_pct_file() { printf '%s/notified-pct' "$(claude_ctx_cache_dir "${1:-}")"; }
-ctx_grace_turn_file() { printf '%s/grace-turn' "$(claude_ctx_cache_dir "${1:-}")"; }
-ctx_compacted_marker() { printf '%s/compacted' "$(claude_ctx_cache_dir "${1:-}")"; }
-ctx_precompact_blocked_marker() { printf '%s/precompact-blocked' "$(claude_ctx_cache_dir "${1:-}")"; }
-ctx_override_marker() { printf '%s/override' "$(claude_ctx_cache_dir "${1:-}")"; }
+# dir が不正(空)なら "/<name>" を返さず空のまま失敗する(caller は空/存在チェックで素通る)。
+_ctx_file() {
+  local d
+  d="$(claude_ctx_cache_dir "${1:-}")" || return 1
+  printf '%s/%s' "$d" "$2"
+}
+ctx_usage_file() { _ctx_file "${1:-}" usage.json; }
+ctx_state_file() { _ctx_file "${1:-}" state.md; }
+ctx_decisions_file() { _ctx_file "${1:-}" decisions.jsonl; }
+ctx_turn_file() { _ctx_file "${1:-}" turn; }
+ctx_notified_pct_file() { _ctx_file "${1:-}" notified-pct; }
+ctx_grace_turn_file() { _ctx_file "${1:-}" grace-turn; }
+ctx_compacted_marker() { _ctx_file "${1:-}" compacted; }
+ctx_precompact_blocked_marker() { _ctx_file "${1:-}" precompact-blocked; }
+ctx_override_marker() { _ctx_file "${1:-}" override; }
 
 # 直接実行(SKILL / python テスト等の非 source 文脈)用ディスパッチャ。
 #   context-paths.sh key <transcript_path>

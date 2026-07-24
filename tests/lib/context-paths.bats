@@ -55,6 +55,19 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
+@test "dir and accessors reject traversal ctx" {
+  # dispatcher は SKILL からの直接実行に公開されるため accessor 側でも segment を再検証する
+  for sub in dir usage state decisions turn; do
+    run bash "$LIB" "$sub" "../x"
+    if [ "$status" -eq 0 ] && [ -n "$output" ] && [ "$output" != "/" ]; then
+      case "$output" in
+      *"claude-context/../"*) echo "traversal leaked: $sub -> $output"; return 1 ;;
+      esac
+      echo "unexpected success: $sub -> $output"; return 1
+    fi
+  done
+}
+
 @test "file path accessors are under ctx dir" {
   for sub in usage state decisions turn; do
     run bash "$LIB" "$sub" ctx1

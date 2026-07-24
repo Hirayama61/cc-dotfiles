@@ -159,6 +159,9 @@ def write_usage(data: dict) -> None:
             return
         if st.st_uid != os.getuid():
             return
+        # makedirs(exist_ok=True) は既存 dir の mode を直さないため明示的に締める
+        if stat_mod.S_IMODE(st.st_mode) != 0o700:
+            os.chmod(ctx_dir, 0o700)
         payload = {
             "pct": float(pct),
             "transcript_path": transcript_path,

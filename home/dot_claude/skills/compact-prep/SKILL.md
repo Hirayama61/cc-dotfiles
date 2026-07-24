@@ -23,18 +23,11 @@ state file に退避する。設計の正典は Decisions ノート
 含まれている(`~/.cache/claude-context/<ctx>/state.md` と `decisions.jsonl`)。
 それをそのまま `$state` / `$decisions` とする。
 
-文面にパスが無い文脈(手動 `/compact-prep` 等)では transcript_path から導出する:
-
-```sh
-ctx="$("$HOME/.claude/hooks/lib/context-paths.sh" key "<現セッションの transcript_path>")"
-"$HOME/.claude/hooks/lib/context-paths.sh" ensure "$ctx"
-state="$("$HOME/.claude/hooks/lib/context-paths.sh" state "$ctx")"
-decisions="$("$HOME/.claude/hooks/lib/context-paths.sh" decisions "$ctx")"
-```
-
-どちらの経路でもパスを確定できない場合は書かない(推測名でファイルを作らない。
-hard gate)。その旨を人間に報告し、次のプロンプトで 30% 注入(パス入り)を得てから
-やり直す。
+文面にパスが無い文脈(30% 未満での手動 `/compact-prep` 等)では、自分では導出しない —
+Claude はセッション内から自分の transcript_path を知れない。パスを確定できない場合は
+書かず(推測名でファイルを作らない。hard gate)、人間にその旨を報告して
+`ls -t ~/.cache/claude-context/` で現セッションの ctx ディレクトリを指定してもらうか、
+30% 到達後のパス入り通知を待って再実行する。
 
 ## 1. モード分岐(最初に必ず判定)
 

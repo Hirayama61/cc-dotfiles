@@ -39,10 +39,11 @@ case "$turn" in *[!0-9]* | "") turn=0 ;; esac
 turn=$((turn + 1))
 printf '%s' "$turn" > "$turn_file" 2>/dev/null || true
 
-# override フレーズ(人間専用の 1 回解除)
-case "$prompt" in
-*context-gate-override*) touch "$(ctx_override_marker "$ctx")" 2>/dev/null || true ;;
-esac
+# override フレーズ(人間専用の 1 回解除)。会話中の言及・引用での誤発動を避けるため
+# 「単独行としての完全一致」(前後空白は許容)に限定する。
+if printf '%s\n' "$prompt" | grep -qxE '[[:space:]]*context-gate-override[[:space:]]*'; then
+  touch "$(ctx_override_marker "$ctx")" 2>/dev/null || true
+fi
 
 printf '%s' "$HOOK_INPUT" | jq -c --argjson turn "$turn" --arg ts "$(date '+%Y-%m-%dT%H:%M:%S')" \
   '{ts: $ts, turn: $turn, type: "prompt", content: .prompt}' \
