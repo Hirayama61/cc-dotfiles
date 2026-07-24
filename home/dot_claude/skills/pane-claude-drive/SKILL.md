@@ -50,10 +50,14 @@ pane-claude-drive)」節が正典。本文の「タスク pane」はシリーズ
   case "$pane_id" in %[0-9]*) ;; *) echo "pane_id 不正。送信中止" >&2; exit 1 ;; esac
   tail_txt="$(tmux capture-pane -t "$pane_id" -p)" || { echo "capture 失敗。送信中止" >&2; exit 1; }
   tail_txt="$(printf '%s\n' "$tail_txt" | tail -25)"
-  if printf '%s' "$tail_txt" | grep -qiE "$ere"; then
-    echo "権限プロンプト滞留。送信せず人間へ要約提示" >&2
-    exit 1
-  fi
+  # grep は 0=一致 / 1=不一致 / 2 以上=エラー(不正 ERE 等)。エラーを不一致に倒すと
+  # 検知不能のまま送信に進むので、rc を 3 分岐して不一致だけを続行に割り当てる。
+  mrc=0; printf '%s' "$tail_txt" | grep -qiE "$ere" || mrc=$?
+  case "$mrc" in
+    0) echo "権限プロンプト滞留。送信せず人間へ要約提示" >&2; exit 1 ;;
+    1) ;;
+    *) echo "ERE 照合に失敗(rc=$mrc)。送信中止" >&2; exit 1 ;;
+  esac
   ```
 
   送信判定が否定形(「権限プロンプトでなければ送る」)である以上、検知漏れは誤送信 = 承認の
@@ -474,9 +478,11 @@ tmux-claude-drive を参照し、次を渡す:
   :
   ```
 
-  `committed=yes` なら完了条件を満たす。`committed=no` かつ `dirty=yes` は**未 commit**であって
-  変更不要ではないので、done にせず被運転へ commit を促すか現場監督が裁定する。両方 no の
-  「本当に変更不要で終わった `impl`」も自動では done にせず、理由をレポートで確認したうえで
+  **判定は `dirty` を先に見る**。`dirty=yes` なら `committed` の値に依らず自動 done にしない —
+  未 commit 分は merge に乗らないので、commit 済みの差分だけで done にすると統合されない変更を
+  残したまま後続タスクが走る。被運転へ commit を促すか現場監督が裁定する。
+  `dirty=no` のときだけ `committed` で決める: `committed=yes` なら完了条件を満たす。両方 no の
+  「本当に変更不要で終わった `impl`」は自動では done にせず、理由をレポートで確認したうえで
   現場監督が done か failed かを裁定する(原因も対処も違うので同じ扱いにしない)。
 - **並列 Monitor の pane 別状態**: tmux-claude-drive 手順 3 の Monitor は単一 pane 前提なので、
   現場監督は**どの pane が 完了 / usage limit / 権限プロンプト / API Error / pane 消失か**を
