@@ -90,6 +90,32 @@ sent_count() {
   [ "$(sent_count)" -eq 0 ]
 }
 
+@test "permission detect error: grep failure is treated as prompt (never sends)" {
+  # PERMISSION_ERE の照合だけを rc=2(照合エラー)に化けさせる grep shim。banner 判定など
+  # 他の grep は実物へ委譲する(全部落とすと usage limit 検知まで壊れて別経路になる)。
+  shim="$BATS_TEST_TMPDIR/bin"
+  mkdir -p "$shim"
+  cat >"$shim/grep" <<'EOF'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+  *"do you trust"*) exit 2 ;;
+  esac
+done
+exec /usr/bin/grep "$@"
+EOF
+  chmod +x "$shim/grep"
+
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 "usage limit reached"
+  step 2 node 100 "Do you want to proceed?"
+  step 3 node 100 "Do you want to proceed?"
+  PATH="$shim:$PATH" RLR_MAX_ITER=4 run bash "$SCRIPT" "sess:win.0"
+  # 照合不能を「プロンプト無し」に倒すと再開フレーズを送ってしまう(permission laundering)。
+  [ "$(sent_count)" -eq 0 ]
+  [[ "$output" == *"permission-prompt human-needed"* ]]
+}
+
 @test "claude gone (shell foreground): route-b exit 2, no send" {
   step 0 zsh 100 ""
   RLR_MAX_ITER=5 run bash "$SCRIPT" "sess:win.0"

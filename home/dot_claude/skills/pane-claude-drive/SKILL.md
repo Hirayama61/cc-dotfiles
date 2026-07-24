@@ -51,8 +51,11 @@ pane-claude-drive)」節が正典。本文の「タスク pane」はシリーズ
   tail_txt="$(tmux capture-pane -t "$pane_id" -p)" || { echo "capture 失敗。送信中止" >&2; exit 1; }
   tail_txt="$(printf '%s\n' "$tail_txt" | tail -25)"
   # grep は 0=一致 / 1=不一致 / 2 以上=エラー(不正 ERE 等)。エラーを不一致に倒すと
-  # 検知不能のまま送信に進むので、rc を 3 分岐して不一致だけを続行に割り当てる。
-  mrc=0; printf '%s' "$tail_txt" | grep -qiE "$ere" || mrc=$?
+  # 検知不能のまま送信に進む。
+  # -a: agent shell の grep は -I 相当が効き、不正 UTF-8 を含む pane をバイナリ扱いして
+  #     一致を rc=1(=唯一の続行値)で返す。herestring: pipefail 下で grep -q の早期終了が
+  #     printf に SIGPIPE を返し、一致が rc=141 に化けるのを避ける。
+  mrc=0; grep -aqiE -e "$ere" <<<"$tail_txt" || mrc=$?
   case "$mrc" in
     0) echo "権限プロンプト滞留。送信せず人間へ要約提示" >&2; exit 1 ;;
     1) ;;

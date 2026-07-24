@@ -59,7 +59,14 @@ has_limit() {
 # カーソル+選択肢は番号の直後に . か ) を必須にする(`> 123 files` 等の通常出力の誤検知回避)。
 PERMISSION_ERE='do you want to|do you trust|allow this (command|tool|edit|action)|approve (running|this)|overwrite (the |existing |this )|[❯▶►>][[:space:]]*([0-9]+[.)]|yes\b|no\b)|\[y/n\]|\(y/n\)|press .*to (confirm|approve)|(実行|続行|作成|変更|適用|削除|上書き|許可)して?も?(よろしいですか|いいですか|よろしいでしょうか)|しますか[?？]'
 has_permission() {
-  printf '%s' "$1" | grep -qiE "$PERMISSION_ERE"
+  # 照合不能(不正 ERE・grep 不在・pipefail 下の SIGPIPE 等)を「プロンプト無し」に倒すと
+  # 権限プロンプトへ再開フレーズを送る。rc=1(不一致)だけを「無し」に割り当て、それ以外は
+  # 滞留側へ倒す。過検知で送れない状態が続いても PERMSTUCK_MAX_ITERS の exit 5 が受ける。
+  # -a は agent shell 等の -I 付き grep が不正 UTF-8 を含む pane をバイナリ扱いして
+  # 一致を rc=1 に化けさせるのを防ぐ。
+  prc=0
+  grep -aqiE -e "$PERMISSION_ERE" <<<"$1" || prc=$?
+  [ "$prc" -ne 1 ]
 }
 
 default_reset_seconds() {
