@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# dev-pipeline の rate-limit-resume.sh の状態機械を固定する(Plan v2 §2.3 / §7.4)。
+# tmux-claude-drive 付属の rate-limit-resume.sh の状態機械を固定する。
 #
 # tmux は RLR_TMUX で fake に差し替える(実 tmux に触れない)。fake は stateful:
 # capture-pane 呼び出しごとにステップカウンタを進め、各ステップの
@@ -11,7 +11,7 @@
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd)"
-  SCRIPT="$REPO_ROOT/home/dot_claude/skills/dev-pipeline/scripts/executable_rate-limit-resume.sh"
+  SCRIPT="$REPO_ROOT/home/dot_claude/skills/tmux-claude-drive/scripts/executable_rate-limit-resume.sh"
 
   STEPDIR="$BATS_TEST_TMPDIR/steps"
   mkdir -p "$STEPDIR"

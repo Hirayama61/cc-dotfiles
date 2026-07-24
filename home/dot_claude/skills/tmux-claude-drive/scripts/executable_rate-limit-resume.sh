@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# dev-pipeline レートリミット自動再開タイマー(経路 A)。
+# レートリミット自動再開タイマー(経路 A)。tmux-claude-drive の付属部品で、
+# 運転元(pane-claude-drive / home-claude-drive 等)が pane ごとに起動する。
 #
 # 被運転セッションが usage limit で止まったとき、素のシェル(Claude のレートリミットを
-# 消費しない)が対象 pane を周期監視し、明けたら再開フレーズを 1 度送る。指揮者が
+# 消費しない)が対象 pane を周期監視し、明けたら再開フレーズを 1 度送る。運転元が
 # Monitor でこの出力を回収し、経路 B 切替などの遷移判断を行う(このスクリプト自身は
-# 経路 B へ遷移しない)。設計の状態機械は Plan v2 §2.3 / §7.4。
+# 経路 B へ遷移しない)。運転元から見た経路 A / B の切り分けは
+# pane-claude-drive SKILL §9、usage limit 検知の委譲は tmux-claude-drive パラメータ節。
 #
 # Usage: rate-limit-resume.sh <target> [<phrase>]
 #        rate-limit-resume.sh --parse-reset   (stdin の banner から明けまで秒を stdout。自己テスト用)
@@ -18,7 +20,7 @@
 #   2  経路 B が必要(pane が別プロセスに置換 / claude 消失 / pane 解決不能)
 #   3  タイムアウト(RLR_MAX_ITER 到達)
 #   4  再送上限到達(RLR_MAX_RESEND 回送っても banner が残る)
-#   5  権限プロンプト滞留(誰も答えないまま RLR_PERMSTUCK_MAX_ITERS 回。指揮者へ委譲)
+#   5  権限プロンプト滞留(誰も答えないまま RLR_PERMSTUCK_MAX_ITERS 回。運転元へ委譲)
 #   1  使用方法エラー
 #
 # 環境変数(既定は実運用値):
@@ -30,7 +32,7 @@
 #   RLR_TMUX                tmux コマンド(既定 tmux)。テストは PATH shim か明示注入。
 #   RLR_RESET_PARSE         指定時、banner 全文を stdin で渡して「明けまでの sleep 秒」を
 #                           stdout に返す外部コマンド(内蔵パーサより優先)。
-#   RLR_SIGNAL_FILE         指定時、状態行を追記する合図ファイル(指揮者が回収)。
+#   RLR_SIGNAL_FILE         指定時、状態行を追記する合図ファイル(運転元が回収)。
 set -euo pipefail
 
 PROG="${0##*/}"
@@ -248,7 +250,7 @@ while :; do
   # よる権限誤検知・リセット時刻の誤マッチを避ける。
   text="$(printf '%s\n' "$screen" | tail -n 25)"
 
-  # 権限プロンプトには絶対に送らない。滞留し続けたら exit 5 で指揮者へ委譲(無限ループ回避)。
+  # 権限プロンプトには絶対に送らない。滞留し続けたら exit 5 で運転元へ委譲(無限ループ回避)。
   if has_permission "$text"; then
     perm_iters=$((perm_iters + 1))
     if [ "$PERMSTUCK_MAX_ITERS" -gt 0 ] && [ "$perm_iters" -ge "$PERMSTUCK_MAX_ITERS" ]; then

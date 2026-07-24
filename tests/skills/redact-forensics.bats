@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
-# dev-pipeline forensics redaction の決定論的マスクと行数上限を固定する(SKILL §8 / V2 security）。
+# tmux-claude-drive 付属の forensics redaction の決定論的マスクと行数上限を固定する。
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME}")/../.." && pwd)"
-  SCRIPT="$REPO_ROOT/home/dot_claude/skills/dev-pipeline/scripts/executable_redact-forensics.sh"
+  SCRIPT="$REPO_ROOT/home/dot_claude/skills/tmux-claude-drive/scripts/executable_redact-forensics.sh"
 }
 
 redact() { printf '%s' "$1" | bash "$SCRIPT" "${2:-0}"; }
