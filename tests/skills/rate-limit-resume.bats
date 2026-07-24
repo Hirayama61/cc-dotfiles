@@ -91,8 +91,11 @@ sent_count() {
 }
 
 @test "permission detect error: grep failure is treated as prompt (never sends)" {
-  # PERMISSION_ERE の照合だけを rc=2(照合エラー)に化けさせる grep shim。banner 判定など
-  # 他の grep は実物へ委譲する(全部落とすと usage limit 検知まで壊れて別経路になる)。
+  # PERMISSION_ERE の照合だけを rc=2(照合エラー)に化けさせる grep shim。
+  # 他の grep は実物へ委譲する(現ステップ列では到達しないが、ステップを足した時に
+  # usage limit 検知まで巻き込まないための保険)。実 grep は PATH 差し替え前に解決する
+  # (自己再帰の回避 + gnubin 等で grep を差し替えた開発機で実装を固定しないため)。
+  real_grep="$(command -v grep)"
   shim="$BATS_TEST_TMPDIR/bin"
   marker="$BATS_TEST_TMPDIR/shim-fired"
   mkdir -p "$shim"
@@ -103,7 +106,7 @@ for a in "\$@"; do
   *"do you trust"*) : >"$marker"; exit 2 ;;
   esac
 done
-exec /usr/bin/grep "\$@"
+exec "$real_grep" "\$@"
 EOF
   chmod +x "$shim/grep"
 
@@ -114,9 +117,12 @@ EOF
   step 1 node 100 "usage limit reached"
   step 2 node 100 "assistant is thinking"
   step 3 node 100 "assistant is thinking"
-  PATH="$shim:$PATH" RLR_MAX_ITER=4 run bash "$SCRIPT" "sess:win.0"
+  run env PATH="$shim:$PATH" RLR_MAX_ITER=4 bash "$SCRIPT" "sess:win.0"
   # shim が実際に照合エラー経路を通したことを固定する(通っていなければ以下は無意味)。
   [ -f "$marker" ]
+  # 滞留のまま RLR_MAX_ITER に到達する経路を固定する(exit 5 の permission-stuck へ
+  # 流れる変化を素通しにしない)。
+  [ "$status" -eq 3 ]
   # 照合不能を「プロンプト無し」に倒すと再開フレーズを送ってしまう(permission laundering)。
   [ "$(sent_count)" -eq 0 ]
   [[ "$output" == *"permission-prompt human-needed"* ]]
