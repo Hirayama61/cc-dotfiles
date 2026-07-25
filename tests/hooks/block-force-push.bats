@@ -37,8 +37,8 @@ setup() {
 }
 
 @test "blocks git push --force-with-lease=<refspec> (flag with a value)" {
-  # hook ヘッダが「--force=値 の素通りも塞ぐ」と宣言する形。値付きは = で1トークンに
-  # 癒着するため、完全一致だけの判定だと取りこぼす。
+  # 値付きフラグは = で1トークンに癒着するため、完全一致だけの判定だと取りこぼす。
+  # 検証しているのは --force-with-lease=値 であって --force=値 ではない。
   run_hook block-force-push.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git push --force-with-lease=main:abc123 origin main"}}'
   [ "$status" -eq 2 ]
