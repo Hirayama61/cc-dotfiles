@@ -77,7 +77,8 @@ hook で守れる事項は書かない。
   skill(self-review / design-review / guide-capture / obsidian-memory 等が
   `resolve-repo-key.sh "$PWD"` でキーを引く)は cwd が対象 worktree でないとキー基点がずれる。
   ゲート系(self-review / design-review)でずれると恒久ブロックになりうる。
-  Bash の `cd` は呼び出しごとにリセットされるので代用にならない。
+  Bash の `cd <worktree> && …` は 1 コマンド内なら効くが次の呼び出しへ持ち越されないため、
+  全呼び出しで書く必要があり 1 箇所の抜けがキーずれになる。EnterWorktree はセッション単位で効く。
   `wt.sh` のフラット配置(`~/worktrees/...`)でも `path` 入場は通る。
   **制約**: セッションの起動リポと別リポの worktree には入場できない(dotfiles セッションから
   cc-dotfiles の worktree は拒否される)。cross-repo が要る時は対象リポでセッションを立て直す。

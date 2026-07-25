@@ -97,8 +97,8 @@ reviewer: design-reviewer / Codex({実施 or skip 理由})
   字句修正なら人間の判断で省略してよい。
 - トリアージ完了を確認したらフラグを立てる(キーは `flag-paths.sh` が単一情報源。
   **レビュー対象 repo 内(`$PWD`)で実行する**。cwd が対象 worktree でなければ先に
-  `EnterWorktree({path})` で入場する。Bash の `cd` は呼び出しごとにリセットされるため
-  代用にならない):
+  `EnterWorktree({path})` で入場する。入場できない時は `cd <worktree> && …` を
+  この呼び出し自体に付ける(1 コマンド内でのみ有効)):
 
   ```sh
   repo="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$PWD" 2>/dev/null || true)"
