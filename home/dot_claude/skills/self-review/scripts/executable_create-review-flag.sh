@@ -2,7 +2,9 @@
 # create-review-flag.sh — self-review skill 手順 5 の review-passed フラグ作成を移設。
 #
 # Usage: create-review-flag.sh <tier1_lastline> <tier2_lastline> <reason1> <reason2>
-#   stdin: 見送り triage 行(`triage: F-NNN 見送り — 理由` 形式、0 行以上)。
+#   stdin: 見送り triage 行(0 行以上)。本スクリプトは書式を検証せず行頭前置のみ行うため
+#          書式非依存。書式の正典は SKILL.md 手順 5
+#          (現行: `triage: F-NNN [{severity}/{cat}] 確信度:{値} 見送り — 理由`)。
 #   レビュー対象 repo 内($PWD = 対象 worktree)で呼ばれる前提。gate / postcommit は
 #   フラグキーを push 実対象 dir 起点で引くため、別 cwd で実行するとキー基点がずれて
 #   恒久ブロックになりうる。
