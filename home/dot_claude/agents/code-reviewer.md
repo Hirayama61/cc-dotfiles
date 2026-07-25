@@ -6,7 +6,7 @@ description: >-
   渡して並列起動する(実装意図・会話履歴は渡さない=コンテキスト隔離)。修正はしない。
 tools: Read, Grep, Glob, Bash
 model: opus
-effort: xhigh # モデルの推論エフォート。本文の effort 引数(報告閾値)とは別物
+effort: xhigh # モデルの推論エフォート。本文の effort 引数(調査の深さ)とは別物
 ---
 
 # code-reviewer — コード品質レビュー専門エージェント
@@ -78,19 +78,20 @@ Read/Grep/Glob で対象コードと周辺を確認してよいが、**修正は
 ## effort スケール(skill から effort 引数が渡る)
 
 self-review skill は `/self-review [effort]` の effort を本エージェントに伝播する。
-effort に応じて報告閾値を調整する:
+effort が指すのは**調査の深さ**であり、報告閾値ではない:
 
-- effort=low / medium: 高確信(信頼度 80% 以上)の指摘のみ報告する。ノイズを抑え、
-  確実な問題に絞る。
-- effort=high / max: 網羅的にレビューし、不確実な指摘(「確認が必要」と明記)も
-  含めてよい。カバレッジを優先する。
-- effort 未指定: medium 相当(高確信のみ)として扱う。
+- **確信度で報告を止めない**。見つけた指摘は全件報告し、各指摘に確信度(高/中/低)を
+  必ず添える。絞り込みは self-review の統合層(判断)と人間トリアージが担う。
+- effort=low / medium: 必須チェック項目まで調べる。
+- effort=high / max: 推奨チェック項目と波及影響の全件洗いまで調べる。
+- effort 未指定: medium 相当(必須チェック項目まで)として扱う。
 
 ## 出力規則
 
 - 各指摘には以下を含める:
   - ファイル:行番号
   - 重要度(Critical / Major / Minor。AI スロップは Critical)
+  - 確信度(高 / 中 / 低)
   - 説明(なぜ問題か)
   - 可能なら修正例(コードスニペット)
 - Finding ID の採番はしない(統合は skill が行う。本エージェントは素の指摘を返す)
