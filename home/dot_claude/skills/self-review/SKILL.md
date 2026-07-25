@@ -27,6 +27,15 @@ reviewer には**コンテキスト隔離**を徹底する。これがこのス�
 
 ## 手順
 
+**前提(手順 1 に入る前に満たす)**: このスキルは**レビュー対象 repo 内(`$PWD` = 対象 worktree)で走らせる**。
+手順 1.5 の消失検知は `$PWD` を引数に取り、手順 5 のフラグキーも `$PWD` 起点で導出するため、
+cwd がずれると Tier 判定が別 repo のものになり、フラグも別ブランチのキーで立つ
+(恒久ブロックだけでなく、未レビューのブランチを解錠する危険側の失敗も起きうる)。
+cwd が対象 worktree でなければ `EnterWorktree({path})` で入場する(セッション単位で効く)。
+入場できない時(起動リポと別リポの worktree)は、本スキルが走らせる**全 Bash 呼び出しを
+`cd <worktree> && …` で始める** — 1 コマンド内なら `$PWD` は正しく解決されるが次の呼び出しへ
+持ち越されないため、1 箇所の抜けがキーずれになる。
+
 ### 1. 対象 diff の特定
 
 - `git branch --show-current` で現在ブランチを確認。
@@ -246,10 +255,18 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
   - `tier1-ack:` / `tier2-ack:` … 該当 Tier の ack 理由。**該当 Tier の理由が空ならフラグを書かず中断**(空理由での素通り防止)。
   - `triage:` … 見送った finding を `F-NNN 見送り — 理由` の形で 1 行 1 件記録する。
   - 該当ゼロ(指摘ゼロ かつ Tier OK/SKIP)なら内容は空でよい(空ファイルを作る)。
-- トリアージ完了を確認したら次のスクリプトでフラグを立てる。第 1/2 引数は手順 1.5 で捕捉した各 Tier 出力の**最終行**、第 3/4 引数は 4b で人間が述べた ack 理由(該当 Tier 非該当なら空文字)、stdin は見送り triage 行(`triage: F-NNN 見送り — 理由`、0 行以上)。**このスキルはレビュー対象 repo 内(`$PWD` = 対象 worktree)で実行すること**。gate / postcommit はフラグキーを push 実対象 dir(`git -C`/`cd` 解決)起点で引くため、別 cwd で実行するとキー基点がずれて恒久ブロックになりうる。cwd が対象 worktree でなければ**手順 1 の前に** `EnterWorktree({path})` で入場する(セッション単位で効く)。入場できない時(起動リポと別リポの worktree)は、本スキルが走らせる**全 Bash 呼び出しを `cd <worktree> && …` で始める** — 1 コマンド内なら `$PWD` は正しく解決されるが次の呼び出しへ持ち越されないため、1 箇所の抜けがキーずれになる。
+- トリアージ完了を確認したら次のスクリプトでフラグを立てる。第 1/2 引数は手順 1.5 で捕捉した各 Tier 出力の**最終行**、第 3/4 引数は 4b で人間が述べた ack 理由(該当 Tier 非該当なら空文字)、stdin は見送り triage 行(`triage: F-NNN 見送り — 理由`、0 行以上)。cwd は手順冒頭の前提どおり対象 worktree であること。手順 1.5 と 4b の値はシェル変数として残っていない(別 Bash 呼び出しは状態を引き継がない)ため、**下のブロックは値をリテラルで書き写し 1 回の Bash 実行で完結させる**。空文字のまま渡すと ack 必須の判定(`create-review-flag.sh` の `TIER1-RESULT: DECREASE` 照合)が外れ、ack 理由なしでフラグが立つ。
   ```sh
-  tier1_last="$(printf '%s\n' "$tier1_out" | tail -n1)"
-  tier2_last="$(printf '%s\n' "$tier2_out" | tail -n1)"
+  # 手順 1.5 の Tier 出力最終行と 4b の人間の発話を、ここへ literal で書き写す。
+  tier1_last='TIER1-RESULT: ...'  # 手順 1.5 の TIER1-RESULT 行をそのまま
+  tier2_last='TIER2-RESULT: ...'  # 同 TIER2-RESULT 行
+  reason1=''                      # Tier 1 が DECREASE のときだけ 4b の ack 理由
+  reason2=''                      # Tier 2 が RESURRECT のときだけ同上
+  triage_lines=''                 # 見送り 1 件 1 行: 'triage: F-001 見送り — 理由'
+  # 書き写し忘れ(空・例文のまま)を fail-closed で弾く。
+  case "$tier1_last$tier2_last" in
+  '' | *...*) echo "Tier 最終行が未記入。中断" >&2; exit 1 ;;
+  esac
   printf '%s' "$triage_lines" \
     | ~/.claude/skills/self-review/scripts/create-review-flag.sh \
         "$tier1_last" "$tier2_last" "$reason1" "$reason2"

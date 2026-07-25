@@ -18,11 +18,15 @@ run = "shellcheck --severity=error home/dot_claude/hooks/*.sh home/dot_claude/ho
 [tasks.syntax]
 description = "構文チェック(hooks/lib + skills のシェルは bash 3.2 / python は ast)"
 # bash -n は先頭ファイル引数のみ検査し残りは位置パラメータになるため -n1 で 1 ファイルずつ回す。
-# mise は set -e 相当だが pipefail は付けないため、明示しないと find 失敗時に xargs が
-# 入力ゼロで正常終了し検査 0 件のまま緑になる。
+# 検査 0 件のまま緑になる経路が 2 つある: find 自体の失敗(mise は set -e 相当だが pipefail は
+# 付けないので明示が要る)と、find は成功したが 1 件もマッチしない場合(xargs が何も実行せず
+# exit 0)。前者を pipefail、後者を件数ガードで塞ぐ。
 # py_compile はリポに __pycache__ を書くため使わない。
 run = """
 set -o pipefail
+sh_n="$(find home/dot_claude/hooks home/dot_claude/skills -name '*.sh' | wc -l | tr -d ' ')"
+py_n="$(find home/dot_claude -name '*.py' | wc -l | tr -d ' ')"
+[ "$sh_n" -gt 0 ] && [ "$py_n" -gt 0 ] || { echo "検査対象が 0 件(sh=$sh_n py=$py_n)。中断" >&2; exit 1; }
 find home/dot_claude/hooks home/dot_claude/skills -name '*.sh' -print0 | xargs -0 -n1 /bin/bash -n --
 find home/dot_claude -name '*.py' -print0 | xargs -0 -n1 python3 -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8").read(), sys.argv[1])'
 """

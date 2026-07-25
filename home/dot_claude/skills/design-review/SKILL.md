@@ -25,6 +25,13 @@ self-review(push 前・差分ベース)の**設計時版**。Plan が実装に�
 
 ## 手順
 
+**前提(手順 1 に入る前に満たす)**: このスキルは**レビュー対象 repo 内(`$PWD`)で走らせる**。
+手順 1 の用語集パスも手順 4 のフラグキーも `$PWD` から導出するため、cwd がずれると
+別 repo・別ブランチのキーでゲートを解錠しうる。cwd が対象 worktree でなければ
+`EnterWorktree({path})` で入場する。入場できない時(起動リポと別リポの worktree)は、
+本スキルが走らせる**全 Bash 呼び出しを `cd <worktree> && …` で始める** — 1 コマンド内なら
+`$PWD` は正しく解決されるが次の呼び出しへ持ち越されない。
+
 ### 1. レビュー材料の確定
 
 - **Plan 本文**: これから確定しようとしている Plan(ExitPlanMode に渡す内容
@@ -96,9 +103,8 @@ reviewer: design-reviewer / Codex({実施 or skip 理由})
 - must-fix を Plan に反映した場合、変更が設計の方向を変えるなら再レビュー、
   字句修正なら人間の判断で省略してよい。
 - トリアージ完了を確認したらフラグを立てる(キーは `flag-paths.sh` が単一情報源。
-  **レビュー対象 repo 内(`$PWD`)で実行する**。cwd が対象 worktree でなければ手順 1 の前に
-  `EnterWorktree({path})` で入場する。入場できない時は本スキルが走らせる**全 Bash 呼び出し**を
-  `cd <worktree> && …` で始める。下の 2 ブロックは変数を引き継ぐため 1 回の Bash 実行にまとめる):
+  cwd は手順冒頭の前提どおり対象 repo であること。下の 2 ブロックは変数を引き継ぐため
+  1 回の Bash 実行にまとめる):
 
   ```sh
   repo="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$PWD" 2>/dev/null || true)"
@@ -120,6 +126,8 @@ reviewer: design-reviewer / Codex({実施 or skip 理由})
   bash の case パターン形式。ディレクトリは `dir/*` と書く):
 
   ```sh
+  # 変数を引き継がず別実行された時に空キーのファイルを作らせない(Tier 3 が黙って無効化される)。
+  [ -n "$repo" ] || { echo "repo key が引けない。中断" >&2; exit 1; }
   scope_file="$("$HOME/.claude/hooks/lib/flag-paths.sh" design-scope-pending "$repo")"
   case "$branch" in
   "" | main | master | develop | epic/*) : ;;
