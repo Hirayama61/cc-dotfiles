@@ -114,7 +114,7 @@ FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
 - GitHub issue があれば `"issue": "<URL>"` を任意で持つ(リンクのみ。正にしない)。
 - **writer は配車した側のみ**。現場監督は fleet を書かない(2026-07-26 変更。進捗欄が
   無くなり現場監督が書くべきものが消えたため、単一 writer を配車側へ寄せた)。
-  完了検知は配車側が window の消滅を測って裁定する — 現場監督の done 書込を待たない。
+  完了裁定も配車側が行い、現場監督の done 書込を待たない(判定条件は §4)。
 - **書込は原子的置換**(読み手の部分読みを防ぐ。bash 3.2 互換):
 
   ```bash
@@ -139,7 +139,10 @@ FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
 
 3. **現場監督を起動**: `claude --model opus`(+ 必要なら `--effort`)。起動確認・auto mode
    表示確認は tmux-claude-drive 手順 1 のとおり。
-4. **初期指示を literal 送信**(tmux-claude-drive 手順 2 の作法)。定型で必ず含める:
+4. **初期指示を literal 送信**(tmux-claude-drive 手順 2 の作法)。送る文字列は
+   **単一行・制御文字なしを保証してから送る**(pane-claude-drive §5-3 と同契約 — 改行の混入は
+   `send-keys -l` の途中確定になり、premature submit とクロスセッション注入の経路になる)。
+   長い指示はファイルへ書いてパスだけを送る。定型で必ず含める:
    - タスク内容と完了条件。要件が曖昧なら「まず /grill-with-docs で要件を確定してから着手」。
      grill の対話相手は人間なので、その window で人間待ちになる(配車側が隣で整理して
      要約を渡す伝言ゲームを作らない)。
@@ -163,18 +166,19 @@ FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
 - 権限プロンプト検知に一致したら、人間をその window へ案内する(要約して代理で答えない)。
 
 **完了裁定も配車側が行う**(§2 の単一 writer 契約。現場監督の done 書込を待たない)。
-fleet を読む時、`status=running` の各タスクについて `tmux_window` の生存を確認して裁定する:
+**判定条件は tmux-claude-drive 手順 3 の「スピナー不在 AND 完了フレーズの単独行一致」**をそのまま
+使い、ここで別基準を定義しない(§1 の「再実装しない」に従う)。fleet を読む時、`status=running` の
+各タスクについて次の順で裁定する:
 
-```bash
-tmux list-windows -F '#{window_id}' | grep -qx "$tmux_window"
-```
-
-- window が生存 → そのまま `running`。進捗は必要な時だけ pane を capture して見る。
-- window が消滅 → 完了フレーズを確認できていれば `status=done` にして `$FLEET_DIR/done/` へ
-  mv、確認できなければ `status=blocked` にして人間へ報告する。
-- window は在るが pane が消えている → `status=blocked` にして人間へ報告する。
+1. `tmux_window` が生きているか(`tmux list-windows -F '#{window_id}'` に一致があるか)。
+2. 生きていれば pane 末尾を capture し、tmux-claude-drive 手順 3 の判定にかける。
+   完了と判定できた時だけ `status=done` にして `$FLEET_DIR/done/` へ mv する。
+3. **window / pane が消えていたら完了ではない** — `status=blocked` にして人間へ報告する。
+   消滅はクラッシュ・rate limit 停止・人間の誤操作でも起きるので、done の根拠にしない
+   (単一シグナルでの完了裁定は実測で偽陽性が 3 連発している)。
 
 裁定を怠ると終わったタスクが `running` のまま残り、fleet を台帳として読む側の俯瞰が狂う。
+逆に消滅を done と読むと、落ちた作業が完了として埋もれる。
 
 ## 5. fail-open
 
