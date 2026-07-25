@@ -4,6 +4,8 @@
 # delete/archive/edit)を止め、read-only な gh と対象外(gh api)を通すことを固定する。
 #
 # 遮断は exit 2 のみ。fail-open の判定は「exit != 2」(このリポの規約)。
+# pr / release / repo は独立した3分岐で、status だけでは「別分岐が発火した」型の退行を
+# 検知できないため、各分岐の代表テストでブロックメッセージも突き合わせる。
 
 load ../helpers/common
 
@@ -15,6 +17,7 @@ setup() {
   run_hook block-gh-mutations.sh \
     '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 123 --squash"}}'
   [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'gh pr の'
 }
 
 @test "blocks gh pr ready" {
@@ -69,6 +72,7 @@ setup() {
   run_hook block-gh-mutations.sh \
     '{"tool_name":"Bash","tool_input":{"command":"gh release create v1.0.0"}}'
   [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'gh release の'
 }
 
 @test "blocks gh release delete" {
@@ -77,16 +81,38 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "blocks gh release edit" {
+  run_hook block-gh-mutations.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"gh release edit v1.0.0 --draft=false"}}'
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'gh release の'
+}
+
+@test "blocks gh release upload" {
+  run_hook block-gh-mutations.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"gh release upload v1.0.0 dist/app.zip"}}'
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'gh release の'
+}
+
 @test "blocks gh repo delete" {
   run_hook block-gh-mutations.sh \
     '{"tool_name":"Bash","tool_input":{"command":"gh repo delete owner/repo"}}'
   [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'gh repo の'
 }
 
 @test "blocks gh repo archive" {
   run_hook block-gh-mutations.sh \
     '{"tool_name":"Bash","tool_input":{"command":"gh repo archive owner/repo"}}'
   [ "$status" -eq 2 ]
+}
+
+@test "blocks gh repo edit" {
+  run_hook block-gh-mutations.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"gh repo edit --visibility private"}}'
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'gh repo の'
 }
 
 @test "allows read-only gh pr commands" {
@@ -120,8 +146,9 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "allows gh api (out of scope by design)" {
+@test "accepted gap: gh api is out of scope" {
   # gh api は read-only な GET を多く含み誤検知が多いため意図的に非対象(hook ヘッダ)。
+  # `accepted gap:` 接頭辞は「hook が守れていないと合意済みの穴」の機械的な目印。
   run_hook block-gh-mutations.sh \
     '{"tool_name":"Bash","tool_input":{"command":"gh api -X DELETE repos/owner/repo/issues/1"}}'
   [ "$status" -eq 0 ]
@@ -137,6 +164,14 @@ setup() {
 @test "guarded source: corrupt resolve-git-target lib fails open (exit != 2)" {
   echo "{ broken bash (" >"$HOME/.claude/hooks/lib/resolve-git-target.sh"
   run_hook block-gh-mutations.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 1"}}'
+  [ "$status" -ne 2 ]
+}
+
+@test "fails open without jq (exit != 2)" {
+  local nojq
+  nojq="$(make_no_jq_path)"
+  run_hook_env "$nojq" block-gh-mutations.sh \
     '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 1"}}'
   [ "$status" -ne 2 ]
 }

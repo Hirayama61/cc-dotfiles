@@ -36,6 +36,14 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "blocks git push --force-with-lease=<refspec> (flag with a value)" {
+  # hook ヘッダが「--force=値 の素通りも塞ぐ」と宣言する形。値付きは = で1トークンに
+  # 癒着するため、完全一致だけの判定だと取りこぼす。
+  run_hook block-force-push.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git push --force-with-lease=main:abc123 origin main"}}'
+  [ "$status" -eq 2 ]
+}
+
 @test "blocks git push --force-if-includes" {
   run_hook block-force-push.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git push --force-if-includes origin main"}}'
@@ -83,8 +91,17 @@ setup() {
 }
 
 @test "guarded source: corrupt resolve-git-target lib fails open (exit != 2)" {
+  # 入力は smoke-all.bats の全 hook 一括版(`git push --force`)と重ならない値付き形にする。
   echo "{ broken bash (" >"$HOME/.claude/hooks/lib/resolve-git-target.sh"
   run_hook block-force-push.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git push --force-with-lease=main:abc123"}}'
+  [ "$status" -ne 2 ]
+}
+
+@test "fails open without jq (exit != 2)" {
+  local nojq
+  nojq="$(make_no_jq_path)"
+  run_hook_env "$nojq" block-force-push.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git push --force"}}'
   [ "$status" -ne 2 ]
 }

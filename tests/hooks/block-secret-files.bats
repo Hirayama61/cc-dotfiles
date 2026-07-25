@@ -40,15 +40,46 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "blocks reading a pfx bundle" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/certs/client.pfx"}}'
+  [ "$status" -eq 2 ]
+}
+
 @test "blocks reading an ssh private key" {
   run_hook block-secret-files.sh \
     '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.ssh/id_ed25519"}}'
   [ "$status" -eq 2 ]
 }
 
+@test "blocks reading an rsa private key" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.ssh/id_rsa"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading an ecdsa private key" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.ssh/id_ecdsa"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a dsa private key" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.ssh/id_dsa"}}'
+  [ "$status" -eq 2 ]
+}
+
 @test "blocks reading credentials.json" {
   run_hook block-secret-files.sh \
     '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.config/gcloud/credentials.json"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading an extensionless credentials file" {
+  # ~/.aws/credentials は実在頻度が高く、拡張子が付かない形も完全一致で止める。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.aws/credentials"}}'
   [ "$status" -eq 2 ]
 }
 
@@ -67,6 +98,21 @@ setup() {
 @test "blocks reading a .secret file" {
   run_hook block-secret-files.sh \
     '{"tool_name":"Read","tool_input":{"file_path":"/proj/db.secret"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a .secrets file" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/db.secrets"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading .env.example (intentional: .env.* glob is conservative)" {
+  # `.env.*` グロブは中身を問わず止める。.env.example は秘密を含まないことが多いが、
+  # 実際の秘密が入った .env.<環境名> と機械的に区別できないため安全側へ倒している。
+  # これは意図的な挙動であり、緩めるなら人間の判断が要る(読みたい時は人間が ! で実行する)。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/.env.example"}}'
   [ "$status" -eq 2 ]
 }
 
@@ -97,8 +143,10 @@ setup() {
 }
 
 @test "allows input without a file_path" {
+  # 中立な payload を使う。Bash 経由の秘密読み出し(`cat .env` 等)は本 hook の対象外だが、
+  # それをここで「通る」側に固定すると、将来 Bash 側を塞ぐ判断をした時に退行と読まれる。
   run_hook block-secret-files.sh \
-    '{"tool_name":"Bash","tool_input":{"command":"cat .env"}}'
+    '{"tool_name":"Read","tool_input":{}}'
   [ "$status" -eq 0 ]
 }
 

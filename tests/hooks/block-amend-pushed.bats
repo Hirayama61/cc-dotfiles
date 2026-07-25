@@ -84,19 +84,27 @@ add_local_commit() {
   [ "$status" -eq 0 ]
 }
 
-@test "fails open outside a git repo" {
+@test "fails open outside a git repo (exit != 2)" {
   outside="$BATS_TEST_TMPDIR/not-a-repo"
   mkdir -p "$outside"
   run git -C "$outside" rev-parse --is-inside-work-tree
   [ "$status" -ne 0 ]
   run_hook block-amend-pushed.sh \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit --amend --no-edit\"},\"cwd\":\"$outside\"}"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 2 ]
 }
 
 @test "guarded source: corrupt resolve-git-target lib fails open (exit != 2)" {
   echo "{ broken bash (" >"$HOME/.claude/hooks/lib/resolve-git-target.sh"
   run_hook block-amend-pushed.sh \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit --amend --no-edit\"},\"cwd\":\"$REPO\"}"
+  [ "$status" -ne 2 ]
+}
+
+@test "fails open without jq (exit != 2)" {
+  local nojq
+  nojq="$(make_no_jq_path)"
+  run_hook_env "$nojq" block-amend-pushed.sh \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit --amend --no-edit\"},\"cwd\":\"$REPO\"}"
   [ "$status" -ne 2 ]
 }

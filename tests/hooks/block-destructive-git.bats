@@ -4,6 +4,8 @@
 # branch -D / restore / checkout -- / worktree remove --force)。
 #
 # 遮断は exit 2 のみ。fail-open の判定は「exit != 2」(このリポの規約)。
+# restore / checkout の `--` と `-f` / worktree は隣接する分岐で、status だけでは
+# 「別分岐が発火した」型の退行を検知できないため、ブロックメッセージも突き合わせる。
 
 load ../helpers/common
 
@@ -39,6 +41,12 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git clean -nfd"}}'
   [ "$status" -eq 0 ]
+}
+
+@test "blocks git clean --force (long flag, no path)" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git clean --force"}}'
+  [ "$status" -eq 2 ]
 }
 
 @test "allows git clean --dry-run --force" {
@@ -87,12 +95,14 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git restore src/main.sh"}}'
   [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'git restore'
 }
 
 @test "blocks git restore --staged --worktree" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git restore --staged --worktree src/main.sh"}}'
   [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'git restore'
 }
 
 @test "allows git restore --staged (index only)" {
@@ -105,12 +115,21 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout -- src/main.sh"}}'
   [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'git checkout -- <path>'
 }
 
 @test "blocks git checkout -f" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout -f main"}}'
   [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'git checkout -f'
+}
+
+@test "blocks git checkout --force (long flag)" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout --force main"}}'
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'git checkout -f'
 }
 
 @test "allows git checkout -b (new branch)" {
@@ -129,6 +148,14 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git worktree remove --force /tmp/wt"}}'
   [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'git worktree remove --force'
+}
+
+@test "blocks git worktree remove -f (short flag)" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git worktree remove -f /tmp/wt"}}'
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'git worktree remove --force'
 }
 
 @test "allows git worktree remove without --force" {
@@ -156,6 +183,14 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "no false positive: destructive command inside a heredoc body is allowed" {
+  # strip_heredocs が本文を除去する経路。ドキュメントや手順書を heredoc で書き出す時に
+  # 本文中の git コマンドで誤爆しないことを固定する。
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"cat <<EOT > notes.txt\ngit reset --hard\nEOT"}}'
+  [ "$status" -eq 0 ]
+}
+
 @test "allows harmless git commands" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git status && git log --oneline -5"}}'
@@ -165,6 +200,14 @@ setup() {
 @test "guarded source: corrupt resolve-git-target lib fails open (exit != 2)" {
   echo "{ broken bash (" >"$HOME/.claude/hooks/lib/resolve-git-target.sh"
   run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git reset --hard"}}'
+  [ "$status" -ne 2 ]
+}
+
+@test "fails open without jq (exit != 2)" {
+  local nojq
+  nojq="$(make_no_jq_path)"
+  run_hook_env "$nojq" block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git reset --hard"}}'
   [ "$status" -ne 2 ]
 }
