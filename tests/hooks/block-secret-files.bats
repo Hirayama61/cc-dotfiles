@@ -116,6 +116,13 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "blocks reading .env.sample (same intentional glob)" {
+  # .example だけを例外化する変更を検出できるよう、代表的な別名も固定する。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/.env.sample"}}'
+  [ "$status" -eq 2 ]
+}
+
 @test "allows reading a normal source file" {
   run_hook block-secret-files.sh \
     '{"tool_name":"Read","tool_input":{"file_path":"/proj/src/main.sh"}}'

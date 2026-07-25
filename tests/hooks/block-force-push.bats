@@ -90,18 +90,20 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "guarded source: corrupt resolve-git-target lib fails open (exit != 2)" {
+@test "guarded source: corrupt resolve-git-target lib fails open (exit 0)" {
   # 入力は smoke-all.bats の全 hook 一括版(`git push --force`)と重ならない値付き形にする。
   echo "{ broken bash (" >"$HOME/.claude/hooks/lib/resolve-git-target.sh"
   run_hook block-force-push.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git push --force-with-lease=main:abc123"}}'
-  [ "$status" -ne 2 ]
+  [ "$status" -eq 0 ]
 }
 
-@test "fails open without jq (exit != 2)" {
+@test "fails open without jq (exit 0)" {
+  # jq はどのリポも宣言しておらず macOS 同梱に依存する(不在は現実に起こる)。
+  # ヘッダの宣言どおり 0 を直接見る — -ne 2 だと exit 127 のクラッシュを見逃す。
   local nojq
   nojq="$(make_no_jq_path)"
   run_hook_env "$nojq" block-force-push.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git push --force"}}'
-  [ "$status" -ne 2 ]
+  [ "$status" -eq 0 ]
 }
