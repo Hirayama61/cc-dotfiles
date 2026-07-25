@@ -2,9 +2,10 @@
 # 注: chezmoi のソースルートは home/(.chezmoiroot)。この mise.toml と tests/ は
 # リポ直下=chezmoi 管理外なので $HOME には展開されない(CI/ローカル検証専用)。
 [tools]
+# 上流更新での CI 不安定化を避けるため版を固定する(dotfiles 側と同一。CodeRabbit PR#79)。
 bats = "1.13.0"
-shellcheck = "latest"
-shfmt = "latest"
+shellcheck = "0.11.0"
+shfmt = "3.13.1"
 
 [tasks.test]
 description = "bats で hooks/lib を検証(一時 HOME に複製して実行)"
@@ -15,8 +16,14 @@ description = "shellcheck で hooks/lib/skills スクリプトを検査(error �
 run = "shellcheck --severity=error home/dot_claude/hooks/*.sh home/dot_claude/hooks/lib/*.sh home/dot_claude/skills/*/scripts/*.sh"
 
 [tasks.syntax]
-description = "bash 3.2(macOS 同梱)構文チェック(hooks/lib + skills スクリプト)"
-run = "find home/dot_claude/hooks home/dot_claude/skills -name '*.sh' -print0 | xargs -0 /bin/bash -n"
+description = "構文チェック(hooks/lib + skills のシェルは bash 3.2 / statusline は python)"
+# bash -n は先頭ファイル引数のみ検査し残りは位置パラメータになるため、xargs -n1 で
+# 1 ファイルずつ回す(-n1 が無いと 56 ファイル中 1 ファイルしか検査されない)。
+# python 側は ast.parse で構文のみ見る。py_compile はリポに __pycache__ を書くため使わない。
+run = """
+find home/dot_claude/hooks home/dot_claude/skills -name '*.sh' -print0 | xargs -0 -n1 /bin/bash -n
+python3 -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8").read(), sys.argv[1])' home/dot_claude/private_executable_statusline-command.py
+"""
 
 [tasks.check]
 description = "test + lint + syntax を一括実行"
