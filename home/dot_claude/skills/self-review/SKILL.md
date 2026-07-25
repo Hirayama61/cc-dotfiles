@@ -246,7 +246,7 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
   - `tier1-ack:` / `tier2-ack:` … 該当 Tier の ack 理由。**該当 Tier の理由が空ならフラグを書かず中断**(空理由での素通り防止)。
   - `triage:` … 見送った finding を `F-NNN 見送り — 理由` の形で 1 行 1 件記録する。
   - 該当ゼロ(指摘ゼロ かつ Tier OK/SKIP)なら内容は空でよい(空ファイルを作る)。
-- トリアージ完了を確認したら次のスクリプトでフラグを立てる。第 1/2 引数は手順 1.5 で捕捉した各 Tier 出力の**最終行**、第 3/4 引数は 4b で人間が述べた ack 理由(該当 Tier 非該当なら空文字)、stdin は見送り triage 行(`triage: F-NNN 見送り — 理由`、0 行以上)。**このスキルはレビュー対象 repo 内(`$PWD` = 対象 worktree)で実行すること**。gate / postcommit はフラグキーを push 実対象 dir(`git -C`/`cd` 解決)起点で引くため、別 cwd で実行するとキー基点がずれて恒久ブロックになりうる。
+- トリアージ完了を確認したら次のスクリプトでフラグを立てる。第 1/2 引数は手順 1.5 で捕捉した各 Tier 出力の**最終行**、第 3/4 引数は 4b で人間が述べた ack 理由(該当 Tier 非該当なら空文字)、stdin は見送り triage 行(`triage: F-NNN 見送り — 理由`、0 行以上)。**このスキルはレビュー対象 repo 内(`$PWD` = 対象 worktree)で実行すること**。gate / postcommit はフラグキーを push 実対象 dir(`git -C`/`cd` 解決)起点で引くため、別 cwd で実行するとキー基点がずれて恒久ブロックになりうる。cwd が対象 worktree でなければ**手順 1 の前に** `EnterWorktree({path})` で入場する(Bash の `cd` は呼び出しごとにリセットされるため代用にならない。起動リポと別リポの worktree には入場できないので、その場合は対象リポでセッションを立て直す)。
   ```sh
   tier1_last="$(printf '%s\n' "$tier1_out" | tail -n1)"
   tier2_last="$(printf '%s\n' "$tier2_out" | tail -n1)"
