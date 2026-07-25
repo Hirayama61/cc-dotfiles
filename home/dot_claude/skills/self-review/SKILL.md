@@ -263,7 +263,7 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
   tier2_last='TIER2-RESULT: ...'  # 同 TIER2-RESULT 行
   reason1=''                      # Tier 1 が DECREASE のときだけ 4b の ack 理由
   reason2=''                      # Tier 2 が RESURRECT のときだけ同上
-  triage_lines=''                 # 見送り 1 件 1 行: 'triage: F-001 見送り — 理由'
+  triage_lines=''                 # 見送り 1 件 1 行: 'triage: F-001 [改善/quality] 確信度:中 見送り — 理由'
   # 書き写し忘れ(空・例文のまま)を fail-closed で弾く。連結すると片方だけの空を見逃す。
   for t in "$tier1_last" "$tier2_last"; do
     case "$t" in
