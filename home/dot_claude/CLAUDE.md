@@ -73,15 +73,11 @@ hook で守れる事項は書かない。
   `isolation: "worktree"`(Agent ツール経由)は WorktreeCreate hook が同じ flat 配置へ誘導するため、自粛せず使ってよい。
   hook が使えない環境(jq / dotfiles リポ / origin 不在)では既定の `<repo>/.claude/worktrees/` 配置に戻る。
   worktree 隔離は混線防止であり権限境界ではない。
-- **作った worktree には `EnterWorktree({path})` で入場してから作業する**: `$PWD` 依存の
-  skill(self-review / design-review / guide-capture / obsidian-memory 等が
-  `resolve-repo-key.sh "$PWD"` でキーを引く)は cwd が対象 worktree でないとキー基点がずれる。
-  ゲート系(self-review / design-review)でずれると恒久ブロックになりうる。
-  Bash の `cd <worktree> && …` は 1 コマンド内なら効くが次の呼び出しへ持ち越されないため、
-  全呼び出しで書く必要があり 1 箇所の抜けがキーずれになる。EnterWorktree はセッション単位で効く。
-  `wt.sh` のフラット配置(`~/worktrees/...`)でも `path` 入場は通る。
-  **制約**: セッションの起動リポと別リポの worktree には入場できない(dotfiles セッションから
-  cc-dotfiles の worktree は拒否される)。cross-repo が要る時は対象リポでセッションを立て直す。
+- **作った worktree には `EnterWorktree({path})` で入場してから作業する**: `$PWD` 依存の skill
+  (self-review / design-review / guide-capture / obsidian-memory)は cwd が対象 worktree でないと
+  キー基点がずれ、ゲート系では恒久ブロックや別ブランチの誤解除になりうる。
+  **制約**: 起動リポと別リポの worktree には入場できない。その時は全 Bash 呼び出しを
+  `cd <worktree> && …` で始めてキー基点を対象 repo 側に合わせるか、対象リポでセッションを立て直す。
 - **1 worktree = 1 ブランチ**: 同じブランチの続きは既存 worktree を使う。
   新規作業前にこの分岐をまず判断する。
 - **案件 = Epic 配下の複数タスク**: 複数ブランチが要るなら epic ブランチを派生させタスクごとの worktree を並べる。

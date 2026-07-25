@@ -96,9 +96,9 @@ reviewer: design-reviewer / Codex({実施 or skip 理由})
 - must-fix を Plan に反映した場合、変更が設計の方向を変えるなら再レビュー、
   字句修正なら人間の判断で省略してよい。
 - トリアージ完了を確認したらフラグを立てる(キーは `flag-paths.sh` が単一情報源。
-  **レビュー対象 repo 内(`$PWD`)で実行する**。cwd が対象 worktree でなければ先に
-  `EnterWorktree({path})` で入場する。入場できない時は `cd <worktree> && …` を
-  この呼び出し自体に付ける(1 コマンド内でのみ有効)):
+  **レビュー対象 repo 内(`$PWD`)で実行する**。cwd が対象 worktree でなければ手順 1 の前に
+  `EnterWorktree({path})` で入場する。入場できない時は本スキルが走らせる**全 Bash 呼び出し**を
+  `cd <worktree> && …` で始める。下の 2 ブロックは変数を引き継ぐため 1 回の Bash 実行にまとめる):
 
   ```sh
   repo="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$PWD" 2>/dev/null || true)"
