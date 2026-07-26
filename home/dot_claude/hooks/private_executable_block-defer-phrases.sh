@@ -43,10 +43,8 @@ DEFER_PHRASES='後で対応|あとで対応|次のPRで|別PRで|別のPRで|一
 
 # gh サブコマンド検出の字句は block-gh-mutations.sh から派生(quote-aware・whole-segment ERE)。
 # サブコマンド前のグローバルフラグ / 前置 env 代入 / コマンド境界を許容する。
-# 2026-07-26 以降は完全同一ではない: 向こうは ENV をシェルキーワード込みの PRE へ統合し、
-# 改行での行分割も入れたため、`for ...; do gh pr comment ...` / `time gh ...` / 複数行の
-# 2 行目以降は向こうだけが捕捉する。こちらは未追随(D-39 で起票済み。台帳は
-# ~/obsidian/brain/Tasks/dotfiles/2026-07-25-dotfiles両リポ負債棚卸し指示書/refactor-instructions.md)。
+# 完全同一ではない: 向こうはシェルキーワードの前置と改行での行分割も見るため、
+# `for ...; do gh pr comment ...` / `time gh ...` / 複数行の 2 行目以降は向こうだけが捕捉する。
 FLAGS='(-{1,2}[A-Za-z][A-Za-z0-9-]*(=\S+)?\s+([^-\s]\S*\s+)?)*'
 ENV='([A-Za-z_][A-Za-z0-9_]*=\S+\s+)*'
 BORDER='(^|[;&|(])[[:space:]]*'

@@ -10,7 +10,8 @@
 #   .env, .env.* / *.pem,*.key,*.p12,*.pfx / *.secret,*.secrets / *.jks,*.keystore
 #   id_rsa*,id_ed25519*,id_ecdsa*,id_dsa*(*.pub は除外)
 #   credentials,.credentials と (.)credentials.<json|yml|yaml|txt|ini|cfg|conf|enc|plist>
-#   .netrc,.envrc,.git-credentials,.npmrc,.pypirc,.pgpass / service-account*.json / *.token
+#   .netrc,.envrc,.git-credentials,.npmrc,.pypirc,.pgpass / *.token
+#   *service-account*.json,*service_account*.json
 #
 # 受容している素通り:
 #   - credentials_prod.json のような前方一致の派生名(credentials.ts 等の普通のソース名を

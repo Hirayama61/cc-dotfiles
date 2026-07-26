@@ -18,14 +18,13 @@
 #   - PRE のキーワードは列挙であり、列挙外の前置語は素通りする
 #   - heredoc を stdin として実行する形(`bash <<EOF` / `cat <<EOF | bash` / `ssh h <<EOF`)。
 #     本文は実行されるコマンドだが strip_heredocs はデータと区別せず落とす
-# 意図的な過剰遮断(止めすぎ側。人間は ! プレフィックスで実行できる):
+# 意図的な過剰遮断(止めすぎ側。人間は Claude Code のプロンプトの ! バイパスで実行できる):
 #   - 文字列リテラル内の `; then gh pr merge …`(BORDER + PRE に当たる)
 #   - クォート内の実改行の後に行頭 gh が来る形(行ごとに判定するため)
 #   - 終端タグが見つからない heredoc の本文(strip_heredocs が復帰させる。D-38)。
 #     実シェルでも構文エラーになる形(未終端 / 終端行の末尾空白 / `<<-` 無しのインデント
 #     終端)だけが該当する
-# D-NN は外部脳の負債台帳 ~/obsidian/brain/Tasks/dotfiles/2026-07-25-dotfiles両リポ負債棚卸し
-# 指示書/refactor-instructions.md の項番(GitHub issue 番号ではない)。
+# D-NN は外部脳の負債台帳の項番(GitHub issue 番号ではない)。
 # あくまで「うっかり実行」の抑止(既存 hook 群と同じ性質)。
 # トークン全体を囲むクォート(例 gh pr "merge" / "gh" pr merge)は normalized_words_of_segment
 # の1段除去で捕捉する(2026-06。Knowledge/字句grep型hookはクォート付きフラグを取りこぼす)。
@@ -89,18 +88,20 @@ while IFS= read -r line; do
   normalized="${normalized}$(normalized_words_of_segment "$line")"$'\n'
 done <<<"$cmd"
 
+MSG_TAIL='人間が判断し、必要なら Claude Code のプロンプトで !<コマンド> として実行すること(Bash 引数の先頭に ! を付けても同じくブロックされる)。複数行コマンドは行ごとに判定するため、引数内の改行後に現れた語にも当たる。'
+
 if printf '%s' "$normalized" | grep -qE "${BORDER}${PRE}gh\\s+${FLAGS}pr\\s+(ready|merge|close|reopen)${END}"; then
-  echo "ブロック: gh pr の ready/merge/close/reopen は不可逆な PR 状態変更のため禁止。人間が判断し、必要なら ! プレフィックスで実行すること。複数行コマンドは行ごとに判定するため、引数内の改行後に現れた語にも当たる。" >&2
+  echo "ブロック: gh pr の ready/merge/close/reopen は不可逆な PR 状態変更のため禁止。${MSG_TAIL}" >&2
   exit 2
 fi
 
 if printf '%s' "$normalized" | grep -qE "${BORDER}${PRE}gh\\s+${FLAGS}release\\s+(create|delete|edit|upload)${END}"; then
-  echo "ブロック: gh release の create/delete/edit/upload は公開リリースを動かすため禁止。人間が判断し、必要なら ! プレフィックスで実行すること。複数行コマンドは行ごとに判定するため、引数内の改行後に現れた語にも当たる。" >&2
+  echo "ブロック: gh release の create/delete/edit/upload は公開リリースを動かすため禁止。${MSG_TAIL}" >&2
   exit 2
 fi
 
 if printf '%s' "$normalized" | grep -qE "${BORDER}${PRE}gh\\s+${FLAGS}repo\\s+(delete|archive|edit)${END}"; then
-  echo "ブロック: gh repo の delete/archive/edit は不可逆なリポ操作のため禁止。人間が判断し、必要なら ! プレフィックスで実行すること。複数行コマンドは行ごとに判定するため、引数内の改行後に現れた語にも当たる。" >&2
+  echo "ブロック: gh repo の delete/archive/edit は不可逆なリポ操作のため禁止。${MSG_TAIL}" >&2
   exit 2
 fi
 

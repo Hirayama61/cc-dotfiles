@@ -230,6 +230,16 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "accepted gap: a false heredoc start whose tag reappears alone hides the command between" {
+  # 復帰(D-38)は「終端タグ行が来ないまま EOF に達した」時だけ働く。誤認した開始のタグ語が
+  # 後続行に単独で現れると偶発的に終端一致し、その間の行はバッファ破棄で消える。
+  # タグが `shift` / `done` のような実スクリプトに現れる語でも同じ形が成立する。
+  # lib 側の限界(resolve-git-target.sh の strip_heredocs ヘッダ)で、この hook では受容する。
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"echo \"cat << EOF で書く\"\ngit reset --hard\nEOF"}}'
+  [ "$status" -ne 2 ]
+}
+
 @test "allows harmless git commands" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git status && git log --oneline -5"}}'

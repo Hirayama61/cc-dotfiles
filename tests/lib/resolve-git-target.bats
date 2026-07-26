@@ -170,3 +170,29 @@ setup() {
   ! echo "$output" | grep -qF 'SECRETLINE'
   echo "$output" | grep -qF 'TAILLINE'
 }
+
+@test "accepted gap: a false start whose tag reappears alone drops the lines between" {
+  # 復帰は「終端タグ行が来ないまま EOF に達した」時だけ働く。誤認した開始のタグ語が
+  # 後続行に単独で現れると偶発的に終端一致し、その間の行はバッファ破棄で消える。
+  # タグは `EOF` に限らず `shift` / `done` のような実スクリプトに現れる語でも成立する。
+  run strip_heredocs_lenient "$(printf 'echo "cat << EOF で書く"\nSECRETLINE\nEOF')"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF 'SECRETLINE'
+}
+
+@test "strip_heredocs_lenient: restored lines keep their original order" {
+  run strip_heredocs_lenient "$(printf 'echo "a << b"\nLINE1\nLINE2\nLINE3')"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | grep -nF LINE1 | cut -d: -f1)" -lt "$(echo "$output" | grep -nF LINE2 | cut -d: -f1)" ]
+  [ "$(echo "$output" | grep -nF LINE2 | cut -d: -f1)" -lt "$(echo "$output" | grep -nF LINE3 | cut -d: -f1)" ]
+}
+
+# 復帰つき版は「遮断側パターンしか持たない hook 専用」。許可側パターンをコマンド全文へ
+# 掛ける hook(block-nested-worktree の `wt.sh` / block-defer-phrases の `(#NNN)`)が
+# 呼ぶと遮断が消える。この契約は lib のコメントだけでは守れないので呼び出し元を固定する。
+@test "contract: strip_heredocs_lenient is called only by block-side-only hooks" {
+  local callers
+  callers="$(cd "$HOOKS_SRC" && grep -l 'strip_heredocs_lenient' ./*.sh |
+    sed -e 's|^\./private_executable_||' -e 's|^\./||' | sort | tr '\n' ' ')"
+  [ "$callers" = "block-destructive-git.sh block-gh-mutations.sh " ]
+}
