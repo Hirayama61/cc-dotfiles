@@ -16,11 +16,14 @@
 #   - `case x in a) gh ... ;; esac` の分岐本体(`)` は BORDER に含まれない)
 #   - バックスラッシュ行継続(改行分割で2片に割れる)
 #   - PRE のキーワードは列挙であり、列挙外の前置語は素通りする
+#   - heredoc を stdin として実行する形(`bash <<EOF` / `cat <<EOF | bash` / `ssh h <<EOF`)。
+#     本文は実行されるコマンドだが strip_heredocs はデータと区別せず落とす
 # 意図的な過剰遮断(止めすぎ側。人間は ! プレフィックスで実行できる):
 #   - 文字列リテラル内の `; then gh pr merge …`(BORDER + PRE に当たる)
 #   - クォート内の実改行の後に行頭 gh が来る形(行ごとに判定するため)
-#   - 終端していないと読める heredoc の本文(`<<END-OF` のようなハイフン入りタグ。
-#     strip_heredocs が未終端扱いで本文を復帰させる。D-38)
+#   - 終端タグが見つからない heredoc の本文(strip_heredocs が復帰させる。D-38)。
+#     実シェルでも構文エラーになる形(未終端 / 終端行の末尾空白 / `<<-` 無しのインデント
+#     終端)だけが該当する
 # D-NN は外部脳の負債台帳 ~/obsidian/brain/Tasks/dotfiles/2026-07-25-dotfiles両リポ負債棚卸し
 # 指示書/refactor-instructions.md の項番(GitHub issue 番号ではない)。
 # あくまで「うっかり実行」の抑止(既存 hook 群と同じ性質)。
@@ -75,8 +78,8 @@ END='(\s|$|[;&|)])'
 #
 # strip_heredocs は optional dependency。無ければ heredoc 除去を省いて判定を続ける
 # (倒れる先は過剰遮断側であり検出漏れ側ではない)。
-if type strip_heredocs >/dev/null 2>&1; then
-  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
+if type strip_heredocs_lenient >/dev/null 2>&1; then
+  stripped="$(strip_heredocs_lenient "$cmd" 2>/dev/null || true)"
   [[ -n "$stripped" ]] && cmd="$stripped"
 fi
 

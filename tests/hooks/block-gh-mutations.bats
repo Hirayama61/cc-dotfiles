@@ -307,6 +307,14 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "accepted gap: a heredoc executed as stdin is not inspected" {
+  # `bash <<EOF` の本文は実行されるコマンドだが、strip_heredocs はデータと区別せず落とす。
+  # 開始行のコマンド種別を見て落とさない実装は可能だが、この PR の射程外(D-40 で起票)。
+  run_hook block-gh-mutations.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"bash <<EOF\ngh pr merge 1\nEOF"}}'
+  [ "$status" -eq 0 ]
+}
+
 @test "accepted gap: a backslash line continuation splits the command" {
   # 改行で行分割するため 2 片に割れる。block-destructive-git.sh の header が既に同じ
   # 限界を受容している。
@@ -362,21 +370,25 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
-@test "accepted overblock: a correctly closed hyphenated-tag heredoc body blocks" {
-  # タグ捕捉が `END` までなので終端 `END-OF` に一致せず、未終端扱いで本文が復帰する。
-  # シェル的には正しく閉じた heredoc なので、これは止めすぎ側の誤爆。
-  # D-38 の修正で新たに止まるようになった 4 形のうち、有効なシェルなのはこれだけ
-  # (末尾空白つき終端 / 未終端 / `<<-` 無しのインデント終端は実シェルでも構文エラー)。
+@test "allows a gh mutation mentioned in a hyphenated-tag heredoc body" {
+  # タグ捕捉にハイフンを含めるので `<<END-OF` も正しく終端でき、本文は除去される。
+  # ここを狭めると、シェル的に正しく閉じた heredoc の本文が未終端扱いで復帰し誤爆する。
   run_hook block-gh-mutations.sh \
     '{"tool_name":"Bash","tool_input":{"command":"cat <<END-OF\ngh pr merge 1\nEND-OF"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "blocks a gh mutation after a closed hyphenated-tag heredoc" {
+  # 本文は除去されるが、heredoc の外に出た後の行は照合対象に残る。
+  run_hook block-gh-mutations.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"cat <<END-OF\nbody\nEND-OF\ngh pr merge 1"}}'
   [ "$status" -eq 2 ]
 }
 
-@test "blocks a gh mutation after a hyphenated heredoc tag" {
-  # `<<END-OF` はタグを `END` までしか捕捉できず終端 `END-OF` に一致しない(lib の既知限界)。
-  # 未終端扱いになるので本文ごと復帰し、後続の gh も見える。
+@test "blocks a gh mutation inside a genuinely unterminated heredoc" {
+  # 終端タグが来ない形は本文が復帰する(D-38 の保護。過剰遮断側へ倒す)。
   run_hook block-gh-mutations.sh \
-    '{"tool_name":"Bash","tool_input":{"command":"cat <<END-OF\nbody\nEND-OF\ngh pr merge 1"}}'
+    '{"tool_name":"Bash","tool_input":{"command":"cat <<EOF\ngh pr merge 1"}}'
   [ "$status" -eq 2 ]
 }
 

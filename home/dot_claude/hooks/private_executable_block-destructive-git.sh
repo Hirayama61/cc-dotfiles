@@ -23,9 +23,9 @@ source_hook_lib resolve-git-target.sh || exit 0
 
 # lib に strip_heredocs があれば heredoc 本文を除去して誤爆を防ぐ(dotfiles#74 と合流後に有効化)。
 # 除去は正しく閉じた heredoc に限る。終端タグが見つからない形(クォート内の `<< 語`・
-# 算術シフト・ハイフン入りタグ)は本文が復帰し照合対象に残る(過剰遮断側。D-38)。
-if type strip_heredocs >/dev/null 2>&1; then
-  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
+# 算術シフト・未終端)は本文が復帰し照合対象に残る(過剰遮断側。D-38)。
+if type strip_heredocs_lenient >/dev/null 2>&1; then
+  stripped="$(strip_heredocs_lenient "$cmd" 2>/dev/null || true)"
   [[ -n "$stripped" ]] && cmd="$stripped"
 fi
 

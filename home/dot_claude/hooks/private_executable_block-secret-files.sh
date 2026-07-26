@@ -80,10 +80,10 @@ credentials | .credentials)
   ;;
 credentials.json | credentials.yml | credentials.yaml | credentials.txt | \
   credentials.ini | credentials.cfg | credentials.conf | credentials.enc | credentials.plist | \
-  credentials.yml.enc | credentials.yaml.enc | \
+  credentials.yml.enc | credentials.yaml.enc | credentials.json.enc | \
   .credentials.json | .credentials.yml | .credentials.yaml | .credentials.txt | \
   .credentials.ini | .credentials.cfg | .credentials.conf | .credentials.enc | .credentials.plist | \
-  .credentials.yml.enc | .credentials.yaml.enc)
+  .credentials.yml.enc | .credentials.yaml.enc | .credentials.json.enc)
   BLOCKED=true
   ;;
 esac
@@ -96,6 +96,7 @@ fi
 
 # GCP のダウンロード名は <project>-service-account.json、Python/Airflow 系の慣用名は
 # service_account.json。前後の修飾を許して両表記を拾う(中身は生の秘密鍵)。
+# 過剰遮断は受容する: service-account-schema.json のような非秘密の JSON も止まる。
 if [[ "$LOWER" == *service-account*.json ]] || [[ "$LOWER" == *service_account*.json ]]; then
   BLOCKED=true
 fi

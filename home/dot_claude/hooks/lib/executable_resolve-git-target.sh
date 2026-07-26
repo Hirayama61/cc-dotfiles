@@ -216,16 +216,24 @@ normalized_words_of_segment() {
 # 退避して誤検出しない。
 #
 # 開始を誤認しても検出漏れにはしない(D-38): 終端タグ行が来ないまま EOF に達したら、
-# 捨てた行を出し直す。本物でない heredoc(クォート内の `<< 語`・算術シフト `$((1<<b))`・
-# 部分捕捉になるハイフン入りタグ `<<END-OF`)は終端が一致しないのでこの経路に入り、
-# 以降の行が照合対象に残る。倒れる先は過剰遮断側。
+# 捨てた行を出し直す。本物でない heredoc(クォート内の `<< 語`・算術シフト `$((1<<b))`)は
+# 終端が一致しないのでこの経路に入り、以降の行が照合対象に残る。倒れる先は過剰遮断側。
 # 復帰行は末尾に回るが、消費側(行単位 grep / split_git_segments)は行順に依存しない。
+# タグ文字クラスにハイフンを含めるのは `<<END-OF` を正しく終端させるため(狭めると
+# シェル的に正しく閉じた heredoc の本文が復帰して誤爆する)。
 #
 # 既知の限界(best-effort で受容):
 #   - 1行内の複数 heredoc は最初のタグのみ追跡(漏れた本文は照合対象に残る=ブロック過剰側)
-#   - ハイフン入りタグ(`<<END-OF`)の本文は未終端扱いになり復帰する(=ブロック過剰側)
-strip_heredocs() {
-  printf '%s\n' "${1:-}" | awk '
+strip_heredocs() { _strip_heredocs_impl "${1:-}" 0; }
+
+# 復帰つき版(D-38)。終端タグ行が来ないまま EOF に達したら捨てた行を出し直す。
+# **遮断側パターンしか持たない hook 専用**。許可側パターン(early-exit / continue)を
+# コマンド全文に掛ける hook が使うと、復帰した本文が許可判定に当たって遮断が消える
+# (block-nested-worktree の `wt.sh` / block-defer-phrases の `(#NNN)` で実測)。
+strip_heredocs_lenient() { _strip_heredocs_impl "${1:-}" 1; }
+
+_strip_heredocs_impl() {
+  printf '%s\n' "${1:-}" | awk -v restore="${2:-0}" '
     skip {
       line = $0
       if (dash) sub(/^\t+/, "", line)
@@ -236,7 +244,7 @@ strip_heredocs() {
     {
       probe = $0
       gsub(/<<</, "\001", probe)
-      if (match(probe, /<<-?[[:space:]]*["'\''\\]?[A-Za-z_][A-Za-z_0-9]*/)) {
+      if (match(probe, /<<-?[[:space:]]*["'\''\\]?[A-Za-z_][A-Za-z_0-9-]*/)) {
         tag = substr(probe, RSTART, RLENGTH)
         dash = (substr(tag, 3, 1) == "-")
         sub(/^<<-?[[:space:]]*/, "", tag)
@@ -245,7 +253,7 @@ strip_heredocs() {
       }
       print
     }
-    END { if (skip) for (i = 1; i <= n; i++) print buf[i] }'
+    END { if (skip && restore) for (i = 1; i <= n; i++) print buf[i] }'
 }
 
 # 相対パスを base(cwd)基準で物理絶対パス化。解決不能なら空を返す。

@@ -127,3 +127,46 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" = "/no/such" ]
 }
+
+# --- strip_heredocs / strip_heredocs_lenient(D-38)---
+# 復帰つき版は「遮断側パターンしか持たない hook 専用」。許可側パターン(early-exit /
+# continue)をコマンド全文へ掛ける hook が使うと、復帰した本文が許可判定に当たって
+# 遮断が消える。2 関数の契約差をここで固定する(実際に block-nested-worktree /
+# block-defer-phrases の遮断を消しかけた)。
+
+@test "strip_heredocs: closed heredoc body is dropped" {
+  run strip_heredocs "$(printf 'cat <<EOF\nSECRETLINE\nEOF')"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF 'SECRETLINE'
+}
+
+@test "strip_heredocs: unterminated body stays dropped (strict)" {
+  run strip_heredocs "$(printf 'echo "a << b"\nSECRETLINE')"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF 'SECRETLINE'
+}
+
+@test "strip_heredocs_lenient: unterminated body is restored" {
+  run strip_heredocs_lenient "$(printf 'echo "a << b"\nSECRETLINE')"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'SECRETLINE'
+}
+
+@test "strip_heredocs_lenient: closed heredoc body is still dropped" {
+  run strip_heredocs_lenient "$(printf 'cat <<EOF\nSECRETLINE\nEOF')"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF 'SECRETLINE'
+}
+
+@test "strip_heredocs_lenient: a closed body is not restored by a later false start" {
+  run strip_heredocs_lenient "$(printf 'cat <<A\nCLOSEDBODY\nA\necho "x << y"')"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF 'CLOSEDBODY'
+}
+
+@test "strip_heredocs: hyphenated tag terminates correctly" {
+  run strip_heredocs "$(printf 'cat <<END-OF\nSECRETLINE\nEND-OF\nTAILLINE')"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF 'SECRETLINE'
+  echo "$output" | grep -qF 'TAILLINE'
+}
