@@ -152,8 +152,14 @@ FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
    - hard ゲート(push / マージ / 権限プロンプト)は事前承認済みにならない旨。
 5. **送信成功を確認してからタスク JSON を running に更新**: `tmux_window` / `window_name` /
    `tmux_pane` / `branch` / `worktree` を実測値で記録(計画の文字列でなく作成済み実体から取る)。
-   **送信に失敗したら running にせず**、status=backlog のまま window を畳んで人間へ報告する
-   (初期指示を受け取っていない現場監督を running として孤児化させない)。
+   失敗の向きで扱いが逆になるので、混ぜない:
+   - **送信に失敗したら running にせず**、status=backlog のまま window を畳んで人間へ報告する
+     (初期指示を受け取っていない現場監督を running として孤児化させない)。
+   - **送信は成功したが running への書込に失敗したら、window は畳まない**。現場監督は既に
+     指示を受けて作業しているので、畳むのは作業の破棄になる。実測済みの `tmux_window` /
+     `tmux_pane` を手元に保持したまま書込を再試行し、なお失敗するなら**その 2 つの id を添えて
+     人間へ報告する**。台帳に載らない window を黙って残すと、次の配車で同名 window が並び、
+     どちらが生きているか誰にも分からなくなる。
 
 ## 4. ナッジと完了裁定
 
