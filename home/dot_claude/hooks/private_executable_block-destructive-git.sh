@@ -25,18 +25,11 @@ cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
 
 source_hook_lib resolve-git-target.sh || exit 0
 
-# lib に strip_heredocs があれば heredoc 本文を除去して誤爆を防ぐ(dotfiles#74 と合流後に有効化)。
-# 除去は正しく閉じた heredoc に限る。終端タグが見つからない形(クォート内の `<< 語`・
-# 算術シフト・未終端)は本文が復帰し照合対象に残る(過剰遮断側。D-38)。
-# lenient が無い旧 lib と組んだ時は厳格版へ落とす(除去ゼロだと heredoc 本文の
-# コマンド例で誤ブロックする。apply 前後の版ずれの間だけ起きる)。
-if type strip_heredocs_lenient >/dev/null 2>&1; then
-  stripped="$(strip_heredocs_lenient "$cmd" 2>/dev/null || true)"
-  [[ -n "$stripped" ]] && cmd="$stripped"
-elif type strip_heredocs >/dev/null 2>&1; then
-  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
-  [[ -n "$stripped" ]] && cmd="$stripped"
-fi
+# heredoc 本文を除去して誤爆を防ぐ(dotfiles#74)。除去は正しく閉じた heredoc に限り、
+# 終端タグが見つからない形(クォート内の `<< 語`・算術シフト・未終端)は本文が復帰して
+# 照合対象に残る(過剰遮断側。D-38)。どの版を使うかの選択は lib が単一情報源。
+# ラッパごと無い旧 lib のときだけ厳格版へ、それも無ければ除去を省く。
+cmd="$(strip_heredocs_block_side "$cmd" 2>/dev/null || strip_heredocs "$cmd" 2>/dev/null || printf '%s' "$cmd")"
 
 block() {
   echo "ブロック: $1 は未コミット作業や stash を復元不能に破棄しうるため禁止。人間が判断し、必要なら Claude Code のプロンプトで !<コマンド> として実行すること(Bash 引数の先頭に ! を付けても同じくブロックされる)。" >&2

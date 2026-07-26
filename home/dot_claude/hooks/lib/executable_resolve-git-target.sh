@@ -242,6 +242,26 @@ strip_heredocs() { _strip_heredocs_impl "${1:-}" 0; }
 # (block-nested-worktree の `wt.sh` / block-defer-phrases の `(#NNN)` で実測)。
 strip_heredocs_lenient() { _strip_heredocs_impl "${1:-}" 1; }
 
+# 遮断側 hook が使う heredoc 除去。復帰つき版を優先し、それが無い旧 lib と組んだ時だけ
+# 厳格版へ落ちる(除去ゼロへ後退すると heredoc 本文のコマンド例で誤ブロックする。
+# 代わりに D-38 の穴が開く=検出漏れ側)。どちらも無ければ入力をそのまま返す(過剰遮断側)。
+# 除去結果が空になる入力では元のコマンドを返す(判定対象そのものを消さない)。
+# **strip_heredocs_lenient と同じ制約**: 許可側パターン(early-exit / continue)を
+# コマンド全文へ掛ける hook は使わないこと。復帰した本文が許可判定に当たって遮断が消える。
+strip_heredocs_block_side() {
+  local cmd="${1:-}" stripped=""
+  if type strip_heredocs_lenient >/dev/null 2>&1; then
+    stripped="$(strip_heredocs_lenient "$cmd" 2>/dev/null || true)"
+  elif type strip_heredocs >/dev/null 2>&1; then
+    stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
+  fi
+  if [[ -n "$stripped" ]]; then
+    printf '%s' "$stripped"
+  else
+    printf '%s' "$cmd"
+  fi
+}
+
 _strip_heredocs_impl() {
   printf '%s\n' "${1:-}" | awk -v restore="${2:-0}" '
     skip {

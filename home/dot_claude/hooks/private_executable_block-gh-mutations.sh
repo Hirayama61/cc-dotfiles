@@ -75,16 +75,9 @@ END='(\s|$|[;&|)])'
 # クォート無視で誤分割し検出漏れを起こす(self-review R-1)。改行だけの分割はこの誤分割を
 # 持ち込まないので、D-36(2行目以降が読まれない)はこちらで塞ぐ。
 #
-# strip_heredocs は optional dependency。lenient が無い旧 lib と組んだ時は厳格版へ落とす
-# (除去ゼロだと heredoc 本文のコマンド例で誤ブロックする。代わりに D-38 の穴が開く=検出漏れ側)。
-# 両方無ければ除去を省いて判定を続ける(こちらは過剰遮断側)。
-if type strip_heredocs_lenient >/dev/null 2>&1; then
-  stripped="$(strip_heredocs_lenient "$cmd" 2>/dev/null || true)"
-  [[ -n "$stripped" ]] && cmd="$stripped"
-elif type strip_heredocs >/dev/null 2>&1; then
-  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
-  [[ -n "$stripped" ]] && cmd="$stripped"
-fi
+# heredoc 除去はどの版を使うかの選択ごと lib が単一情報源(strip_heredocs_block_side)。
+# ラッパごと無い旧 lib のときだけ厳格版へ、それも無ければ除去を省く。
+cmd="$(strip_heredocs_block_side "$cmd" 2>/dev/null || strip_heredocs "$cmd" 2>/dev/null || printf '%s' "$cmd")"
 
 # normalized_words_of_segment は here-string の read が1行目で止まるため、行ごとに呼ぶ。
 # 行ごとにコマンド置換が張られるので、`gh` を含まない行は正規化せず空行で置く(行数は保つ)。

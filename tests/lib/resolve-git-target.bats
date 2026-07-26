@@ -187,13 +187,53 @@ setup() {
   [ "$(echo "$output" | grep -nF LINE2 | cut -d: -f1)" -lt "$(echo "$output" | grep -nF LINE3 | cut -d: -f1)" ]
 }
 
-# 復帰つき版は「遮断側パターンしか持たない hook 専用」。許可側パターンをコマンド全文へ
-# 掛ける hook(block-nested-worktree の `wt.sh` / block-defer-phrases の `(#NNN)`)が
-# 呼ぶと遮断が消える。この契約は lib のコメントだけでは守れないので呼び出し元を固定する。
-@test "contract: strip_heredocs_lenient is called only by block-side-only hooks" {
+# --- strip_heredocs_block_side(遮断側 hook 用の選択を lib に集約したもの)---
+
+@test "strip_heredocs_block_side: prefers the lenient version (restores an unterminated body)" {
+  run strip_heredocs_block_side "$(printf 'echo "a << b"\nSECRETLINE')"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'SECRETLINE'
+}
+
+@test "strip_heredocs_block_side: still drops a closed heredoc body" {
+  run strip_heredocs_block_side "$(printf 'cat <<EOF\nSECRETLINE\nEOF')"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF 'SECRETLINE'
+}
+
+@test "strip_heredocs_block_side: falls back to the strict version when lenient is gone" {
+  # apply 前後の版ずれで lib が旧版になる瞬間を模す。除去ゼロへ後退させない。
+  unset -f strip_heredocs_lenient
+  run strip_heredocs_block_side "$(printf 'cat <<EOF\nSECRETLINE\nEOF\nTAILLINE')"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF 'SECRETLINE'
+  echo "$output" | grep -qF 'TAILLINE'
+}
+
+@test "strip_heredocs_block_side: returns the input unchanged when both are gone" {
+  unset -f strip_heredocs_lenient strip_heredocs
+  run strip_heredocs_block_side "$(printf 'cat <<EOF\nSECRETLINE\nEOF')"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'SECRETLINE'
+}
+
+# 復帰つきの入力は「遮断側パターンしか持たない hook」しか使ってはいけない。許可側パターンを
+# コマンド全文へ掛ける hook(block-nested-worktree の `wt.sh` / block-defer-phrases の
+# `(#NNN)`)がそれを受け取ると、復帰した本文が許可判定に当たって遮断が消える。
+# 選択を lib へ集約したので、契約は次の 2 本で固定する:
+#   (a) ラッパを呼ぶのは遮断側 2 hook だけ
+#   (b) どの hook も復帰つき版を直接呼ばない(ラッパを迂回して契約を抜けられない)
+# 2 本そろって初めて「復帰つきの入力を受け取るのは遮断側 2 hook だけ」が言える。
+@test "contract: strip_heredocs_block_side is called only by block-side-only hooks" {
   local callers
   # コメント中の言及で落ちないよう、実際の呼び出し形(引数付き)だけを見る。
-  callers="$(cd "$HOOKS_SRC" && grep -l 'strip_heredocs_lenient "' ./*.sh |
+  callers="$(cd "$HOOKS_SRC" && grep -l 'strip_heredocs_block_side "' ./*.sh |
     sed -e 's|^\./private_executable_||' -e 's|^\./||' | sort | tr '\n' ' ')"
   [ "$callers" = "block-destructive-git.sh block-gh-mutations.sh " ]
+}
+
+@test "contract: no hook calls strip_heredocs_lenient directly" {
+  local callers
+  callers="$(cd "$HOOKS_SRC" && grep -l 'strip_heredocs_lenient "' ./*.sh | tr '\n' ' ')"
+  [ -z "$callers" ]
 }
