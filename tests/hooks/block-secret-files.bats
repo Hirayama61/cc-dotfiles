@@ -123,6 +123,142 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+@test "blocks reading .envrc" {
+  # direnv 経由で API トークンを export するのが典型。`.env.*` グロブには当たらない。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/.envrc"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading .git-credentials" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.git-credentials"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading .npmrc" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/.npmrc"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading .pypirc" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.pypirc"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading .pgpass" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.pgpass"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a jks keystore" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/release.jks"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a .keystore file" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/app.keystore"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading service-account.json" {
+  # 前方一致の `*` が空文字にも効く境界。実測で素通りしていた形そのもの。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/service-account.json"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a suffixed service account json" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/service-account-prod.json"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a pem with an uppercase extension" {
+  # 判定前に basename を小文字化するため、拡張子の大小に依存しない。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/certs/private.PEM"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a suffixed ssh private key" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.ssh/id_rsa.old"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a dot-prefixed credentials.json" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.credentials.json"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading credentials.yml (known config extension)" {
+  # credentials の射程は「完全一致 + 既知の設定拡張子」。ソース拡張子は通す(下の allows)。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/config/credentials.yml"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading .env.pub" {
+  # `.pub` 除外を id_* の内側へ閉じ込めた唯一の根拠。グローバル除外に平らにすると通ってしまう。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/.env.pub"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading service_account.json (underscore variant)" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/service_account.json"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading a prefixed service account json" {
+  # GCP コンソールのダウンロード名は <project>-service-account.json の形になる。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/gcp-service-account.json"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks reading Rails credentials.yml.enc" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/config/credentials.yml.enc"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "allows reading credentials.ts (an ordinary source file)" {
+  # 前方一致にすると普通のソース名まで Read 遮断するため、既知の設定拡張子に限定している。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/src/credentials.ts"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "allows reading credentials.go (an ordinary source file)" {
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/internal/credentials.go"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "accepted gap: a prefixed credentials name is not caught" {
+  # credentials 側は前方一致にしない(ソース名の誤爆を避けるため)ので、
+  # credentials_prod.json のような派生名は素通りする。受容済み。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/proj/credentials_prod.json"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "allows reading an rsa public key" {
+  # id_* は前方一致だが .pub は内側で明示除外している。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.ssh/id_rsa.pub"}}'
+  [ "$status" -eq 0 ]
+}
+
 @test "allows reading a normal source file" {
   run_hook block-secret-files.sh \
     '{"tool_name":"Read","tool_input":{"file_path":"/proj/src/main.sh"}}'
@@ -136,7 +272,8 @@ setup() {
 }
 
 @test "allows reading a public key" {
-  # 判定は完全一致(id_ed25519)なので .pub は対象外。
+  # id_* は前方一致に広げたが、その内側で .pub を明示除外しているため通る
+  # (グローバルな早期 exit にすると credentials.pub 等まで通す抜け穴になる)。
   run_hook block-secret-files.sh \
     '{"tool_name":"Read","tool_input":{"file_path":"/home/u/.ssh/id_ed25519.pub"}}'
   [ "$status" -eq 0 ]
@@ -155,6 +292,14 @@ setup() {
   run_hook block-secret-files.sh \
     '{"tool_name":"Read","tool_input":{}}'
   [ "$status" -eq 0 ]
+}
+
+@test "a leading-dash path still reaches the judgement (basename does not abort)" {
+  # file_path は tool_input 由来の外部入力。`--` を付けないと basename がオプション誤認で
+  # こけ、set -e で判定に到達しないまま hook が終わる(遮断が消える)。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"-n/x/.env"}}'
+  [ "$status" -eq 2 ]
 }
 
 @test "fails open without jq (exit != 2)" {
