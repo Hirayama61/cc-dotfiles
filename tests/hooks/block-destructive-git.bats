@@ -144,6 +144,37 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "blocks git switch -f" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git switch -f main"}}'
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -qF 'git switch --discard-changes / -f'
+}
+
+@test "blocks git switch --discard-changes" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git switch --discard-changes main"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "blocks git switch --force (alias of --discard-changes)" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git switch --force main"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "allows git switch -c (new branch)" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git switch -c feature/x"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "allows a plain git switch" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git switch main"}}'
+  [ "$status" -eq 0 ]
+}
+
 @test "blocks git worktree remove --force" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git worktree remove --force /tmp/wt"}}'
@@ -189,6 +220,14 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"cat <<EOT > notes.txt\ngit reset --hard\nEOT"}}'
   [ "$status" -eq 0 ]
+}
+
+@test "blocks a destructive command after a false heredoc start" {
+  # D-38: strip_heredocs はクォート内の `<<`+語 も heredoc 開始と誤認するが、終端タグが
+  # 来ないまま EOF に達したら捨てた行を出し直す。gh 側と同じ穴がこちらにもあった。
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"echo \"see a << b\"\ngit reset --hard"}}'
+  [ "$status" -eq 2 ]
 }
 
 @test "allows harmless git commands" {

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash): 未コミット作業を復元不能に破棄しうる git 操作をブロックする(dotfiles#72)。
 # 対象: reset --hard / clean -f系 / stash drop・clear / branch 強制削除(-D とその等価形)/
-#       restore(worktree 接触)/ checkout の変更破棄(-- / -f)/ worktree remove --force。
+#       restore(worktree 接触)/ checkout の変更破棄(-- / -f)/ switch の変更破棄
+#       (--discard-changes とその別名 --force / -f)/ worktree remove --force。
 # delegate 規約緩和(二段階の自己分類化)の補償として、客観条件を hook 層で担保する。
 # 既存 block 系と同じ best-effort 字句検査(難読化は対象外)。人間は ! バイパスで実行可能。
+# 対象範囲は「未コミット作業の破棄」に限る。ブランチ先端の付け替え(switch -C / checkout -B)は
+# コミット済みの ref を壊す別分類なので見ない(branch -D を止めるのとは非対称。D-37 で起票済み)。
 # 既知の限界(受容): long オプションの前方略記(--ha 等)・バックスラッシュ行継続は検出しない。
 # 安全側設計: jq 無し / 空コマンド / lib 不在なら exit 0(通す)。
 set -euo pipefail
@@ -19,6 +22,8 @@ cmd="$(hook_command)"; [[ -z "$cmd" ]] && exit 0
 source_hook_lib resolve-git-target.sh || exit 0
 
 # lib に strip_heredocs があれば heredoc 本文を除去して誤爆を防ぐ(dotfiles#74 と合流後に有効化)。
+# 除去は正しく閉じた heredoc に限る。終端タグが見つからない形(クォート内の `<< 語`・
+# 算術シフト・ハイフン入りタグ)は本文が復帰し照合対象に残る(過剰遮断側。D-38)。
 if type strip_heredocs >/dev/null 2>&1; then
   stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
   [[ -n "$stripped" ]] && cmd="$stripped"
@@ -44,7 +49,7 @@ while IFS= read -r seg; do
     ;;
   stash)
     norm="$(normalized_words_of_segment "$seg")"
-    if echo "$norm" | grep -qE '(^|[[:space:]])stash[[:space:]]+(drop|clear)([[:space:]]|$)'; then
+    if printf '%s' "$norm" | grep -qE '(^|[[:space:]])stash[[:space:]]+(drop|clear)([[:space:]]|$)'; then
       block "git stash drop/clear"
     fi
     ;;
@@ -69,6 +74,12 @@ while IFS= read -r seg; do
       block "git checkout -- <path>(変更破棄)"
     fi
     segment_has_option "$seg" --force f && block "git checkout -f"
+    ;;
+  switch)
+    # --discard-changes(別名 --force / -f)は checkout -f と同義で未コミット変更を破棄する。
+    if segment_has_option "$seg" --discard-changes f || segment_has_option "$seg" --force ""; then
+      block "git switch --discard-changes / -f"
+    fi
     ;;
   worktree)
     norm="$(normalized_words_of_segment "$seg")"

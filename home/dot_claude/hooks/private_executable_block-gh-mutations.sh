@@ -4,10 +4,26 @@
 # repo の delete/archive/edit は影響が外部に及ぶため人間が判断・実行すること。
 # 安全側設計: jq 無し / 空コマンドなら exit 0(通す)。read-only な gh は素通し。
 #
-# best-effort な抑止であり完全防御ではない: alias / シェル関数 / トークン内クォート分断
-# (例 g"h" pr merge)・変数置換(例 g(){ gh "$@";}; g pr merge)・`command gh` / `xargs gh`
-# 等のラッパー経由・`{ gh ...; }` やバッククォートでの起動は grep の字句検査では原理的に
-# 捕捉できない。あくまで「うっかり実行」の抑止(既存 hook 群と同じ性質)。
+# best-effort な抑止であり完全防御ではない。判定は heredoc 本文を除去 → 改行で行分割 →
+# 各行を正規化 → BORDER + PRE + FLAGS の ERE、の順。
+# 受容している素通り(実測済み):
+#   - alias / シェル関数経由(例 g(){ gh "$@";}; g pr merge)と関数定義そのもの
+#   - トークン内クォート分断(例 g"h" pr merge)
+#   - `command` / `xargs` / `nohup` / `sudo` / `env` のラッパー経由
+#   - `bash -c "gh ..."` / `sh -c '...'` / `eval "gh ..."`(gh の直前が `"` や `-c` になり
+#     BORDER に当たらない。モデルがスクリプト化する時に自然に書く形)
+#   - バッククォート起動(例 x=`gh pr merge 1`。`$(...)` は BORDER の `(` で捕捉する)
+#   - `case x in a) gh ... ;; esac` の分岐本体(`)` は BORDER に含まれない)
+#   - バックスラッシュ行継続(改行分割で2片に割れる)
+#   - PRE のキーワードは列挙であり、列挙外の前置語は素通りする
+# 意図的な過剰遮断(止めすぎ側。人間は ! プレフィックスで実行できる):
+#   - 文字列リテラル内の `; then gh pr merge …`(BORDER + PRE に当たる)
+#   - クォート内の実改行の後に行頭 gh が来る形(行ごとに判定するため)
+#   - 終端していないと読める heredoc の本文(`<<END-OF` のようなハイフン入りタグ。
+#     strip_heredocs が未終端扱いで本文を復帰させる。D-38)
+# D-NN は外部脳の負債台帳 ~/obsidian/brain/Tasks/dotfiles/2026-07-25-dotfiles両リポ負債棚卸し
+# 指示書/refactor-instructions.md の項番(GitHub issue 番号ではない)。
+# あくまで「うっかり実行」の抑止(既存 hook 群と同じ性質)。
 # トークン全体を囲むクォート(例 gh pr "merge" / "gh" pr merge)は normalized_words_of_segment
 # の1段除去で捕捉する(2026-06。Knowledge/字句grep型hookはクォート付きフラグを取りこぼす)。
 # 同様に短縮フラグ値連結(gh -Ro/r pr merge)や値2語フラグ越え(gh --foo a b pr
@@ -33,10 +49,15 @@ source_hook_lib resolve-git-target.sh || exit 0
 # 任意トークン貫通((\S+\s+)* 等)は && や他コマンド引数まで巻き込むので使わない。
 FLAGS='(-{1,2}[A-Za-z][A-Za-z0-9-]*(=\S+)?\s+([^-\s]\S*\s+)?)*'
 
-# gh の直前に置ける環境変数代入(例 `GH_TOKEN=x gh pr merge`、`PAGER=cat gh ...`)も
-# 任意個許容する。`VAR=val` は値に空白を含まない正規の POSIX 前置構文で、Claude が
-# 自然に書きうる(ページャ無効化やトークン指定)ため BORDER の素通しを塞ぐ。
-ENV='([A-Za-z_][A-Za-z0-9_]*=\S+\s+)*'
+# gh の直前に置ける環境変数代入(例 `GH_TOKEN=x gh pr merge`、`PAGER=cat gh ...`)と、
+# シェルキーワード(ループ・条件分岐・time 計測)を任意個・順不同で許容する。
+# `VAR=val` は値に空白を含まない正規の POSIX 前置構文で、Claude が自然に書きうる
+# (ページャ無効化やトークン指定)。キーワード側は BORDER が区切り文字の直後しか見ないため、
+# 語が1つ挟まると3つの ERE が全て外れるのを塞ぐ。
+# 順不同にするのは `GH_TOKEN=x time gh ...` と `time GH_TOKEN=x gh ...` の両方が書けるため。
+# ERE の `{` は区間指定と衝突するので文字クラスで書く。
+# キーワードは列挙であり、列挙外の前置語(env / sudo / case 分岐本体)は素通りする。
+PRE='((do|then|else|elif|if|while|until|time|[{]|!)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=\S+[[:space:]]+)*'
 
 # 前方は「コマンド開始位置の gh」に限定する: 行頭、または ; & | ( のコマンド区切り
 # 直後(&& || | ( $( の境界を単一文字でカバー)+ 任意空白。これで文字列リテラルや
@@ -44,27 +65,39 @@ ENV='([A-Za-z_][A-Za-z0-9_]*=\S+\s+)*'
 BORDER='(^|[;&|(])[[:space:]]*'
 END='(\s|$|[;&|)])'
 
-# 2026-06: cmd 全体を normalized_words_of_segment で正規化(read -r -a でトークン化 → 各
+# 2026-06: 各行を normalized_words_of_segment で正規化(read -r -a でトークン化 → 各
 # _strip_one_quote → 単一空白で再結合)してから旧 whole-cmd ERE を適用する。これで
 # `gh pr "merge"` / `"gh" pr merge` のクォート付き素通り(Knowledge/字句grep型hookは
-# クォート付きフラグを取りこぼす)を塞ぎつつ、whole-cmd 判定の堅牢性を保つ。
+# クォート付きフラグを取りこぼす)を塞ぎつつ、ERE 判定の堅牢性を保つ。
 # split_git_segments への作り替えは `FOO='a&b' gh pr merge` のように env 値内の `&;|` を
-# クォート無視で誤分割し検出漏れを起こす(self-review R-1)。トークン化は env 値を1トークンに
-# 保つので非分割でよい。練られた FLAGS/ENV パターンは温存する。
-normalized="$(normalized_words_of_segment "$cmd")"
+# クォート無視で誤分割し検出漏れを起こす(self-review R-1)。改行だけの分割はこの誤分割を
+# 持ち込まないので、D-36(2行目以降が読まれない)はこちらで塞ぐ。
+#
+# strip_heredocs は optional dependency。無ければ heredoc 除去を省いて判定を続ける
+# (倒れる先は過剰遮断側であり検出漏れ側ではない)。
+if type strip_heredocs >/dev/null 2>&1; then
+  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
+  [[ -n "$stripped" ]] && cmd="$stripped"
+fi
 
-if echo "$normalized" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}pr\\s+(ready|merge|close|reopen)${END}"; then
-  echo "ブロック: gh pr の ready/merge/close/reopen は不可逆な PR 状態変更のため禁止。人間が判断・実行すること。" >&2
+# normalized_words_of_segment は here-string の read が1行目で止まるため、行ごとに呼ぶ。
+normalized=""
+while IFS= read -r line; do
+  normalized="${normalized}$(normalized_words_of_segment "$line")"$'\n'
+done <<<"$cmd"
+
+if printf '%s' "$normalized" | grep -qE "${BORDER}${PRE}gh\\s+${FLAGS}pr\\s+(ready|merge|close|reopen)${END}"; then
+  echo "ブロック: gh pr の ready/merge/close/reopen は不可逆な PR 状態変更のため禁止。人間が判断し、必要なら ! プレフィックスで実行すること。複数行コマンドは行ごとに判定するため、引数内の改行後に現れた語にも当たる。" >&2
   exit 2
 fi
 
-if echo "$normalized" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}release\\s+(create|delete|edit|upload)${END}"; then
-  echo "ブロック: gh release の create/delete/edit/upload は公開リリースを動かすため禁止。人間が判断・実行すること。" >&2
+if printf '%s' "$normalized" | grep -qE "${BORDER}${PRE}gh\\s+${FLAGS}release\\s+(create|delete|edit|upload)${END}"; then
+  echo "ブロック: gh release の create/delete/edit/upload は公開リリースを動かすため禁止。人間が判断し、必要なら ! プレフィックスで実行すること。複数行コマンドは行ごとに判定するため、引数内の改行後に現れた語にも当たる。" >&2
   exit 2
 fi
 
-if echo "$normalized" | grep -qE "${BORDER}${ENV}gh\\s+${FLAGS}repo\\s+(delete|archive|edit)${END}"; then
-  echo "ブロック: gh repo の delete/archive/edit は不可逆なリポ操作のため禁止。人間が判断・実行すること。" >&2
+if printf '%s' "$normalized" | grep -qE "${BORDER}${PRE}gh\\s+${FLAGS}repo\\s+(delete|archive|edit)${END}"; then
+  echo "ブロック: gh repo の delete/archive/edit は不可逆なリポ操作のため禁止。人間が判断し、必要なら ! プレフィックスで実行すること。複数行コマンドは行ごとに判定するため、引数内の改行後に現れた語にも当たる。" >&2
   exit 2
 fi
 

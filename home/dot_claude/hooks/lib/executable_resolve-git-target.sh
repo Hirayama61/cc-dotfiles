@@ -192,6 +192,10 @@ segment_has_option() {
 # のように、多語サブコマンド(gh pr merge / git worktree add)を検出する hook が、既存の
 # 練られた ERE(BORDER/FLAGS/ENV)を温存したまま正規化後文字列にマッチできるようにする
 # (トークン照合への作り替えは差分・退行リスクが大きいので grep -E 継続を選択)。
+#
+# 制約: here-string の `read` は1行目で止まるため、**入力の2行目以降は捨てられる**。
+# 複数行コマンド全体を渡すと改行以降が照合対象から消える(D-36 の原因)。呼び出し側は
+# 1セグメント / 1行を渡すこと。
 normalized_words_of_segment() {
   local seg="${1:-}"
   local -a words=()
@@ -209,16 +213,24 @@ normalized_words_of_segment() {
 # `<<TAG` / `<<-TAG` / `<<'TAG'` / `<<"TAG"` / `<<\TAG` の開始を検出し、終端 TAG 行
 # (`<<-` のみ行頭タブ許容)までの本文行を落とす。字句 grep 型 hook が heredoc 内の
 # 説明文(issue 本文中のコマンド例等)に誤爆するのを防ぐ。herestring(<<<)は \001 に
-# 退避して誤検出しない。既知の限界(best-effort で受容):
+# 退避して誤検出しない。
+#
+# 開始を誤認しても検出漏れにはしない(D-38): 終端タグ行が来ないまま EOF に達したら、
+# 捨てた行を出し直す。本物でない heredoc(クォート内の `<< 語`・算術シフト `$((1<<b))`・
+# 部分捕捉になるハイフン入りタグ `<<END-OF`)は終端が一致しないのでこの経路に入り、
+# 以降の行が照合対象に残る。倒れる先は過剰遮断側。
+# 復帰行は末尾に回るが、消費側(行単位 grep / split_git_segments)は行順に依存しない。
+#
+# 既知の限界(best-effort で受容):
 #   - 1行内の複数 heredoc は最初のタグのみ追跡(漏れた本文は照合対象に残る=ブロック過剰側)
-#   - タグは [A-Za-z_][A-Za-z_0-9]* のみ(`<<END-OF` は部分捕捉し以降を飲み込む=fail-open)
-#   - 算術シフト等の heredoc でない `<<`+英字も開始と誤認しうる(fail-open)
+#   - ハイフン入りタグ(`<<END-OF`)の本文は未終端扱いになり復帰する(=ブロック過剰側)
 strip_heredocs() {
   printf '%s\n' "${1:-}" | awk '
     skip {
       line = $0
       if (dash) sub(/^\t+/, "", line)
-      if (line == tag) skip = 0
+      if (line == tag) { skip = 0; n = 0; next }
+      buf[++n] = $0
       next
     }
     {
@@ -232,7 +244,8 @@ strip_heredocs() {
         skip = 1
       }
       print
-    }'
+    }
+    END { if (skip) for (i = 1; i <= n; i++) print buf[i] }'
 }
 
 # 相対パスを base(cwd)基準で物理絶対パス化。解決不能なら空を返す。
