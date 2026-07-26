@@ -49,3 +49,18 @@ setup() {
     '{"tool_name":"Bash","tool_input":{"command":"gwq add feature/x\necho \"a << b\"\n# bin/wt.sh"}}'
   [ "$status" -eq 2 ]
 }
+
+# 上のテストが守るのは「許可側パターンの復活」だけで、対象行そのものの消失は守れていない。
+# 復帰つき版が使えない代償として、偽 heredoc 開始が対象行より前にあると素通りする。
+# 順序を入れ替えれば止まる(= 穴は順序依存)ことをここで可視化しておく。
+@test "accepted gap: a false heredoc start before the target line hides it" {
+  run_hook block-nested-worktree.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"echo \"a << b\"\ngwq add feature/x"}}'
+  [ "$status" -ne 2 ]
+}
+
+@test "accepted gap: an arithmetic shift before the target line hides it" {
+  run_hook block-nested-worktree.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"n=$((1<<b))\ngit worktree add ../wt-x"}}'
+  [ "$status" -ne 2 ]
+}

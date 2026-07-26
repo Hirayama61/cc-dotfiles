@@ -75,17 +75,27 @@ END='(\s|$|[;&|)])'
 # クォート無視で誤分割し検出漏れを起こす(self-review R-1)。改行だけの分割はこの誤分割を
 # 持ち込まないので、D-36(2行目以降が読まれない)はこちらで塞ぐ。
 #
-# strip_heredocs は optional dependency。無ければ heredoc 除去を省いて判定を続ける
-# (倒れる先は過剰遮断側であり検出漏れ側ではない)。
+# strip_heredocs は optional dependency。lenient が無い旧 lib と組んだ時は厳格版へ落とす
+# (除去ゼロだと heredoc 本文のコマンド例で誤ブロックする。代わりに D-38 の穴が開く=検出漏れ側)。
+# 両方無ければ除去を省いて判定を続ける(こちらは過剰遮断側)。
 if type strip_heredocs_lenient >/dev/null 2>&1; then
   stripped="$(strip_heredocs_lenient "$cmd" 2>/dev/null || true)"
+  [[ -n "$stripped" ]] && cmd="$stripped"
+elif type strip_heredocs >/dev/null 2>&1; then
+  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
   [[ -n "$stripped" ]] && cmd="$stripped"
 fi
 
 # normalized_words_of_segment は here-string の read が1行目で止まるため、行ごとに呼ぶ。
+# 行ごとにコマンド置換が張られるので、`gh` を含まない行は正規化せず空行で置く(行数は保つ)。
+# 正規化はトークン単位のクォート1段除去 + 空白再結合しかしないため、正規化後に語 `gh` が
+# 現れる行は元の行にも部分文字列 `gh` を含む(`g"h"` のトークン内分断は元々受容済みの素通り)。
 normalized=""
 while IFS= read -r line; do
-  normalized="${normalized}$(normalized_words_of_segment "$line")"$'\n'
+  case "$line" in
+  *gh*) normalized="${normalized}$(normalized_words_of_segment "$line")"$'\n' ;;
+  *) normalized="${normalized}"$'\n' ;;
+  esac
 done <<<"$cmd"
 
 MSG_TAIL='人間が判断し、必要なら Claude Code のプロンプトで !<コマンド> として実行すること(Bash 引数の先頭に ! を付けても同じくブロックされる)。複数行コマンドは行ごとに判定するため、引数内の改行後に現れた語にも当たる。'

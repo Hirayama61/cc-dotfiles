@@ -294,6 +294,14 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "a leading-dash path still reaches the judgement (basename does not abort)" {
+  # file_path は tool_input 由来の外部入力。`--` を付けないと basename がオプション誤認で
+  # こけ、set -e で判定に到達しないまま hook が終わる(遮断が消える)。
+  run_hook block-secret-files.sh \
+    '{"tool_name":"Read","tool_input":{"file_path":"-n/x/.env"}}'
+  [ "$status" -eq 2 ]
+}
+
 @test "fails open without jq (exit != 2)" {
   local nojq
   nojq="$(make_no_jq_path)"

@@ -169,6 +169,28 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+# ヘッダが「対象外」と宣言した形。allows でなく accepted gap: にしているのは、塞ぐ判断が
+# 出た時に落として書き換える前提だから(D-37 / D-41 が閉じたらこの 3 本は消える)。
+# 逆向きの退行を止めるのが目的で、`--force` の判定を前方一致に緩めると --force-create が
+# 巻き込まれ、checkout 側を広げると `git checkout <branch>` まで止まる。
+@test "accepted gap: git switch -C is out of scope (branch ref, not working tree)" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git switch -C main"}}'
+  [ "$status" -ne 2 ]
+}
+
+@test "accepted gap: git switch --force-create is out of scope" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git switch --force-create main"}}'
+  [ "$status" -ne 2 ]
+}
+
+@test "accepted gap: git checkout <path> without -- is not blocked" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout ."}}'
+  [ "$status" -ne 2 ]
+}
+
 @test "allows a plain git switch" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git switch main"}}'
@@ -228,6 +250,24 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"echo \"see a << b\"\ngit reset --hard"}}'
   [ "$status" -eq 2 ]
+}
+
+@test "falls back to the strict strip_heredocs when the lenient one is missing" {
+  # apply 前後の版ずれで lib が旧版になる瞬間を模す。除去ゼロへ後退すると heredoc 本文の
+  # コマンド例で誤ブロックするため、厳格版が残っていればそちらへ落ちること。
+  sed -i '' 's/^strip_heredocs_lenient()/_gone_strip_heredocs_lenient()/' \
+    "$HOME/.claude/hooks/lib/resolve-git-target.sh"
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"cat <<EOT > notes.txt\ngit reset --hard\nEOT"}}'
+  [ "$status" -ne 2 ]
+}
+
+@test "accepted gap: a heredoc executed as stdin is not inspected" {
+  # `bash <<EOF` の本文は実行されるコマンドだが、strip_heredocs はデータと区別せず落とす。
+  # gh 側と同型の穴で、この PR が作ったものではない。
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"bash <<EOF\ngit reset --hard\nEOF"}}'
+  [ "$status" -ne 2 ]
 }
 
 @test "accepted gap: a false heredoc start whose tag reappears alone hides the command between" {

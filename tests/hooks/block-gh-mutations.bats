@@ -256,6 +256,16 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "falls back to the strict strip_heredocs when the lenient one is missing" {
+  # apply 前後の版ずれで lib が旧版になる瞬間を模す。除去ゼロへ後退すると PR 本文を
+  # heredoc で書くだけで誤ブロックするため、厳格版が残っていればそちらへ落ちること。
+  sed -i '' 's/^strip_heredocs_lenient()/_gone_strip_heredocs_lenient()/' \
+    "$HOME/.claude/hooks/lib/resolve-git-target.sh"
+  run_hook block-gh-mutations.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"cat <<EOF > notes.txt\ngh pr merge 1\nEOF"}}'
+  [ "$status" -eq 0 ]
+}
+
 @test "allows a closed heredoc body even when a later line starts a false heredoc" {
   # 終端タグ行でバッファを破棄しないと、後続の偽 heredoc 開始で EOF 復帰が走ったときに
   # 「既に正しく閉じた本文」まで一緒に復帰して誤爆する。その境界を固定する。

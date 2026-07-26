@@ -192,7 +192,8 @@ setup() {
 # 呼ぶと遮断が消える。この契約は lib のコメントだけでは守れないので呼び出し元を固定する。
 @test "contract: strip_heredocs_lenient is called only by block-side-only hooks" {
   local callers
-  callers="$(cd "$HOOKS_SRC" && grep -l 'strip_heredocs_lenient' ./*.sh |
+  # コメント中の言及で落ちないよう、実際の呼び出し形(引数付き)だけを見る。
+  callers="$(cd "$HOOKS_SRC" && grep -l 'strip_heredocs_lenient "' ./*.sh |
     sed -e 's|^\./private_executable_||' -e 's|^\./||' | sort | tr '\n' ' ')"
   [ "$callers" = "block-destructive-git.sh block-gh-mutations.sh " ]
 }

@@ -16,6 +16,11 @@
 # 本文中の `&;|()` をクォート無視で誤分割し、後半のフレーズを取りこぼしうる(検出漏れ
 # 方向 = fail-open)。クォートで囲んだフラグ(`"--body"`)の本文抽出も対象外。これらは
 # 既存 hook 群と同じく「うっかり silent punting」の抑止が目的で、意図的な回避の遮断ではない。
+#
+# 既知の限界(受容): 復帰つきの strip_heredocs_lenient は使えない。許可側パターン
+# (`(#NNN)` の continue)をコマンド全文へ掛けるため、復帰した本文がそれに当たると遮断が
+# 消える。その代償として、偽の heredoc 開始(`echo "a << b"` / `$((1<<b))`)が対象行より
+# 前にあると、以降の行が捨てられて素通りする(順序依存の検出漏れ)。
 set -euo pipefail
 
 LIB="$HOME/.claude/hooks/lib/hook-input.sh"
@@ -43,8 +48,9 @@ DEFER_PHRASES='後で対応|あとで対応|次のPRで|別PRで|別のPRで|一
 
 # gh サブコマンド検出の字句は block-gh-mutations.sh から派生(quote-aware・whole-segment ERE)。
 # サブコマンド前のグローバルフラグ / 前置 env 代入 / コマンド境界を許容する。
-# 完全同一ではない: 向こうはシェルキーワードの前置と改行での行分割も見るため、
-# `for ...; do gh pr comment ...` / `time gh ...` / 複数行の 2 行目以降は向こうだけが捕捉する。
+# 完全同一ではない: 向こうはシェルキーワードの前置も見るため、`for ...; do gh pr comment ...` /
+# `time gh ...` は向こうだけが捕捉する。複数行はこちらも split_git_segments の改行分割で
+# 2 行目以降を見る。
 FLAGS='(-{1,2}[A-Za-z][A-Za-z0-9-]*(=\S+)?\s+([^-\s]\S*\s+)?)*'
 ENV='([A-Za-z_][A-Za-z0-9_]*=\S+\s+)*'
 BORDER='(^|[;&|(])[[:space:]]*'

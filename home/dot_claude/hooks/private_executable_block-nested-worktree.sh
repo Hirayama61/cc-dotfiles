@@ -8,6 +8,11 @@
 #         この hook には見えない)。delegate の isolation:"worktree" は Bash コマンド
 #         ではないので誤爆しない。heredoc 本文(issue 本文中のコマンド例等)は
 #         strip_heredocs で除去してから照合する(dotfiles#74)。
+#
+# 既知の限界(受容): 復帰つきの strip_heredocs_lenient は使えない。許可側パターン
+# (wt.sh の early exit)をコマンド全文へ掛けるため、復帰した本文がそれに当たると遮断が
+# 消える。その代償として、偽の heredoc 開始(`echo "a << b"` / `$((1<<b))`)が対象行より
+# 前にあると、以降の行が捨てられて素通りする(順序依存の検出漏れ)。
 set -euo pipefail
 
 LIB="$HOME/.claude/hooks/lib/hook-input.sh"

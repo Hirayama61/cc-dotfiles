@@ -20,6 +20,8 @@
 #     (cat .envrc 等)や Grep の出力からは同じ内容が読める。Bash 側の対になる遮断は無い
 #   - 判定は basename のみなので、symlink や別名コピー経由は素通りする
 #     (/proj/config.json → ~/.aws/credentials の symlink を Read すると通る)
+#   - 秘密らしい名前の網羅はしていない。*.env(prod.env 等)/ secrets.yaml,yml,json /
+#     *.p8 / *.ppk / kubeconfig / *.tfstate / .htpasswd は現状すべて素通りする
 #
 # 意図的に過剰遮断側へ倒しているもの(いずれも人間の決定。バグと読んで緩めないこと):
 #   - .env.example / .env.sample … `.env.*` に当たる。慣習的にコミットされる非秘密ファイル
@@ -39,7 +41,9 @@ if [ -z "$FILE_PATH" ]; then
   exit 0
 fi
 
-BASENAME=$(basename "$FILE_PATH")
+# `--` 必須。`-n/x/.env` のような値だと basename がオプション誤認で異常終了し、
+# set -e によって判定へ到達しないまま hook が終わる。
+BASENAME=$(basename -- "$FILE_PATH")
 # bash 3.2 に ${var,,} が無いため tr。LC_ALL=C はロケール依存の大小変換を避ける。
 LOWER=$(printf '%s' "$BASENAME" | LC_ALL=C tr '[:upper:]' '[:lower:]')
 

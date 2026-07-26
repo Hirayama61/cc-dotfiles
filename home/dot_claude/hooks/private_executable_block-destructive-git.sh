@@ -10,6 +10,8 @@
 # 既知の限界(受容): long オプションの前方略記(--ha 等)・バックスラッシュ行継続は検出しない。
 # 既知の限界(未決): checkout は `--` トークンか -f がある時しか止めない。`git checkout .` /
 # `git checkout <path>` は同じ変更破棄だが素通りする(restore は引数無しでも止めるので非対称)。
+# 既知の限界(受容): heredoc を stdin として実行する形(`bash <<EOF` / `cat <<EOF | bash` /
+# `ssh h <<EOF`)の本文は実行されるコマンドだが、strip_heredocs はデータと区別せず落とす。
 # 安全側設計: jq 無し / 空コマンド / lib 不在なら exit 0(通す)。
 set -euo pipefail
 
@@ -26,8 +28,13 @@ source_hook_lib resolve-git-target.sh || exit 0
 # lib に strip_heredocs があれば heredoc 本文を除去して誤爆を防ぐ(dotfiles#74 と合流後に有効化)。
 # 除去は正しく閉じた heredoc に限る。終端タグが見つからない形(クォート内の `<< 語`・
 # 算術シフト・未終端)は本文が復帰し照合対象に残る(過剰遮断側。D-38)。
+# lenient が無い旧 lib と組んだ時は厳格版へ落とす(除去ゼロだと heredoc 本文の
+# コマンド例で誤ブロックする。apply 前後の版ずれの間だけ起きる)。
 if type strip_heredocs_lenient >/dev/null 2>&1; then
   stripped="$(strip_heredocs_lenient "$cmd" 2>/dev/null || true)"
+  [[ -n "$stripped" ]] && cmd="$stripped"
+elif type strip_heredocs >/dev/null 2>&1; then
+  stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
   [[ -n "$stripped" ]] && cmd="$stripped"
 fi
 
