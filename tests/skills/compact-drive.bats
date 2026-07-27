@@ -39,6 +39,11 @@ setup() {
   export FAKE_MARKER_ON_COMPACT=""
   export FAKE_PID_AFTER=""
   export FAKE_PIDCOUNT="$BATS_TEST_TMPDIR/pidcount"
+  export FAKE_CAPCOUNT="$BATS_TEST_TMPDIR/capcount"
+  export FAKE_SCREEN_AFTER="$BATS_TEST_TMPDIR/screen-after"
+  export FAKE_SCREEN_SWITCH_AT=""
+  export FAKE_STEAL_LOCK_ON_PREP=""
+  printf 'ready\n' >"$FAKE_SCREEN_AFTER"
   printf 'ready\n' >"$FAKE_SCREEN"
   printf '100' >"$FAKE_PID"
   printf 'node' >"$FAKE_CMD"
@@ -69,7 +74,15 @@ display-message)
   ;;
 capture-pane)
   if [ -f "$FAKE_SCREEN.fail" ]; then exit 1; fi
-  cat "$FAKE_SCREEN"
+  n="$(cat "$FAKE_CAPCOUNT" 2>/dev/null || echo 0)"
+  n=$((n + 1))
+  printf '%s' "$n" >"$FAKE_CAPCOUNT"
+  # N 回目以降だけ画面を差し替える = 判定の途中で pane の状態が変わる状況
+  if [ -n "$FAKE_SCREEN_SWITCH_AT" ] && [ "$n" -ge "$FAKE_SCREEN_SWITCH_AT" ]; then
+    cat "$FAKE_SCREEN_AFTER"
+  else
+    cat "$FAKE_SCREEN"
+  fi
   ;;
 send-keys)
   prev=""; literal=""
@@ -85,6 +98,10 @@ send-keys)
       if [ -n "$FAKE_STATE_ON_PREP" ]; then
         cp "$FAKE_STATE_ON_PREP" "$FAKE_STATE_DST"
         touch -A 000010 "$FAKE_STATE_DST"
+      fi
+      # 送信を観測した時点でロックの持ち主が他へ変わる状況(所有権喪失)
+      if [ -n "$FAKE_STEAL_LOCK_ON_PREP" ]; then
+        printf '%s' 1 >"$FAKE_STEAL_LOCK_ON_PREP/pid"
       fi
       ;;
     /compact)
@@ -409,6 +426,103 @@ assert_no_send() {
   [ "$status" -eq 4 ]
   assert_no_send
   case "$output" in *"jq-missing"*) ;; *) echo "$output"; return 1 ;; esac
+}
+
+@test "permission prompt appearing after the idle checks: does not send" {
+  make_ctx ctx1 80 "$WORKTREE"
+  printf 'Do you want to proceed?\n> 1. Yes\n' >"$FAKE_SCREEN_AFTER"
+  # idle 判定の 2 回分は ready、その後にプロンプトが出る。フェンスが送信の直前に
+  # 無いと、この窓で出たプロンプトを誰も見ないまま送ってしまう。
+  FAKE_SCREEN_SWITCH_AT=3 run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 3 ]
+  assert_no_send
+  [ "$(grep -c '^ENTER$' "$FAKE_SENT" || true)" -eq 0 ]
+}
+
+@test "prep ack retry passes the fence before sending Enter" {
+  make_ctx ctx1 80 "$WORKTREE"
+  printf 'Do you want to proceed?\n> 1. Yes\n' >"$FAKE_SCREEN_AFTER"
+  # prep 送信後にプロンプトが出た状況。ack は取れないので リトライ経路に入るが、
+  # そこで裸の Enter を送ると既定選択の確定 = 代理承認になる。
+  FAKE_SCREEN_SWITCH_AT=4 run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 3 ]
+  [ "$(sent_count '/compact-prep')" -eq 1 ]
+  # send_line の 1 回だけ。リトライの Enter が増えていないこと
+  [ "$(grep -c '^ENTER$' "$FAKE_SENT" || true)" -eq 1 ]
+}
+
+@test "permission prompt before the compact send: does not send compact" {
+  make_ctx ctx1 80 "$WORKTREE"
+  FAKE_STATE_ON_PREP="$(valid_state)"
+  printf 'Do you want to proceed?\n> 1. Yes\n' >"$FAKE_SCREEN_AFTER"
+  # prep 完了確認までは ready、/compact 直前のフェンスでプロンプトを見る
+  FAKE_SCREEN_SWITCH_AT=7 run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 3 ]
+  [ "$(sent_count '/compact-prep')" -eq 1 ]
+  [ "$(sent_count '/compact')" -eq 0 ]
+}
+
+@test "lock taken over by another process: keeps that lock and stops" {
+  make_ctx ctx1 80 "$WORKTREE"
+  FAKE_STATE_ON_PREP="$(valid_state)"
+  lock="$TMPDIR/claude-acd-_5.lock"
+  FAKE_STEAL_LOCK_ON_PREP="$lock" run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 4 ]
+  case "$output" in *"lock-lost"*) ;; *) echo "$output"; return 1 ;; esac
+  # 他プロセスの所有になったロックを消さないこと(消すと二重送信の窓が開く)
+  [ -d "$lock" ]
+  [ "$(cat "$lock/pid")" = "1" ]
+}
+
+@test "non-numeric ACD_IDLE_CHECKS is rejected instead of skipping the idle check" {
+  make_ctx ctx1 80 "$WORKTREE"
+  printf 'Thinking... (12s %s esc to interrupt)\n' "·" >"$FAKE_SCREEN"
+  ACD_IDLE_CHECKS=abc run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 4 ]
+  assert_no_send
+  case "$output" in *"bad-env"*) ;; *) echo "$output"; return 1 ;; esac
+}
+
+@test "usage percentage exactly at the line is treated as reached" {
+  make_ctx ctx1 40 "$WORKTREE"
+  FAKE_STATE_ON_PREP="$(valid_state)"
+  FAKE_MARKER_ON_COMPACT="$MARKER"
+  run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 0 ]
+}
+
+@test "usage percentage just below the line does not send" {
+  make_ctx ctx1 39 "$WORKTREE"
+  run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 2 ]
+  assert_no_send
+}
+
+@test "ACD_THRESHOLD overrides the default line" {
+  make_ctx ctx1 45 "$WORKTREE"
+  ACD_THRESHOLD=50 run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 2 ]
+  assert_no_send
+  case "$output" in *"low-pct"*) ;; *) echo "$output"; return 1 ;; esac
+}
+
+@test "shell-cmd probe that cannot answer stops the send" {
+  make_ctx ctx1 80 "$WORKTREE"
+  # ERE は返せるが --is-shell-cmd に答えられない版(版ずれ)を模す
+  stub="$HOME/.claude/skills/tmux-claude-drive/scripts/rate-limit-resume.sh"
+  cat >"$stub" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+--print-permission-ere) printf '%s\n' 'do you want to' ;;
+--print-limit-ere) printf '%s\n' 'usage limit' ;;
+--print-spinner-ere) printf '%s\n' '[0-9]+s[[:space:]]*·' ;;
+*) exit 127 ;;
+esac
+STUB
+  chmod +x "$stub"
+  run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 3 ]
+  assert_no_send
 }
 
 @test "relative worktree argument is rejected" {

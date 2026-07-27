@@ -62,13 +62,16 @@ emit() {
   fi
 }
 
+# ロックは自分が持っている時だけ外す。所有が他へ移った後に消すと、その持ち主が
+# 送信の途中で解錠され、同じ pane へ 2 本目が入る(このロック唯一の目的が壊れる)。
 cleanup() {
   if [ -n "$BASELINE" ]; then
     rm -f "$BASELINE" 2>/dev/null || true
   fi
-  if [ "$LOCK_OWNED" -eq 1 ] && [ -n "$LOCK" ]; then
+  if [ "$LOCK_OWNED" -eq 1 ] && [ -n "$LOCK" ] && own_lock; then
     rm -rf "$LOCK" 2>/dev/null || true
   fi
+  LOCK_OWNED=0
   return 0
 }
 
@@ -127,8 +130,15 @@ send_fence() {
     FENCE_REASON="pane-replaced pid=$cur_pid"; FENCE_RC=4; return 1
   fi
   cur_cmd="$("$TMUX" display-message -p -t "$PANE" '#{pane_current_command}' 2>/dev/null || true)"
-  if [ -n "$cur_cmd" ] && "$RLR" --is-shell-cmd "$cur_cmd" >/dev/null 2>&1; then
-    FENCE_REASON="claude-exited cmd=$cur_cmd"; FENCE_RC=4; return 1
+  if [ -n "$cur_cmd" ]; then
+    # 0=シェル / 1=非シェル / それ以外=判定不能。判定不能を「非シェル」に倒すと、
+    # 公開口が壊れた・版がずれた時に claude 消失の検知が黙って無効化される。
+    rc=0; "$RLR" --is-shell-cmd "$cur_cmd" >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+    0) FENCE_REASON="claude-exited cmd=$cur_cmd"; FENCE_RC=4; return 1 ;;
+    1) ;;
+    *) FENCE_REASON="shell-probe-failed rc=$rc"; FENCE_RC=3; return 1 ;;
+    esac
   fi
   if ! text="$(capture_tail)"; then
     FENCE_REASON="capture-failed"; FENCE_RC=3; return 1
@@ -157,20 +167,22 @@ send_fence() {
 # 0=スピナーあり / 1=無し / 2=判定不能。呼び分けるのは、idle 判定では判定不能を
 # 「送らない」へ倒す一方、送信成立の確認では判定不能を「まだ成立していない」として
 # 待たせたいため(同じ値に潰すとどちらかが fail-open になる)。
+IDLE_REASON=""
 spinner_seen() {
   local text ere rc
-  ere="$(fetch_ere --print-spinner-ere)" || return 2
-  text="$(capture_tail)" || return 2
+  ere="$(fetch_ere --print-spinner-ere)" || { IDLE_REASON="spinner-ere-unavailable"; return 2; }
+  text="$(capture_tail)" || { IDLE_REASON="capture-failed"; return 2; }
   rc=0; match_ere "$ere" "$text" || rc=$?
   case "$rc" in
-  0) return 0 ;;
+  0) IDLE_REASON="busy-pane"; return 0 ;;
   1) return 1 ;;
-  *) return 2 ;;
+  *) IDLE_REASON="spinner-match-failed"; return 2 ;;
   esac
 }
 
 is_idle() {
   local i=1 rc
+  IDLE_REASON=""
   while [ "$i" -le "$IDLE_CHECKS" ]; do
     rc=0; spinner_seen || rc=$?
     if [ "$rc" -ne 1 ]; then
@@ -230,6 +242,17 @@ WORKTREE="${WORKTREE%/}"
 command -v jq >/dev/null 2>&1 || finish 4 "jq-missing"
 [ -r "$CTX_LIB" ] || finish 4 "ctx-lib-unreachable"
 
+# 数値パラメータは使う前にまとめて検証する。非数値だと `[` が rc=2 を返すが、
+# while の条件など set -e が効かない位置では判定を素通りする(idle 判定が丸ごと飛ぶ)。
+for _v in THRESHOLD IDLE_CHECKS IDLE_INTERVAL SEND_ACK_TIMEOUT \
+  PREP_TIMEOUT COMPACT_TIMEOUT SEND_DELAY SCAN_LINES; do
+  case "${!_v:-}" in
+  '' | *[!0-9]*) finish 4 "bad-env ACD_${_v}=${!_v:-}" ;;
+  esac
+done
+[ "$IDLE_CHECKS" -ge 1 ] || finish 4 "bad-env ACD_IDLE_CHECKS=$IDLE_CHECKS"
+[ "$SCAN_LINES" -ge 1 ] || finish 4 "bad-env ACD_SCAN_LINES=$SCAN_LINES"
+
 if [ "$STATUS_ONLY" -eq 0 ]; then
   SELF_PANE="${TMUX_PANE:-${ACD_SELF_PANE:-}}"
   [ -n "$SELF_PANE" ] || finish 4 "self-pane-unknown"
@@ -241,7 +264,11 @@ if [ "$STATUS_ONLY" -eq 0 ]; then
   LOCK="$lock_dir/claude-acd-$lock_key.lock"
   if mkdir "$LOCK" 2>/dev/null; then
     LOCK_OWNED=1
-    trap 'cleanup' EXIT INT TERM
+    # INT/TERM のハンドラは exit を持たせる。持たせないと cleanup で解錠したまま
+    # 本体が走り続け、ロック無しで送信する経路ができる。
+    trap 'cleanup' EXIT
+    trap 'cleanup; exit 130' INT
+    trap 'cleanup; exit 143' TERM
     printf '%s' "$$" >"$LOCK/pid"
   else
     holder="$(cat "$LOCK/pid" 2>/dev/null || true)"
@@ -315,8 +342,11 @@ COMPACTED_MARKER="$("$CTX_LIB" compacted "$ctx" 2>/dev/null)" || COMPACTED_MARKE
 START_PANE_PID="$("$TMUX" display-message -p -t "$PANE" '#{pane_pid}' 2>/dev/null || true)"
 [ -n "$START_PANE_PID" ] || finish 4 "pane-lost"
 
+# フェンスは送信の直前に置く。idle 判定は間隔を空けて複数回見るので、フェンスを先に
+# 置くと権限プロンプトの検査が送信の数秒前の観測になる。しかもプロンプト表示中は
+# スピナーが消えるため idle 判定はそれを idle と読む(その窓で出たプロンプトを誰も見ない)。
+is_idle || finish 3 "${IDLE_REASON:-busy-pane}"
 send_fence || finish "$FENCE_RC" "$FENCE_REASON"
-is_idle || finish 3 "busy-pane"
 
 BASELINE="$(mktemp "${TMPDIR:-/tmp}/claude-acd-baseline.XXXXXX")" || finish 4 "baseline-failed"
 
@@ -351,6 +381,10 @@ while :; do
   fi
   retried=1
   emit "prep-ack-retry"
+  # 裸の Enter も送信。ack が取れない代表的な原因は「送信後に権限プロンプトが出た」で、
+  # その状態の Enter は既定選択の確定 = 代理承認になる。他 2 経路と同じフェンスを通す。
+  send_fence || finish "$FENCE_RC" "$FENCE_REASON"
+  own_lock || finish 4 "lock-lost"
   "$TMUX" send-keys -t "$PANE" Enter || finish 4 "send-failed cmd=prep-retry"
 done
 [ "$prep_ack" -eq 1 ] || finish 4 "prep-not-started ctx=$ctx"
