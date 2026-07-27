@@ -14,9 +14,11 @@
 # 終了コード(rate-limit-resume.sh とは別体系。出力 prefix ACD:/RLR: で見分ける):
 #   0  compact 成立(compacted marker で確認)/ --status で送信可能な状態
 #   2  何もしない(pct が代行ライン未満・usage.json 不在/stale・ctx 一致 0 件)
-#   3  今は送れない(非 idle・権限プロンプト・limit banner・他の代行が進行中)
+#   3  今は送れない(非 idle・権限プロンプト・limit banner・他の代行が進行中・
+#      pane 属性が読めない cmd-unreadable・公開口が答えない shell-probe-failed 等)
 #   4  人間が要る(ctx 曖昧・自 pane 不明・state 不正・compact 未成立・pane 消失・jq 不在・
-#      環境変数不正 bad-env・ロック所有の喪失 lock-lost・シグナル中断・aborted)
+#      環境変数不正 bad-env・ロック所有の喪失 lock-lost・シグナル中断・aborted・
+#      未送信の literal が入力欄に残った literal-pending)
 #   1  使用方法エラー
 #
 # 環境変数(既定は実運用値。テストは短縮する):
@@ -87,9 +89,13 @@ finish() {
 }
 
 # finish を通らない終わり方(set -e の中断・シグナル)でも終端行を必ず残す。
+# 回収路は signal file と exit status の 2 系統あるので、報告した rc に exit status も
+# 揃える(揃えないと中断が 1 = 使用方法エラーとして前景の呼び出し元に届く)。
 on_exit() {
   if [ "$FINISHED" -eq 0 ]; then
     emit "done rc=4 reason=aborted"
+    cleanup
+    exit 4
   fi
   cleanup
 }
@@ -211,13 +217,14 @@ is_idle() {
 }
 
 # literal と Enter は 2 段なので、その間にもフェンスを通す。ここで権限プロンプトが出ると
-# Enter は既定選択の確定 = 代理承認になる。止めた場合 literal は入力欄に残るが、
-# 送らない方を優先する(残った文字列は人間が消す。理由文字列に literal-pending を出す)。
+# Enter は既定選択の確定 = 代理承認になる。止めた場合 literal は入力欄に残るので、
+# フェンスの rc に依らず人間へ返す(rc=3 は「次周期に再試行してよい」なので、残留の上へ
+# 次周期がもう 1 本積んで Enter を押す。送っていない文字列を人間が消すまで代行を止める)。
 send_line() {
   local label="$1" text="$2"
   "$TMUX" send-keys -t "$PANE" -l "$text" || finish 4 "send-failed cmd=$label"
   sleep_secs "$SEND_DELAY"
-  send_fence || finish "$FENCE_RC" "$FENCE_REASON literal-pending=$label"
+  send_fence || finish 4 "$FENCE_REASON literal-pending=$label"
   own_lock || finish 4 "lock-lost literal-pending=$label"
   "$TMUX" send-keys -t "$PANE" Enter || finish 4 "send-failed cmd=$label-enter"
   return 0
@@ -273,6 +280,17 @@ done
 [ "$IDLE_CHECKS" -ge 1 ] || finish 4 "bad-env ACD_IDLE_CHECKS=$IDLE_CHECKS"
 [ "$SCAN_LINES" -ge 1 ] || finish 4 "bad-env ACD_SCAN_LINES=$SCAN_LINES"
 
+# ハンドラはロック取得より前に張る。ロック分岐の内側だと --status とロック取得前の区間が
+# 素通しになり、その区間の中断で終端行が 1 行も出ない。ハンドラは finish を通す
+# (cleanup だけだと解錠したまま本体が走り続け、ロック無しで送信する経路ができる)。
+# rc は表に載っている 4(人間が要る)に寄せる(130/143 は運転元が知らない値になる)。
+# 背景 1 本で起動する設計なので、運転元 pane の終了に伴う HUP も拾う(拾わないと解錠されず、
+# 奪取しない設計のためその pane の代行が stale-lock で恒久的に止まる)。
+trap 'on_exit' EXIT
+trap 'finish 4 "interrupted"' INT
+trap 'finish 4 "terminated"' TERM
+trap 'finish 4 "hangup"' HUP
+
 if [ "$STATUS_ONLY" -eq 0 ]; then
   SELF_PANE="${TMUX_PANE:-${ACD_SELF_PANE:-}}"
   [ -n "$SELF_PANE" ] || finish 4 "self-pane-unknown"
@@ -284,12 +302,6 @@ if [ "$STATUS_ONLY" -eq 0 ]; then
   LOCK="$lock_dir/claude-acd-$lock_key.lock"
   if mkdir "$LOCK" 2>/dev/null; then
     LOCK_OWNED=1
-    # ハンドラは finish を通す。cleanup だけだと解錠したまま本体が走り続け、
-    # ロック無しで送信する経路ができる。rc は表に載っている 4(人間が要る)に寄せる
-    # (130/143 を返すと運転元が知らない値になる)。
-    trap 'on_exit' EXIT
-    trap 'finish 4 "interrupted"' INT
-    trap 'finish 4 "terminated"' TERM
     printf '%s' "$$" >"$LOCK/pid"
   else
     holder="$(cat "$LOCK/pid" 2>/dev/null || true)"

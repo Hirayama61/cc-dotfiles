@@ -439,13 +439,14 @@ assert_no_send() {
   [ "$(grep -c '^ENTER$' "$FAKE_SENT" || true)" -eq 0 ]
 }
 
-@test "prompt between the literal and Enter: literal stays unsent" {
+@test "prompt between the literal and Enter: Enter is withheld and rc goes to the human" {
   make_ctx ctx1 80 "$WORKTREE"
   printf 'Do you want to proceed?\n> 1. Yes\n' >"$FAKE_SCREEN_AFTER"
   # literal 投入から Enter までの間にプロンプトが出た状況。ここで Enter を送ると
-  # 既定選択の確定 = 代理承認になる。
+  # 既定選択の確定 = 代理承認になる。literal は入力欄に残るので、rc=3(次周期に
+  # 再試行してよい)で返すと次周期が残留へもう 1 本積んで Enter を押す。
   FAKE_SCREEN_SWITCH_AT=4 run bash "$SCRIPT" "%5" "$WORKTREE"
-  [ "$status" -eq 3 ]
+  [ "$status" -eq 4 ]
   [ "$(sent_count '/compact-prep')" -eq 1 ]
   [ "$(grep -c '^ENTER$' "$FAKE_SENT" || true)" -eq 0 ]
   case "$output" in *"literal-pending=prep"*) ;; *) echo "$output"; return 1 ;; esac
@@ -490,6 +491,8 @@ assert_no_send() {
   FAKE_STEAL_LOCK_ON_PREP="$lock" run bash "$SCRIPT" "%5" "$WORKTREE"
   [ "$status" -eq 4 ]
   case "$output" in *"lock-lost"*) ;; *) echo "$output"; return 1 ;; esac
+  # ロックを失った状態で Enter を送らないこと(この検査が send_line の own_lock の存在意義)
+  [ "$(grep -c '^ENTER$' "$FAKE_SENT" || true)" -eq 0 ]
   # 他プロセスの所有になったロックを消さないこと(消すと二重送信の窓が開く)
   [ -d "$lock" ]
   [ "$(cat "$lock/pid")" = "1" ]
@@ -588,4 +591,58 @@ STUB
   run bash "$SCRIPT" "sess:win.0" "$WORKTREE"
   [ "$status" -eq 1 ]
   assert_no_send
+}
+
+# 終端契約(rc 表の値と実 exit status を必ず揃える)。回収路は signal file と exit status の
+# 2 系統あるので、片方だけ rc=4 になると運転元の判断が割れる。
+@test "set -e abort exits with the rc it reported" {
+  make_ctx ctx1 80 "$WORKTREE"
+  shim="$BATS_TEST_TMPDIR/shim"
+  mkdir -p "$shim"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"$shim/date"
+  chmod +x "$shim/date"
+  sig="$BATS_TEST_TMPDIR/sig"
+  PATH="$shim:$PATH" ACD_SIGNAL_FILE="$sig" run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 4 ]
+  assert_no_send
+  grep -q 'done rc=4 reason=aborted' "$sig"
+}
+
+@test "status mode: a signal before the lock still leaves the terminal line" {
+  make_ctx ctx1 80 "$WORKTREE"
+  # ロック取得は非 status 経路にしか無いので、その手前の区間で中断させる
+  cat >"$HOME/.claude/hooks/lib/context-paths.sh" <<'STUB'
+#!/usr/bin/env bash
+sleep 3
+STUB
+  chmod +x "$HOME/.claude/hooks/lib/context-paths.sh"
+  sig="$BATS_TEST_TMPDIR/sig"
+  ACD_SIGNAL_FILE="$sig" bash "$SCRIPT" --status "$WORKTREE" &
+  pid=$!
+  sleep 1
+  kill -TERM "$pid"
+  rc=0
+  wait "$pid" || rc=$?
+  [ "$rc" -eq 4 ]
+  grep -q 'done rc=4 reason=terminated' "$sig"
+}
+
+@test "hangup releases the lock and reports through the rc table" {
+  make_ctx ctx1 80 "$WORKTREE"
+  cat >"$HOME/.claude/hooks/lib/context-paths.sh" <<'STUB'
+#!/usr/bin/env bash
+sleep 3
+STUB
+  chmod +x "$HOME/.claude/hooks/lib/context-paths.sh"
+  sig="$BATS_TEST_TMPDIR/sig"
+  ACD_SIGNAL_FILE="$sig" bash "$SCRIPT" "%5" "$WORKTREE" &
+  pid=$!
+  sleep 1
+  kill -HUP "$pid"
+  rc=0
+  wait "$pid" || rc=$?
+  [ "$rc" -eq 4 ]
+  grep -q 'done rc=4 reason=hangup' "$sig"
+  # 解錠しないと以降その pane は stale-lock で恒久的に止まる
+  [ ! -d "$TMPDIR/claude-acd-_5.lock" ]
 }
