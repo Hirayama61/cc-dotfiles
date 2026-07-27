@@ -41,6 +41,26 @@ install_hooks() {
   export HOME="$TEST_HOME"
 }
 
+# 一時 HOME に skills の付属スクリプトを複製する(install_hooks の後に呼ぶ)。
+# skill スクリプトは兄弟スクリプトと lib を apply 先絶対パス($HOME/.claude/skills/...)で
+# 引くため、hooks と同じ要領で prefix を剥がして配置しないと解決できない。
+install_skill_scripts() {
+  local src="$REPO_ROOT/home/dot_claude/skills"
+  local dir skill f base dst
+  for dir in "$src"/*/scripts; do
+    [[ -d "$dir" ]] || continue
+    skill="$(basename "$(dirname "$dir")")"
+    dst="$HOME/.claude/skills/$skill/scripts"
+    mkdir -p "$dst"
+    for f in "$dir"/executable_*; do
+      [[ -e "$f" ]] || continue
+      base="$(basename "$f")"
+      base="${base#executable_}"
+      install -m 755 "$f" "$dst/$base"
+    done
+  done
+}
+
 # install 済み hook 名(.sh 付き)の一覧を1行1名で出す。
 list_installed_hooks() {
   local f

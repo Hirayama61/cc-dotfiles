@@ -316,3 +316,24 @@ EOF
   printf '%s' 'Do you want to proceed' | grep -qiE "$output"
   ! printf '%s' '> 123 files changed' | grep -qiE "$output"
 }
+
+@test "--print-limit-ere: emits the ERE has_limit uses" {
+  run bash "$SCRIPT" --print-limit-ere
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+  [ "${#lines[@]}" -eq 1 ]
+  printf '%s' 'Claude usage limit reached' | grep -qiE "$output"
+  printf '%s' '利用上限に達しました' | grep -qiE "$output"
+  ! printf '%s' 'ready for input' | grep -qiE "$output"
+}
+
+@test "--print-spinner-ere: matches working spinner lines only" {
+  run bash "$SCRIPT" --print-spinner-ere
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+  [ "${#lines[@]}" -eq 1 ]
+  printf '%s' '* Thinking… (12s · esc to interrupt)' | grep -qiE "$output"
+  printf '%s' '  7s · tokens' | grep -qiE "$output"
+  ! printf '%s' 'done in 12 seconds' | grep -qiE "$output"
+  ! printf '%s' '> ' | grep -qiE "$output"
+}

@@ -278,6 +278,10 @@ PR #<pr>(<owner>/<name> / head ブランチ <head_branch>)のレビュー指摘�
 3. 全コミット後に `/self-review` を 1 回(push ゲート `pre-push-selfreview-gate` が
    review-passed フラグを要求するため必須)。must-fix を直して追加コミットしたら、
    postcommit hook でフラグが失効するので push 前に `/self-review` を再実行する。
+   **打ち止め条件**(self-review 手順 5 と同じ規則。これが無いと「直す → commit → フラグ失効 →
+   再レビュー」で周回が終わらない): 直すのは**判断が `必須`** の finding だけ(severity の
+   `重大` とは別軸)。`推奨` 以下は直さず `triage:` へ記録する。軽微を直すための commit を
+   作らない。4 周目でも `必須` が残るなら止めて人間へ報告する。
 4. `git push -u origin "<head_branch>"`(ネットワーク失敗のみ指数バックオフ再試行)。
 5. push 後、方針表の **返信方式どおり**に返信する。スレッドは resolve しない(解決判断は人間)。
    返信本文は **Write ツールで一時ファイルへ書き出し**、`-F body=@<file>` で渡す

@@ -113,7 +113,7 @@ pane-claude-drive)」節が正典。本文の「タスク pane」はシリーズ
   タスク別 worktree を base-ref 明示で作る(単一タスクの案件は feature 1 本でよい)。
   タスクブランチは**非保護 feature ブランチ**に限る(§4 のフラグが書かれる条件)。
 - **pane 上限 = 既定 3**(現場監督 pane を除く。狭 pane 化の抑制)。**数えるのは稼働中のタスク pane
-  のみ**で、forensics のため残している失敗 pane(§10)は上限に数えない。失敗 pane はログを
+  のみ**で、forensics のため残している失敗 pane(§11)は上限に数えない。失敗 pane はログを
   吸い出したら畳んでよい。
 - **上限の変更は非対称**: 引き下げは現場監督判断で自由。**引き上げは人間承認事項**とする
   (同時に走る auto mode 被運転の本数を増やす操作のため)。
@@ -285,9 +285,27 @@ tmux-claude-drive を参照し、次を渡す:
    nonce を書かず完了検知に落ちる)。承認範囲の区別(**許可済みなのはこのタスク自体で、
    被運転側の hard ゲート=push/設計レビュー等・権限プロンプトは事前承認にならない**)、対話不能
    分岐での推奨案自己選択 + 理由記録も含める(tmux-claude-drive 手順 2)。
+   **反復レビューの打ち止め条件も必ず含める**(self-review 手順 5 と同じ規則。指示側に無いと
+   被運転は際限なく周回する = PR #99 で 4 コミット・3 周回まで自走した実害): 「self-review で
+   直すのは**判断が `必須`** の finding だけ(severity の `重大` とは別軸)。`推奨` 以下は直さず
+   `triage:` へ記録する。軽微を直すための commit を作らない。4 周目でも `必須` が残るなら止めて
+   現場監督へ報告する」。
    **投入前に、その taskkey の完了ファイルが残っていれば削除する**(経路 B の再投入で前回の
    完了ファイルが残っていると、nonce は毎回採番し直すため「ファイルは在るが nonce が一致しない」
    状態を現場監督が延々観測する)。
+
+   **タスク指示書の必須項目**(被運転が読む唯一の入力。口伝にしない):
+
+   | 項目 | 中身 |
+   |---|---|
+   | nonce | 完了ファイル / レポート冒頭に書かせる文字列 |
+   | 担当タスク | やることの定義。`kind`(§7)と期待成果物 |
+   | 読むもの | 参照する既存資産・設計メモのパス(全文は貼らない) |
+   | 絶対に守る制約 | repo 規約・触ってはいけない場所・禁止操作 |
+   | 人間ゲート | 何が事前承認でないか(push / PR / 権限プロンプト等) |
+   | 完了条件 | 完了ファイルとレポートの出力先、満たすべき状態 |
+   | **反復レビューの打ち止め条件** | 完了条件の隣に 1 行: 「self-review で直すのは判断が `必須` の finding だけ。`推奨` 以下は `triage:` へ記録し、軽微のための commit を作らない。4 周目でも `必須` が残るなら止めて報告」 |
+
 5. **Monitor で監視**(§7 の pane 別状態で束ねる)。完了検知は pane 本文でなく完了ファイルの出現 +
    nonce 一致で行う(入力=pane / 出力=ファイルの分離)。
 
@@ -328,6 +346,13 @@ tmux-claude-drive を参照し、次を渡す:
   - `depends_on`(依存タスク key)/ `blocks`(後続タスク key)/ `interface`(契約の要点 or 参照)。
   - `report_path`(完了レポート)/ `forensics_log`(失敗時のログパス)/
     `rlr_signal_file`(§9 経路 A のタイマーがこの pane 用に使う `RLR_SIGNAL_FILE` の絶対パス)。
+  - `acd_signal_file`(§10 の compact 代行がこの pane 用に使う `ACD_SIGNAL_FILE` の絶対パス)/
+    `compact`(`{blocked, blocked_reason, blocked_at, last_result, last_pct, last_ctx, attempts}`。
+    `blocked: true` = 人間が解くまで代行を再試行しない、の機械的な読み取り口)。
+  - `awaiting_human`(人間ゲート待ちか。§10 の除外条件が読む。`status` には人間待ちを表す値が無く、
+    権限プロンプトや rate-limit でも `status` は変えない運用なので、この判定を `status` に載せない)/
+    `review_round`(そのタスクで self-review を回した回数。self-review 手順 5 の周回上限の
+    durable な出所で、被運転の compact では消えない)。
   - 許可遷移: `pending → running → review → done`、任意時点から `failed`。検品 NG は
     `review → failed`、経路 B 復元は `failed → running`。rate-limit 中は status を変えない
     (running のまま。forensics に記録)。
@@ -532,7 +557,45 @@ tmux-claude-drive を参照し、次を渡す:
   タスクの worktree の変更済みファイルから現場監督が進捗を復元し、新しい被運転へ「ここまで
   済み」を注入して当該タスク頭から再開する(worktree 隔離により実差分は残る)。
 
-## 10. 後片付け / forensics
+## 10. compact 代行(作業者 pane の圧縮を現場監督が回す)
+
+作業者 pane の `/compact` を人間が打たなくて済むよう、現場監督が `/compact-prep` → `/compact` を
+代行する。**人間が打つのは現場監督 pane だけ**になる(ゼロにはならない — 自 pane への send-keys は
+事故のもとなので現場監督自身は対象外)。
+
+- **判定と送信は付属部品に任せる**: `<skills>/tmux-claude-drive/scripts/compact-drive.sh <pane_id> <worktree>`。
+  閾値・idle 判定・権限プロンプト検査・state file 検証を全段 fail-closed で持つ。SKILL 本文に
+  判定手順を書き下ろさない(散文のフェンスは飛ばせる)。`--status <worktree>` は送信せず ctx と
+  使用率だけを返す。
+- **起動は pane ごとに背景 1 本 + signal file 回収**。Monitor の周期から同期で呼ばない —
+  prep 完了待ちと marker 待ちで最大十数分かかり、Bash ツールの上限で送信の途中で打ち切られる。
+  `ACD_SIGNAL_FILE` を §7 schema の `acd_signal_file` に持たせ、Monitor でその最終行を読む。
+  出力は `ACD: pane=%NN …` で、終了時に必ず `done rc=<n> reason=<…>` が 1 行出る。
+- **終了コードの扱い**(`rate-limit-resume.sh` の `RLR:` とは**別体系**。prefix で見分ける):
+
+  | rc | 意味 | 現場監督の動き |
+  |---|---|---|
+  | 0 | compact 成立 | `compact.last_result` に記録して続行 |
+  | 2 | 何もしない(使用率が代行ライン未満・ctx 一致なし) | 次周期へ |
+  | 3 | 今は送れない(非 idle・権限プロンプト・banner・他の代行が進行中) | 次周期に再試行してよい |
+  | 4 | 人間が要る | **自動再試行しない**。`compact.blocked: true` にして人間へ上げる |
+
+- **`no-ctx` の連続は沈黙させない**: rc=2 でも理由が `no-ctx` の周期が 3 回続いたら人間へ上げる
+  (「圧縮不要」と「ctx が分からない」は別物。後者を放置すると 50% の編集ブロックに当たるまで
+  誰も気付かない)。
+- **人間ゲート待ちの pane には回さない**(`awaiting_human: true` のタスクは対象外)。スピナー不在は
+  「人間の返答待ちで止まっている」状態と区別できず、そこへ送ると人間待ちの文脈を壊す。
+- **代理承認の壁は不変**: `/compact` は権限プロンプトではないので代行は代理承認に当たらない。
+  一方でスクリプトは送信前に §1 と同じ ERE 公開口で fail-closed 検査をする。**§1 の
+  permission laundering の壁は一切緩めない**。
+- **標準 auto-compact に寄せない**: `/compact-prep` を挟まないと判断構造の退避が失われる。
+  `precompact-gate.sh` は state file が無い時に 1 回だけ止めるが 2 回目は通すので歯止めにならない。
+- **層で数字が違う**: 作業者 pane は代行ライン **40%** で現場監督が代行し、現場監督自身は **50%** で
+  自己管理する(home-claude-drive の既存指示)。40% の下限根拠は、30%(提案ライン)の通知で
+  作業者が state file / 決定ログの実パスを受け取っていること — それ未満で送ると compact-prep 手順 0 が
+  パスを確定できずに止まる。
+
+## 11. 後片付け / forensics
 
 - **検品済み pane は `kill-pane` で閉じる**(`kill-window` は使わない — 案件 window には現場監督 pane と
   兄弟タスク pane が同居するため、window ごと kill すると自分の観測点と並列作業を巻き込んで自壊する)。
@@ -552,7 +615,7 @@ tmux-claude-drive を参照し、次を渡す:
   (`install -m 600 /dev/null <log>` で先に作る)、handoff の `forensics_log` に参照を書く
   (全文平文を handoff 本体に残さない)。手作業で消さない。
 
-## 11. fail-open
+## 12. fail-open
 
 - tmux が無い / セッションが無い環境では、この手順を諦めて `claude -p`(headless)への切替を
   提案する(並列運転と対話ゲートには不向きと明示)。

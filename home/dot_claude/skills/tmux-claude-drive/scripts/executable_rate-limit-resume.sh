@@ -44,9 +44,15 @@ is_shell_cmd() {
   esac
 }
 
+LIMIT_ERE='usage limit|rate limit|使用制限|利用上限'
 has_limit() {
-  printf '%s' "$1" | grep -qiE 'usage limit|rate limit|使用制限|利用上限'
+  printf '%s' "$1" | grep -qiE "$LIMIT_ERE"
 }
+
+# 作業中スピナーの検知 ERE。tmux-claude-drive 手順 3 の完了判定(スピナー不在 AND フレーズ)と
+# 同じ現象を機械側で見るための単一情報源で、送信可否を機械判定する運転元はここから取得する。
+# 秒数表記は必ず `Ns ·` の形で出るため、通常出力の "12 seconds" 等を拾わないよう中黒を必須にする。
+SPINNER_ERE='[0-9]+s[[:space:]]*·|esc to interrupt'
 
 # 権限プロンプト検知は fail-closed に倒す(単一情報源)。送信判定が否定形
 # (limit でも permission でもない=通常 → 送る)である以上、検知漏れは誤送信=承認の
@@ -127,6 +133,24 @@ fi
 if [ "${1:-}" = "--print-permission-ere" ]; then
   printf '%s\n' "$PERMISSION_ERE"
   exit 0
+fi
+
+# 公開口: レートリミット banner 検知 ERE / 作業中スピナー検知 ERE。
+# compact-drive.sh 等の運転元部品が送信可否の機械判定に使う単一情報源。
+# 検知語そのものを説明文へ書き写さない(pane に表示された自分のソースを監視側が拾って
+# 誤検知する。2026-07-27 に実際に発生)。
+if [ "${1:-}" = "--print-limit-ere" ]; then
+  printf '%s\n' "$LIMIT_ERE"
+  exit 0
+fi
+if [ "${1:-}" = "--print-spinner-ere" ]; then
+  printf '%s\n' "$SPINNER_ERE"
+  exit 0
+fi
+# 公開口: pane_current_command がシェル(= claude 消失)かの問い合わせ。判定表を複製させない。
+if [ "${1:-}" = "--is-shell-cmd" ]; then
+  is_shell_cmd "${2:-}"
+  exit $?
 fi
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then

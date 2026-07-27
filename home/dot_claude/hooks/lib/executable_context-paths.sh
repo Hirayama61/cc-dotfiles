@@ -70,6 +70,10 @@ _ctx_file() {
   d="$(claude_ctx_cache_dir "${1:-}")" || return 1
   printf '%s/%s' "$d" "$2"
 }
+# usage.json の鮮度しきい値(秒)。これより古い usage.json は現在の使用率を表さない。
+# context-pressure-gate.sh / context-pressure-notify.sh は同値をリテラルで持つ(未寄せ)。
+claude_ctx_stale_secs() { printf '%s' 1800; }
+
 ctx_usage_file() { _ctx_file "${1:-}" usage.json; }
 ctx_state_file() { _ctx_file "${1:-}" state.md; }
 ctx_decisions_file() { _ctx_file "${1:-}" decisions.jsonl; }
@@ -82,7 +86,8 @@ ctx_override_marker() { _ctx_file "${1:-}" override; }
 
 # 直接実行(SKILL / python テスト等の非 source 文脈)用ディスパッチャ。
 #   context-paths.sh key <transcript_path>
-#   context-paths.sh dir|ensure|usage|state|decisions|turn <ctx>
+#   context-paths.sh dir|ensure|usage|state|decisions|turn|compacted <ctx>
+#   context-paths.sh base|stale-secs            (ctx を取らない)
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   set -euo pipefail
   case "${1:-}" in
@@ -93,16 +98,23 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   state) ctx_state_file "${2:-}" ;;
   decisions) ctx_decisions_file "${2:-}" ;;
   turn) ctx_turn_file "${2:-}" ;;
+  compacted) ctx_compacted_marker "${2:-}" ;;
+  # ctx 一覧を走査する呼び出し側(compact-drive.sh)が基底を自前で組み立てないための口。
+  base) claude_ctx_cache_base ;;
+  stale-secs) claude_ctx_stale_secs ;;
   *)
     cat >&2 <<'USAGE'
 Usage: context-paths.sh <subcommand> <args>
-  key      <transcript_path>
-  dir      <ctx>
-  ensure   <ctx>
-  usage    <ctx>
-  state    <ctx>
+  key       <transcript_path>
+  dir       <ctx>
+  ensure    <ctx>
+  usage     <ctx>
+  state     <ctx>
   decisions <ctx>
-  turn     <ctx>
+  turn      <ctx>
+  compacted <ctx>
+  base
+  stale-secs
 USAGE
     exit 1
     ;;

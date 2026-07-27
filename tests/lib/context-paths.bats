@@ -55,9 +55,50 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
+@test "base: prints cache base without ctx argument" {
+  XDG_CACHE_HOME="$BATS_TEST_TMPDIR/xdg" run bash "$LIB" base
+  [ "$status" -eq 0 ]
+  [ "$output" = "$BATS_TEST_TMPDIR/xdg/claude-context" ]
+}
+
+@test "base: relative XDG_CACHE_HOME falls back to HOME cache" {
+  XDG_CACHE_HOME="rel/path" run bash "$LIB" base
+  [ "$status" -eq 0 ]
+  [ "$output" = "$HOME/.cache/claude-context" ]
+}
+
+@test "base: extra argument does not change output" {
+  XDG_CACHE_HOME="$BATS_TEST_TMPDIR/xdg" run bash "$LIB" base ../x
+  [ "$status" -eq 0 ]
+  [ "$output" = "$BATS_TEST_TMPDIR/xdg/claude-context" ]
+}
+
+@test "stale-secs: prints the usage.json freshness threshold" {
+  run bash "$LIB" stale-secs
+  [ "$status" -eq 0 ]
+  [ "$output" = "1800" ]
+}
+
+@test "compacted: path is under ctx dir" {
+  run bash "$LIB" compacted ctx1
+  [ "$status" -eq 0 ]
+  [ "$output" = "$HOME/.cache/claude-context/ctx1/compacted" ]
+}
+
+@test "usage help lists every subcommand the dispatcher accepts" {
+  run bash "$LIB"
+  [ "$status" -ne 0 ]
+  for sub in key dir ensure usage state decisions turn compacted base stale-secs; do
+    case "$output" in
+    *"$sub"*) ;;
+    *) echo "usage help missing: $sub"; return 1 ;;
+    esac
+  done
+}
+
 @test "dir and accessors reject traversal ctx" {
   # dispatcher は SKILL からの直接実行に公開されるため accessor 側でも segment を再検証する
-  for sub in dir usage state decisions turn; do
+  for sub in dir usage state decisions turn compacted; do
     run bash "$LIB" "$sub" "../x"
     if [ "$status" -eq 0 ] && [ -n "$output" ] && [ "$output" != "/" ]; then
       case "$output" in
