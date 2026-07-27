@@ -15,7 +15,8 @@
 #   0  compact 成立(compacted marker で確認)/ --status で送信可能な状態
 #   2  何もしない(pct が代行ライン未満・usage.json 不在/stale・ctx 一致 0 件)
 #   3  今は送れない(非 idle・権限プロンプト・limit banner・他の代行が進行中)
-#   4  人間が要る(ctx 曖昧・自 pane 不明・state 不正・compact 未成立・pane 消失・jq 不在)
+#   4  人間が要る(ctx 曖昧・自 pane 不明・state 不正・compact 未成立・pane 消失・jq 不在・
+#      環境変数不正 bad-env・ロック所有の喪失 lock-lost・シグナル中断・aborted)
 #   1  使用方法エラー
 #
 # 環境変数(既定は実運用値。テストは短縮する):
@@ -77,10 +78,20 @@ cleanup() {
 
 # 終端は必ずここを通す。背景実行では回収路が signal file なので、終了コード相当を
 # 1 行残さないと運転元が exit 2 と 3 を区別できない。
+FINISHED=0
 finish() {
+  FINISHED=1
   emit "done rc=$1 reason=$2"
   cleanup
   exit "$1"
+}
+
+# finish を通らない終わり方(set -e の中断・シグナル)でも終端行を必ず残す。
+on_exit() {
+  if [ "$FINISHED" -eq 0 ]; then
+    emit "done rc=4 reason=aborted"
+  fi
+  cleanup
 }
 
 sleep_secs() {
@@ -130,16 +141,19 @@ send_fence() {
     FENCE_REASON="pane-replaced pid=$cur_pid"; FENCE_RC=4; return 1
   fi
   cur_cmd="$("$TMUX" display-message -p -t "$PANE" '#{pane_current_command}' 2>/dev/null || true)"
-  if [ -n "$cur_cmd" ]; then
-    # 0=シェル / 1=非シェル / それ以外=判定不能。判定不能を「非シェル」に倒すと、
-    # 公開口が壊れた・版がずれた時に claude 消失の検知が黙って無効化される。
-    rc=0; "$RLR" --is-shell-cmd "$cur_cmd" >/dev/null 2>&1 || rc=$?
-    case "$rc" in
-    0) FENCE_REASON="claude-exited cmd=$cur_cmd"; FENCE_RC=4; return 1 ;;
-    1) ;;
-    *) FENCE_REASON="shell-probe-failed rc=$rc"; FENCE_RC=3; return 1 ;;
-    esac
+  # pane_pid は pane のシェルの pid なので claude が終了しても変わらない。消失を捕まえるのは
+  # この cur_cmd 検査だけで、空(= 判定不能)を素通しにするとその唯一の検知が消える。
+  if [ -z "$cur_cmd" ]; then
+    FENCE_REASON="cmd-unreadable"; FENCE_RC=3; return 1
   fi
+  # 0=シェル / 1=非シェル / それ以外=判定不能。判定不能を「非シェル」に倒すと、
+  # 公開口が壊れた・版がずれた時に claude 消失の検知が黙って無効化される。
+  rc=0; "$RLR" --is-shell-cmd "$cur_cmd" >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+  0) FENCE_REASON="claude-exited cmd=$cur_cmd"; FENCE_RC=4; return 1 ;;
+  1) ;;
+  *) FENCE_REASON="shell-probe-failed rc=$rc"; FENCE_RC=3; return 1 ;;
+  esac
   if ! text="$(capture_tail)"; then
     FENCE_REASON="capture-failed"; FENCE_RC=3; return 1
   fi
@@ -196,10 +210,16 @@ is_idle() {
   return 0
 }
 
+# literal と Enter は 2 段なので、その間にもフェンスを通す。ここで権限プロンプトが出ると
+# Enter は既定選択の確定 = 代理承認になる。止めた場合 literal は入力欄に残るが、
+# 送らない方を優先する(残った文字列は人間が消す。理由文字列に literal-pending を出す)。
 send_line() {
-  "$TMUX" send-keys -t "$PANE" -l "$1" || return 1
+  local label="$1" text="$2"
+  "$TMUX" send-keys -t "$PANE" -l "$text" || finish 4 "send-failed cmd=$label"
   sleep_secs "$SEND_DELAY"
-  "$TMUX" send-keys -t "$PANE" Enter || return 1
+  send_fence || finish "$FENCE_RC" "$FENCE_REASON literal-pending=$label"
+  own_lock || finish 4 "lock-lost literal-pending=$label"
+  "$TMUX" send-keys -t "$PANE" Enter || finish 4 "send-failed cmd=$label-enter"
   return 0
 }
 
@@ -264,11 +284,12 @@ if [ "$STATUS_ONLY" -eq 0 ]; then
   LOCK="$lock_dir/claude-acd-$lock_key.lock"
   if mkdir "$LOCK" 2>/dev/null; then
     LOCK_OWNED=1
-    # INT/TERM のハンドラは exit を持たせる。持たせないと cleanup で解錠したまま
-    # 本体が走り続け、ロック無しで送信する経路ができる。
-    trap 'cleanup' EXIT
-    trap 'cleanup; exit 130' INT
-    trap 'cleanup; exit 143' TERM
+    # ハンドラは finish を通す。cleanup だけだと解錠したまま本体が走り続け、
+    # ロック無しで送信する経路ができる。rc は表に載っている 4(人間が要る)に寄せる
+    # (130/143 を返すと運転元が知らない値になる)。
+    trap 'on_exit' EXIT
+    trap 'finish 4 "interrupted"' INT
+    trap 'finish 4 "terminated"' TERM
     printf '%s' "$$" >"$LOCK/pid"
   else
     holder="$(cat "$LOCK/pid" 2>/dev/null || true)"
@@ -351,7 +372,7 @@ send_fence || finish "$FENCE_RC" "$FENCE_REASON"
 BASELINE="$(mktemp "${TMPDIR:-/tmp}/claude-acd-baseline.XXXXXX")" || finish 4 "baseline-failed"
 
 own_lock || finish 4 "lock-lost"
-send_line '/compact-prep' || finish 4 "send-failed cmd=prep"
+send_line prep '/compact-prep'
 emit "sent /compact-prep ctx=$ctx"
 
 # 送信の成立は「正の signal」で確認する。送信に成功した文字列も会話領域にエコーとして
@@ -413,7 +434,7 @@ fi
 
 send_fence || finish "$FENCE_RC" "$FENCE_REASON"
 own_lock || finish 4 "lock-lost"
-send_line '/compact' || finish 4 "send-failed cmd=compact"
+send_line compact '/compact'
 emit "sent /compact ctx=$ctx"
 
 waited=0

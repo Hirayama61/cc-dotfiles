@@ -352,8 +352,9 @@ tmux-claude-drive を参照し、次を渡す:
     `blocked: true` = 人間が解くまで代行を再試行しない、の機械的な読み取り口)。
   - `awaiting_human`(人間ゲート待ちか。§10 の除外条件が読む。`status` には人間待ちを表す値が無く、
     権限プロンプトや rate-limit でも `status` は変えない運用なので、この判定を `status` に載せない)/
-    `review_round`(そのタスクで self-review を回した回数。self-review 手順 5 の周回上限の
-    durable な出所で、被運転の compact では消えない)。
+    `review_round`(そのタスクへ **self-review を回させた投入の回数**。self-review 手順 5 の
+    周回上限の durable な出所で、被運転の compact では消えない。数え方は下の Monitor 節と
+    完全に揃える — ここが 1 ずれると許される周回が 4 にも 5 にもなる)。
   - 許可遷移: `pending → running → review → done`、任意時点から `failed`。検品 NG は
     `review → failed`、経路 B 復元は `failed → running`。rate-limit 中は status を変えない
     (running のまま。forensics に記録)。
@@ -518,14 +519,20 @@ tmux-claude-drive を参照し、次を渡す:
   現場監督は**どの pane が 完了 / usage limit / 権限プロンプト / API Error / pane 消失か**を
   pane 別に持つ状態で、主 window のタスク pane 群 + spillover 副 window をまとめて監視する。
   同一 pane の同一イベントの重複発報はフラグで抑止する。
-- **`awaiting_human` は Monitor が書く**。権限プロンプト検知・trust ダイアログ・被運転からの
-  質問で人間待ちになった時点で `true`、人間が応答して被運転が動き出したら `false` に戻す
-  (§9 経路 A の `RLR: permission-prompt human-needed` / `limited waiting` も `true` の契機)。
-  書く手順を持たないと §10 の除外条件が常に偽になり、安全網が名前だけ残る。
-- **`review_round` は現場監督が数える**。同一タスクへ「修正して再 self-review」を投入するたびに
-  +1 し、投入するタスク指示書の本文へ**現在の周回数を書き込む**(被運転は handoff を読めないので、
-  指示書経由でしか自分の周回数を知れない)。4 に達してなお `必須` が残るなら次の修正タスクを
-  投入せず人間へ上げる(self-review 手順 5 の周回上限の執行点はここ)。
+- **`awaiting_human` は Monitor が書く**。書く手順を持たないと §10 の除外条件が常に偽になり、
+  安全網が名前だけ残る。**戻す観測子も同じ粒度で決める** — 戻し損ねるとその pane が恒久的に
+  compact 代行の対象外になり、使用率が上がり続けて 50% の編集ブロックに当たる。
+  - `true` にする観測: 権限プロンプト検知 / trust ダイアログ / 被運転からの質問 /
+    §9 経路 A の `RLR: permission-prompt human-needed`・`limited waiting` /
+    §10 の `ACD: … done rc=3 reason=permission-prompt`(いずれも Monitor が既に読んでいる行)。
+  - `false` に戻す観測: **その pane でスピナーが出た周期**(= 人間が答えて被運転が動き出した)、
+    または `RLR: resumed` / 完了ファイルの出現。人間の応答そのものは観測できないので、
+    「動き出したこと」を根拠にする。
+- **`review_round` は現場監督が数える**。同一タスクへ「修正して再 self-review」を**投入するたびに
+  +1**(schema の定義と同じ「投入の回数」。完了数と混ぜない)し、投入するタスク指示書の本文へ
+  **現在の周回数を書き込む**(被運転は handoff を読めないので、指示書経由でしか自分の周回数を
+  知れない)。`review_round` が 4 に達してなお `必須` が残るなら**次の投入をしない**で人間へ上げる
+  (self-review 手順 5 の周回上限の執行点はここ)。
 
 ## 8. 統合(タスクブランチ → epic)
 
@@ -589,9 +596,11 @@ tmux-claude-drive を参照し、次を渡す:
   | 3 | 今は送れない(非 idle・権限プロンプト・banner・他の代行が進行中) | 次周期に再試行してよい |
   | 4 | 人間が要る | **自動再試行しない**。`compact.blocked: true` にして人間へ上げる |
 
-- **`no-ctx` の連続は沈黙させない**: rc=2 でも理由が `no-ctx` の周期が 3 回続いたら人間へ上げる
-  (「圧縮不要」と「ctx が分からない」は別物。後者を放置すると 50% の編集ブロックに当たるまで
-  誰も気付かない)。
+- **恒久的な失敗を沈黙させない**: rc=2 で理由が `no-ctx` / `pct-unreadable` の周期が 3 回続いたら
+  人間へ上げる(「圧縮不要」と「状態が分からない」は別物)。**rc=3 も同じ reason が 3 周期続いたら
+  人間へ上げる** — `permission-ere-unavailable` / `shell-probe-failed` のような構成の断線は
+  時間で解消せず、rc=3 の「次周期に再試行してよい」のまま無限に再試行され続ける。
+  放置するとどちらも 50% の編集ブロックに当たるまで誰も気付かない。
 - **人間ゲート待ちの pane には回さない**(`awaiting_human: true` のタスクは対象外)。スピナー不在は
   「人間の返答待ちで止まっている」状態と区別できず、そこへ送ると人間待ちの文脈を壊す。
 - **代理承認の壁は不変**: `/compact` は権限プロンプトではないので代行は代理承認に当たらない。

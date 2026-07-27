@@ -180,10 +180,10 @@ sent_count() {
   grep -c "^$1\$" "$FAKE_SENT" || true
 }
 
+# 送信ログが完全に空であることを見る。ENTER を除外して数えると「裸の Enter だけ送る」
+# 経路(= 権限プロンプトの既定選択を確定させる形)を送信ゼロと誤判定する。
 assert_no_send() {
-  local n
-  n="$(grep -cv '^ENTER$' "$FAKE_SENT" || true)"
-  if [ "$n" -ne 0 ]; then
+  if [ -s "$FAKE_SENT" ]; then
     echo "unexpected send: $(cat "$FAKE_SENT")"
     return 1
   fi
@@ -439,16 +439,37 @@ assert_no_send() {
   [ "$(grep -c '^ENTER$' "$FAKE_SENT" || true)" -eq 0 ]
 }
 
+@test "prompt between the literal and Enter: literal stays unsent" {
+  make_ctx ctx1 80 "$WORKTREE"
+  printf 'Do you want to proceed?\n> 1. Yes\n' >"$FAKE_SCREEN_AFTER"
+  # literal 投入から Enter までの間にプロンプトが出た状況。ここで Enter を送ると
+  # 既定選択の確定 = 代理承認になる。
+  FAKE_SCREEN_SWITCH_AT=4 run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 3 ]
+  [ "$(sent_count '/compact-prep')" -eq 1 ]
+  [ "$(grep -c '^ENTER$' "$FAKE_SENT" || true)" -eq 0 ]
+  case "$output" in *"literal-pending=prep"*) ;; *) echo "$output"; return 1 ;; esac
+}
+
 @test "prep ack retry passes the fence before sending Enter" {
   make_ctx ctx1 80 "$WORKTREE"
   printf 'Do you want to proceed?\n> 1. Yes\n' >"$FAKE_SCREEN_AFTER"
-  # prep 送信後にプロンプトが出た状況。ack は取れないので リトライ経路に入るが、
+  # prep が送信された後にプロンプトが出た状況。ack が取れずリトライ経路に入るが、
   # そこで裸の Enter を送ると既定選択の確定 = 代理承認になる。
-  FAKE_SCREEN_SWITCH_AT=4 run bash "$SCRIPT" "%5" "$WORKTREE"
+  FAKE_SCREEN_SWITCH_AT=5 run bash "$SCRIPT" "%5" "$WORKTREE"
   [ "$status" -eq 3 ]
   [ "$(sent_count '/compact-prep')" -eq 1 ]
   # send_line の 1 回だけ。リトライの Enter が増えていないこと
   [ "$(grep -c '^ENTER$' "$FAKE_SENT" || true)" -eq 1 ]
+}
+
+@test "pane command unreadable: does not send" {
+  make_ctx ctx1 80 "$WORKTREE"
+  : >"$FAKE_CMD"
+  run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 3 ]
+  assert_no_send
+  case "$output" in *"cmd-unreadable"*) ;; *) echo "$output"; return 1 ;; esac
 }
 
 @test "permission prompt before the compact send: does not send compact" {
@@ -481,6 +502,38 @@ assert_no_send() {
   [ "$status" -eq 4 ]
   assert_no_send
   case "$output" in *"bad-env"*) ;; *) echo "$output"; return 1 ;; esac
+}
+
+@test "zero ACD_IDLE_CHECKS is rejected instead of skipping the idle check" {
+  make_ctx ctx1 80 "$WORKTREE"
+  printf 'Thinking... (12s %s esc to interrupt)\n' "·" >"$FAKE_SCREEN"
+  # 0 だと while が 1 度も回らず「スピナー未確認のまま idle」になる。
+  # 非数値とは別の行が守っているので、別ケースで固定する。
+  ACD_IDLE_CHECKS=0 run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 4 ]
+  assert_no_send
+  case "$output" in *"bad-env"*) ;; *) echo "$output"; return 1 ;; esac
+}
+
+@test "permission ERE port returning nothing stops the send" {
+  make_ctx ctx1 80 "$WORKTREE"
+  # spinner ERE は返せるが権限プロンプト ERE を返せない版。idle 判定は通るので、
+  # 送信フェンス側の取得失敗が fail-closed であることだけを固定できる。
+  stub="$HOME/.claude/skills/tmux-claude-drive/scripts/rate-limit-resume.sh"
+  cat >"$stub" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+--print-spinner-ere) printf '%s\n' '[0-9]+s[[:space:]]*·' ;;
+--print-permission-ere) : ;;
+--print-limit-ere) printf '%s\n' 'usage limit' ;;
+--is-shell-cmd) exit 1 ;;
+esac
+STUB
+  chmod +x "$stub"
+  run bash "$SCRIPT" "%5" "$WORKTREE"
+  [ "$status" -eq 3 ]
+  assert_no_send
+  case "$output" in *"permission-ere-unavailable"*) ;; *) echo "$output"; return 1 ;; esac
 }
 
 @test "usage percentage exactly at the line is treated as reached" {
