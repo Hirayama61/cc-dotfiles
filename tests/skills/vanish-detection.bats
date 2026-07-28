@@ -20,19 +20,16 @@ bats_require_minimum_version 1.5.0
 load ../helpers/common
 
 setup() {
-  install_hooks
-  unset XDG_STATE_HOME
-
-  # git を利用者設定から隔離する。利用者の global 設定(core.hooksPath の pre-commit 等)は
-  # HOME 差し替え後も XDG_CONFIG_HOME 経由で効きうるため、明示的に無効化して一時 repo の
-  # commit が環境依存で失敗しないようにする。
+  # 継承環境の GIT_* は repo の位置(`git -C` では上書きされない)・diff の実装
+  # (GIT_EXTERNAL_DIFF は patch を出さないので追加行 0 件に化ける)・config 注入
+  # (GIT_CONFIG_COUNT は GIT_CONFIG_GLOBAL=/dev/null を迂回して core.hooksPath を張れる)
+  # のいずれにも効く。列挙は取りこぼすので、一掃してから必要な 2 本だけ張り直す。
+  for v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
   export GIT_CONFIG_GLOBAL=/dev/null
   export GIT_CONFIG_SYSTEM=/dev/null
 
-  # git の判定核を指す環境変数は `git -C <dir>` では上書きされない。export されたまま走ると
-  # 以降の全 git 操作(`branch -D main` を含む)が実 repo に着弾する。
-  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
-  unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_TEMPLATE_DIR GIT_CEILING_DIRECTORIES
+  install_hooks
+  unset XDG_STATE_HOME
 
   # resolve_base_ref の手順 1 は gh で PR base を引く。実 gh の認証状態やネットワークで
   # 結果が揺れないよう、常に失敗する shim を PATH 先頭に置き merge-base フォールバック
@@ -62,12 +59,16 @@ last_line() {
 }
 
 # 最終行の前方一致。bash 3.2 は `set -e` 下で非末尾の `[[ ]]` の失敗を伝播しない。
+# 引数を 1 個に固定するのは、空/未設定だと `""*` が全一致して常に成功するため。
 assert_last_line_prefix() {
-  case "$(last_line)" in
+  [ "$#" -eq 1 ] || { printf 'usage: assert_last_line_prefix <prefix>\n' >&2; return 2; }
+  local actual
+  actual="$(last_line)"
+  case "$actual" in
   "$1"*) return 0 ;;
   esac
-  echo "expected prefix: $1" >&2
-  echo "actual         : $(last_line)" >&2
+  printf 'expected prefix: %s\n' "$1" >&2
+  printf 'actual         : %s\n' "$actual" >&2
   return 1
 }
 
@@ -113,6 +114,7 @@ EOF
   commit_all drop
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: DECREASE files=1 cases=-1 asserts=-2" ]
 }
 
@@ -128,6 +130,7 @@ EOF
   commit_all retitle
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: DECREASE files=1 cases=0 asserts=0" ]
 }
 
@@ -143,6 +146,7 @@ EOF
   commit_all add
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: OK(テスト観点の減少なし)" ]
 }
 
@@ -152,6 +156,7 @@ EOF
   commit_all rename
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: OK(テスト観点の減少なし)" ]
 }
 
@@ -162,6 +167,7 @@ EOF
   commit_all rename-out
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   # 内容は残っていてもランナーの discovery から消えるので新側 0 カウント扱い。
   [ "$(last_line)" = "TIER1-RESULT: DECREASE files=1 cases=-3 asserts=-4" ]
 }
@@ -181,6 +187,7 @@ EOF
   commit_all shrink
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: OK(テスト観点の減少なし)" ]
 }
 
@@ -199,6 +206,7 @@ EOF
   commit_all shrink
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   assert_last_line_prefix "TIER1-RESULT: SKIP(計数不能ファイル 1 件"
 }
 
@@ -207,6 +215,7 @@ EOF
   rm -f "$LIB/test-patterns.sh"
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: SKIP(lib 不達: test-patterns.sh)" ]
 }
 
@@ -215,6 +224,7 @@ EOF
   printf 'if [ ; then\n' >"$LIB/test-patterns.sh"
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: SKIP(lib 破損: test-patterns.sh)" ]
 }
 
@@ -224,6 +234,7 @@ EOF
   printf '#!/usr/bin/env bash\n:\n' >"$LIB/test-patterns.sh"
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   assert_last_line_prefix "TIER1-RESULT: SKIP(lib 旧版: test_file_ere 未定義"
 }
 
@@ -239,6 +250,7 @@ test_assert_ere() { printf '%s' 'x'; }
 EOF
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: SKIP(ERE 検証失敗(lib 破損疑い))" ]
 }
 
@@ -248,12 +260,14 @@ EOF
   git -C "$REPO" branch -D main
   run --separate-stderr bash "$TIER1" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER1-RESULT: SKIP(base 解決不能(保護祖先なし))" ]
 }
 
 @test "tier1: outside a git repo yields SKIP" {
   run --separate-stderr bash "$TIER1" "$(plain_dir)"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   assert_last_line_prefix "TIER1-RESULT: SKIP(git repo 外: "
 }
 
@@ -291,6 +305,7 @@ EOF
   commit_all resurrect
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: RESURRECT files=1 lines=1" ]
 }
 
@@ -300,6 +315,7 @@ EOF
   readd_deleted_line
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: RESURRECT files=1 lines=1" ]
 }
 
@@ -314,6 +330,7 @@ EOF
   git -C "$REPO" checkout -q work
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: OK(復活コードなし)" ]
 }
 
@@ -327,6 +344,7 @@ EOF
   commit_all fresh
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: OK(復活コードなし)" ]
 }
 
@@ -334,6 +352,7 @@ EOF
   seed_deleted_line_on_main
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: OK(ブランチ側に追加行なし)" ]
 }
 
@@ -361,6 +380,7 @@ EOF
   commit_all readd-noise
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: OK(復活コードなし)" ]
 }
 
@@ -377,6 +397,7 @@ EOF
   commit_all quoted
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: SKIP(ブランチ追加側に解釈不能なパス(C-quote)あり)" ]
 }
 
@@ -385,6 +406,7 @@ EOF
   readd_deleted_line
   run --separate-stderr env TIER2_WINDOW=abc bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: SKIP(TIER2_WINDOW 不正: abc)" ]
 }
 
@@ -394,6 +416,7 @@ EOF
   printf 'if [ ; then\n' >"$LIB/resolve-base-ref.sh"
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: SKIP(lib 破損: resolve-base-ref.sh)" ]
 }
 
@@ -403,6 +426,7 @@ EOF
   rm -f "$LIB/resolve-base-ref.sh"
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: SKIP(lib 不達: resolve-base-ref.sh)" ]
 }
 
@@ -412,12 +436,14 @@ EOF
   git -C "$REPO" branch -D main
   run --separate-stderr bash "$TIER2" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: SKIP(base 解決不能(保護祖先なし))" ]
 }
 
 @test "tier2: outside a git repo yields SKIP" {
   run --separate-stderr bash "$TIER2" "$(plain_dir)"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   assert_last_line_prefix "TIER2-RESULT: SKIP(git repo 外: "
 }
 
@@ -425,6 +451,7 @@ EOF
   seed_deleted_line_on_main
   run --separate-stderr bash "$TIER2" --triple 0000000000000000000000000000000000000000 main HEAD "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: SKIP(ref 不正: 0000000000000000000000000000000000000000)" ]
 }
 
@@ -436,6 +463,7 @@ EOF
   commit_all resurrect
   run --separate-stderr bash "$TIER2" --triple "$mb" main HEAD "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER2-RESULT: RESURRECT files=1 lines=1" ]
 }
 
@@ -479,6 +507,7 @@ write_scope() {
   seed_scope_repo
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: SKIP(スコープ宣言なし(design-review 未実施 or 宣言なしで通過))" ]
 }
 
@@ -489,6 +518,7 @@ src/*
 EOF
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: OK(宣言スコープ内)" ]
 }
 
@@ -499,6 +529,7 @@ home/*
 EOF
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: DEVIATION files=1" ]
 }
 
@@ -513,6 +544,7 @@ memo
 EOF
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: DEVIATION files=1" ]
 }
 
@@ -523,6 +555,7 @@ home/*
 EOF
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: DEVIATION files=1" ]
 }
 
@@ -536,6 +569,7 @@ EOF
   touch -t 202001010000 "$p"
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: SKIP(スコープ宣言なし(design-review 未実施 or 宣言なしで通過))" ]
 }
 
@@ -550,6 +584,7 @@ EOF
   touch -t 202001010000 "$f"
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: DEVIATION files=1" ]
 }
 
@@ -563,6 +598,7 @@ EOF
   ln -sf "$real" "$f"
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: SKIP(スコープ宣言なし(design-review 未実施 or 宣言なしで通過))" ]
 }
 
@@ -574,11 +610,13 @@ EOF
   rm -f "$LIB/flag-paths.sh"
   run --separate-stderr bash "$TIER3" "$REPO"
   [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
   [ "$(last_line)" = "TIER3-RESULT: SKIP(lib 不達: flag-paths.sh)" ]
 }
 
 @test "tier3: outside a git repo yields SKIP" {
   run --separate-stderr bash "$TIER3" "$(plain_dir)"
   [ "$status" -eq 0 ]
-  [[ "$(last_line)" == "TIER3-RESULT: SKIP(git repo 外: "* ]]
+  [ -z "$stderr" ]
+  assert_last_line_prefix "TIER3-RESULT: SKIP(git repo 外: "
 }
