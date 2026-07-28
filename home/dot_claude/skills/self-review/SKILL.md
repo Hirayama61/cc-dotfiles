@@ -253,7 +253,7 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
 - **`今すぐ修正`(または Other で blocker と解釈した処置)が 1 件でもあれば、フラグを立てない**: その must-fix 一覧を「次のアクション」として提示し、修正 → 再 `/self-review` を案内する。修正自体はこのスキルの外でメインが行う(本スキルの allowed-tools に Edit/Write は無い)。
 - **Tier 1 DECREASE / Tier 2 RESURRECT の ack は手順 4b で取得済み**。意図的でない・ack が得られなかった Tier が 1 つでもあれば、4b の時点で修正へ戻しているのでここには来ない(all-or-nothing)。reviewer の指摘ゼロでも ack ゲートは免除しない。
 - フラグは 1 行目にレビュー済み HEAD、その後に 4b で集めた Tier ack 理由 + 見送り処置を記録する:
-  - `head:` … スクリプトが `git rev-parse` から自動で書く(引数では渡さない)。gate はこの 1 行目を push 時の HEAD と突き合わせ、不一致ならブロックする。**この行があるので「commit したら再レビュー」は散文でなく構造で効く。**
+  - `head:` … スクリプトが `git rev-parse` から自動で書く(引数では渡さない)。gate はこの 1 行目を push 時の HEAD と突き合わせ、不一致ならブロックする(commit を別の Bash 呼び出しで出す限り、「commit したら再レビュー」は散文でなく構造で効く)。
   - `tier1-ack:` / `tier2-ack:` … 該当 Tier の ack 理由。**該当 Tier の理由が空ならフラグを書かず中断**(空理由での素通り防止)。
   - `triage:` … 見送った finding を `F-NNN [{severity}/{cat}] 確信度:{値} 見送り — 理由` の形で 1 行 1 件記録する(低確信の指摘まで人間に届ける設計なので、後から「何を捨てたか」を追えるようにする。スクリプトは行頭を `triage: ` に正規化するだけなので、この書式拡張にスクリプト変更は要らない)。
   - 該当ゼロ(指摘ゼロ かつ Tier OK/SKIP)なら `head:` 行 1 行だけのフラグになる。
@@ -280,7 +280,7 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
 
 ## 原則
 
-- フラグは 1 行目の `head:` 行で HEAD に束縛されている。commit / amend / rebase / reset のいずれで HEAD が動いても gate が不一致でブロックするので、新規コミット後は再レビュー必須。`git commit` 直後は `postcommit-invalidate-review.sh` がフラグ自体も消す(独立した二重の無効化)。
+- フラグは 1 行目の `head:` 行で HEAD に束縛されている。commit / amend / rebase / reset のどれで HEAD が動いても gate が不一致でブロックするので、新規コミット後は再レビュー必須。`git commit` 直後は `postcommit-invalidate-review.sh` がフラグ自体も消す(独立した二重の無効化)。束縛が届かない範囲は 2 つ: **refspec で別ブランチを指す push と detached HEAD**(判定は現ブランチの HEAD のみ)、**`git commit && git push` を 1 回の Bash 呼び出しで出す形**(PreToolUse はコマンド実行前に走るため。負債台帳 D-49 / D-50)。
 - 保護ブランチ(`main`/`master`/`develop`/`epic/*`)では gate が無効。push/merge の可否判断は `block-protected-branch-push.sh` と人間判断に委ねる。
 - CodeRabbit は **このスキルでは使わない**(ローカル実行は遅く、PR を出せば PR 側で CodeRabbit GitHub App が走って二重になるため)。PR 上の CodeRabbit 収穫は push 後の姉妹スキル `ci-watch` が担う。
 - **リポ固有レビュー資産は固定コアへの追加のみ**(置換不可)。固定コアのうち 2 Agent(code-reviewer / security-reviewer)は資産の有無に依らず常に走り、Codex は best-effort(未導入なら skip)。安全網の本体は常時走る 2 Agent で、リポ側が security 検査を無効化して push ゲートを抜ける穴を塞ぐ。起動する子 reviewer は read-only・体数上限付き(手順 2b)。

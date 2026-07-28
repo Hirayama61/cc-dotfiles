@@ -118,7 +118,7 @@ head_sha() {
   printf 'head: fedcba9876543210fedcba9876543210fedcba98\ntier1-ack: 旧\n' > "$f"
   run_create "" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
   [ "$status" -eq 1 ]
-  # 置換しない(決定 5 却下)。既存の内容は 1 バイトも変わらない。
+  # 陳腐でも置換しない。既存の内容は 1 バイトも変わらない。
   [ "$(head -n1 "$f")" = "head: fedcba9876543210fedcba9876543210fedcba98" ]
   grep -qF 'tier1-ack: 旧' "$f"
   # 何を消せばよいか分かるよう、中断メッセージにフラグのパスを出す。

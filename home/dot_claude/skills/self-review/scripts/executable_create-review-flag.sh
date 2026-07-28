@@ -67,7 +67,7 @@ head_sha="$(git -C "$PWD" rev-parse --verify --quiet "HEAD^{commit}" 2>/dev/null
 # fail-closed 方向で安全。
 head_line="$("$LIB_DIR/flag-paths.sh" review-head-line "$head_sha" 2>/dev/null || true)"
 case "$head_line" in
-"head: $head_sha") : ;;
+*"$head_sha") : ;;
 *) echo "flag-paths.sh が head 行を作れない(lib が古い)。mise run apply:cc-dotfiles 後に再実行。中断" >&2; exit 1 ;;
 esac
 "$LIB_DIR/flag-paths.sh" dir-ensure \

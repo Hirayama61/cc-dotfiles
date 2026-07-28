@@ -95,9 +95,10 @@ review_flag_head_line() {
 # 1 行目だけを見るのは、ack 理由(人間の自由文)に改行が混ざっても後続行の偽 head を
 # 拾わないため。symlink は読まない(予測可能パスへの symlink 設置での解錠を防ぐ)。
 review_flag_head_of() {
-  local f="${1:-}" line sha
+  local f="${1:-}" line="" sha
   [ -f "$f" ] && [ ! -L "$f" ] || return 0
-  IFS= read -r line < "$f" 2>/dev/null || true
+  # 2>/dev/null はリダイレクトより先に置く(後ろだと開けない時のエラーが素の stderr へ漏れる)。
+  IFS= read -r line 2>/dev/null < "$f" || true
   line="${line%$'\r'}"
   case "$line" in
   "head: "*) sha="${line#head: }" ;;

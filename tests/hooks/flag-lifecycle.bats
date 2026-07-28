@@ -56,7 +56,7 @@ new_commit() {
   run_hook pre-push-selfreview-gate.sh "$PUSH"
   [ "$status" -eq 2 ]
 
-  # 4) postcommit がフラグを消す(残す決定。二重の無効化)
+  # 4) postcommit がフラグを消す(HEAD 束縛とは独立した二重の無効化)
   run_hook postcommit-invalidate-review.sh "$COMMIT"
   [ ! -e "$FLAG_FILE" ]
 

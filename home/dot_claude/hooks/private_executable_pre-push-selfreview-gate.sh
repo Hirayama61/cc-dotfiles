@@ -4,10 +4,17 @@
 # フラグは self-review スキルが通過時に作成する。
 #
 # 無効化の第一機構はフラグ内容の HEAD 束縛: フラグ 1 行目の `head: <sha>` を push 対象の
-# 現 HEAD と突き合わせ、不一致ならブロックする(commit / amend / rebase / reset のいずれで
-# HEAD が動いても、フラグ自身が古いと分かる)。commit 起点の削除
+# 現 HEAD と突き合わせ、不一致ならブロックする(commit / amend / rebase / reset のどれで
+# HEAD が動いてもフラグ自身が古いと分かる)。commit 起点の削除
 # (postcommit-invalidate-review.sh)は独立した二重の無効化として残っている。
 # 書式の正典は flag-paths.sh(review_flag_head_line / review_flag_head_of)。
+#
+# 束縛の射程(この 2 つは束縛では捕まらない。負債台帳 D-49 / D-50):
+#   - 見るのはチェックアウト中のブランチの HEAD だけ。refspec で別ブランチを指す push
+#     (`git push origin other`)と detached HEAD は判定の外(フラグキーの構造が repo+branch)。
+#   - `git commit -m x && git push` のように 1 回の Bash 呼び出しで commit と push を出すと、
+#     PreToolUse はコマンド実行前に走るので読む HEAD はコミット前の値になり、通る。
+#
 #
 # 判定対象は hook プロセスの cwd ではなく push の実対象 working dir。これを
 # resolve-git-target.sh で解決し、その dir の repo+branch でフラグキーを引く
@@ -73,11 +80,11 @@ current_head="$(git -C "$target_dir" rev-parse --verify --quiet "HEAD^{commit}" 
 
 recorded_head="$(review_flag_head_of "$flag_file")"
 if [[ -z "$recorded_head" ]]; then
-  echo "ブロック: ブランチ(${branch})の review-passed フラグに head 行が無い(旧形式 or 破損)。/self-review を再実施すること。" >&2
+  echo "ブロック: ブランチ(${branch})の review-passed フラグに head 行が無い(旧形式 or 破損)。このフラグを消してから /self-review を再実施すること(残っていると作成側が中断する): ${flag_file}" >&2
   exit 2
 fi
 if [[ "$recorded_head" != "$current_head" ]]; then
-  echo "ブロック: レビュー済み HEAD(${recorded_head:0:7})と現在の HEAD(${current_head:0:7})が不一致。ブランチ(${branch})の成果物がレビュー後に変わっている。/self-review を再実施すること。" >&2
+  echo "ブロック: レビュー済み HEAD(${recorded_head:0:7})と現在の HEAD(${current_head:0:7})が不一致。ブランチ(${branch})の成果物がレビュー後に変わっている。陳腐フラグを消してから /self-review を再実施すること: ${flag_file}" >&2
   exit 2
 fi
 

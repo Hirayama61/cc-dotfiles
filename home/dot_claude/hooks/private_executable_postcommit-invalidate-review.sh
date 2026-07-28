@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # PostToolUse(Bash): git commit 実行後、そのブランチのセルフレビュー
-# フラグを削除する。これにより「現在の成果物をレビューせず push」が
-# 物理的に不可能になる(コミットのたびに再レビュー必須)。
+# フラグを削除する(コミットのたびに再レビュー必須)。
+#
+# 「レビュー済みでない成果物を push させない」ことの第一機構はフラグ内容の HEAD 束縛
+# (pre-push-selfreview-gate.sh がフラグ 1 行目の head と現 HEAD を突き合わせる)。
+# この hook はそれとは独立した二重の無効化で、gate が fail-open に倒れる経路のうち
+# 版ずれ(lib に head 判定の関数が無い)・HEAD 不明では、こちらだけが古いフラグを落とす。
 #
 # フラグキーは flag-paths.sh(単一情報源)で導出する。gate(読取)/
 # postcommit(削除)/SKILL(作成)の3者が同 lib を使う。commit の実対象 working dir を
