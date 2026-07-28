@@ -11,6 +11,8 @@ setup() {
   FLAG="$HOME/.claude/hooks/lib/flag-paths.sh"
   # 既定は XDG_STATE_HOME 不設定 = $HOME/.local/state(install_hooks の一時 HOME 配下)。
   unset XDG_STATE_HOME
+  SHA40=0123456789abcdef0123456789abcdef01234567
+  OTHER40=fedcba9876543210fedcba9876543210fedcba98
 }
 
 @test "flag dir defaults to \$HOME/.local/state/claude-sessions when XDG unset" {
@@ -107,6 +109,75 @@ setup() {
   run "$FLAG" dir-ensure
   [ "$status" -eq 0 ]
   [ "$(stat -f '%Lp' "$BATS_TEST_TMPDIR/xdg/claude-sessions")" = "700" ]
+}
+
+@test "review-head-line renders the canonical first line" {
+  run "$FLAG" review-head-line "$SHA40"
+  [ "$status" -eq 0 ]
+  [ "$output" = "head: $SHA40" ]
+}
+
+@test "review-head-of reads the sha from the first line" {
+  local f="$BATS_TEST_TMPDIR/flag"
+  printf 'head: %s\ntier1-ack: 意図的\n' "$SHA40" > "$f"
+  run "$FLAG" review-head-of "$f"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$SHA40" ]
+}
+
+@test "review-head-of ignores a forged head line on a later line" {
+  local f="$BATS_TEST_TMPDIR/flag"
+  printf 'head: %s\ntier1-ack: x\nhead: %s\n' "$SHA40" "$OTHER40" > "$f"
+  run "$FLAG" review-head-of "$f"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$SHA40" ]
+}
+
+@test "review-head-of yields empty for a legacy flag with no head line" {
+  local f="$BATS_TEST_TMPDIR/flag"
+  printf 'tier1-ack: x\n' > "$f"
+  run "$FLAG" review-head-of "$f"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "review-head-of yields empty for an empty flag" {
+  local f="$BATS_TEST_TMPDIR/flag"
+  : > "$f"
+  run "$FLAG" review-head-of "$f"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "review-head-of yields empty for a malformed sha" {
+  local f="$BATS_TEST_TMPDIR/flag"
+  printf 'head: not-a-sha\n' > "$f"
+  run "$FLAG" review-head-of "$f"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "review-head-of strips a trailing CR" {
+  local f="$BATS_TEST_TMPDIR/flag"
+  printf 'head: %s\r\n' "$SHA40" > "$f"
+  run "$FLAG" review-head-of "$f"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$SHA40" ]
+}
+
+@test "review-head-of refuses to follow a symlink" {
+  local real="$BATS_TEST_TMPDIR/real" link="$BATS_TEST_TMPDIR/link"
+  printf 'head: %s\n' "$SHA40" > "$real"
+  ln -s "$real" "$link"
+  run "$FLAG" review-head-of "$link"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "review-head-of yields empty for a missing file" {
+  run "$FLAG" review-head-of "$BATS_TEST_TMPDIR/nope"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "dir-ensure rejects a symlinked state dir (non-zero)" {
