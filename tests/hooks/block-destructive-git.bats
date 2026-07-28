@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # block-destructive-git.sh の E2E。対象サブコマンドごとに「破棄する形は止め、破棄しない
 # 隣接形は通す」境界を固定する(reset --hard / clean -f / stash drop・clear /
-# branch -D / restore / checkout -- / worktree remove --force)。
+# branch -D / restore / checkout の -- と pathspec / worktree remove --force)。
 #
 # 遮断は exit 2 のみ。fail-open の判定は「exit != 2」(このリポの規約)。
 # restore / checkout の `--` と `-f` / worktree は隣接する分岐で、status だけでは
@@ -185,24 +185,42 @@ setup() {
   [ "$status" -ne 2 ]
 }
 
-# `--` の無い pathspec。ref 名として不正な形(先頭 `.` / `/`、`..`、`*` を含む)だけを
-# 見るので、下の allows 群は巻き込まない。
+# `--` の無い pathspec。ref 名として不正な形(先頭 `.` / `/` / `~`、グロブ文字)だけを
+# 見るので、下の allows 群は巻き込まない。隣接分岐(`--` / `-f`)が代わりに発火した型の
+# 退行を status だけでは検知できないため、ヘッダの規約どおりメッセージも突き合わせる。
 @test "blocks git checkout . (pathspec without --)" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout ."}}'
   [ "$status" -eq 2 ]
-  echo "$output" | grep -qF 'git checkout <path>'
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
 }
 
 @test "blocks git checkout with a relative pathspec" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout ./src"}}'
   [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
 }
 
 @test "blocks git checkout with a parent pathspec" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout ../other"}}'
+  [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
+}
+
+# ドットファイルはこのリポで最も自然に書かれる pathspec。ref 名は先頭 `.` の component を
+# 許さないので、ブランチ名と取り違える余地がない。
+@test "blocks git checkout of a dotfile pathspec" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout .gitignore"}}'
+  [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
+}
+
+@test "blocks git checkout of a dot-directory pathspec" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout .github/workflows/ci.yml"}}'
   [ "$status" -eq 2 ]
 }
 
@@ -210,12 +228,28 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout /tmp/x"}}'
   [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
 }
 
 @test "blocks git checkout with a glob pathspec" {
   run_hook block-destructive-git.sh \
-    '{"tool_name":"Bash","tool_input":{"command":"git checkout '*.sh'"}}'
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout *.sh"}}'
   [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
+}
+
+# リダイレクト先と行末コメントは引数ではない。ここを走査すると破棄性ゼロの
+# ブランチ切替が止まる。
+@test "allows git checkout of a branch with a spaced redirect" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout main > /dev/null"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "allows git checkout of a branch with a trailing comment containing a path" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout main # ./scripts は後で見る"}}'
+  [ "$status" -eq 0 ]
 }
 
 @test "allows git checkout of a remote-tracking ref" {
@@ -250,11 +284,33 @@ setup() {
   [ "$status" -eq 2 ]
 }
 
+# 走査を始める前の guard(`checkout` の後ろに語があるか)を固定する。guard を外すと
+# 前置オプションの引数が走査対象に戻り、この形が BLOCK に化ける。
+@test "allows git -C <abs path> checkout with no argument" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C /tmp/repo checkout"}}'
+  [ "$status" -eq 0 ]
+}
+
 # ref 名として妥当な形は pathspec と区別できない。過剰遮断側へ倒すと
 # `git checkout <branch>` が巻き込まれるため、こちらは通す。
 @test "accepted gap: git checkout <path> that is also a valid ref name is not blocked" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout src/main.sh"}}'
+  [ "$status" -ne 2 ]
+}
+
+# 2 引数形は git 自身が「先頭を tree-ish、残りを pathspec」と解釈するので語数で判別できるが、
+# オプションの引数個数(`-b feat/x main`)を解析することになるため受容する。
+@test "accepted gap: git checkout <tree-ish> <path> is not blocked" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout HEAD src/main.sh"}}'
+  [ "$status" -ne 2 ]
+}
+
+@test "accepted gap: git checkout -p is not blocked" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout -p"}}'
   [ "$status" -ne 2 ]
 }
 

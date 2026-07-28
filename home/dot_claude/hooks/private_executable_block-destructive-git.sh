@@ -8,9 +8,11 @@
 # 対象範囲は「未コミット作業の破棄」に限る。ブランチ先端の付け替え(switch -C / checkout -B)は
 # コミット済みの ref を壊す別分類なので見ない(branch -D を止めるのとは非対称)。
 # 既知の限界(受容): long オプションの前方略記(--ha 等)・バックスラッシュ行継続は検出しない。
-# 既知の限界(受容): checkout の pathspec は ref 名として不正な形(先頭 `.` / `/`、`..`、
-# `*` を含む)だけを見る。`git checkout src/main.sh` のように ref 名としても妥当な形は
-# pathspec と区別できないため通す(過剰遮断へ倒すと `git checkout <branch>` が巻き込まれる)。
+# 既知の限界(受容・D-41): checkout の pathspec は ref 名として不正な形(先頭 `.` / `/` / `~`、
+# グロブ文字)だけを見る。ref 名としても妥当な形は pathspec と区別できないため通す
+# (`git checkout src/main.sh` の 1 引数形も、`git checkout HEAD src/main.sh` の tree-ish +
+# pathspec 形も。後者は語数で判別できるが、オプションの引数個数(`-b feat/x main`)を
+# 解析することになり whack-a-mole になる)。`git checkout -p`(対話的な hunk 破棄)も対象外。
 # 既知の限界(受容): heredoc を stdin として実行する形(`bash <<EOF` / `cat <<EOF | bash` /
 # `ssh h <<EOF`)の本文は実行されるコマンドだが、strip_heredocs はデータと区別せず落とす。
 # 安全側設計: jq 無し / 空コマンド / lib 不在なら exit 0(通す)。
@@ -76,15 +78,20 @@ while IFS= read -r seg; do
     if printf '%s' " $norm " | grep -qE '[[:space:]]--[[:space:]]'; then
       block "git checkout -- <path>(変更破棄)"
     fi
-    # ref 名は先頭の `.` / `/`、`..`、`*` を許さない(git check-ref-format)。この形の引数は
-    # pathspec 確定なので、`--` が無くても worktree の変更破棄になる。
-    # 走査は `checkout` より後ろに限る。前置グローバルオプションの引数(`git -C /abs/path`
-    # の /abs/path 等)を巻き込むと、ただのブランチ切替が止まる。
+    # ref 名は先頭の `.` / `/` / `~`、グロブ文字を許さない(git check-ref-format)。この形の
+    # 引数は pathspec 確定なので、`--` が無くても worktree の変更破棄になる。
+    # 走査は `checkout` より後ろに限る。前置グローバルオプションの引数(`git -C /abs/path`)を
+    # 巻き込むと、ただのブランチ切替が止まる。リダイレクト先(`> /dev/null`)と行末コメントも
+    # 引数ではないので、そこで打ち切る。
     if [[ "$norm" == *" checkout "* ]]; then
-      if printf '%s' "${norm#* checkout }" | tr ' ' '\n' |
-        grep -qE '^(\.\.?|\.\.?/.*|/.*|.*\*.*)$'; then
-        block "git checkout <path>(変更破棄)"
-      fi
+      read -r -a cargs <<<"${norm#* checkout }"
+      for w in ${cargs[@]+"${cargs[@]}"}; do
+        case "$w" in
+        '#'* | '>'* | '<'* | [0-9]'>'*) break ;;
+        -*) continue ;;
+        .* | /* | '~'* | */ | *'*'* | *'?'*) block "git checkout <path>(変更破棄)" ;;
+        esac
+      done
     fi
     segment_has_option "$seg" --force f && block "git checkout -f"
     ;;
