@@ -252,10 +252,11 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
 - 通過条件は「レビュー実施 + 全 finding がトリアージ済 かつ blocker ゼロ」。**指摘ゼロは強制しない。**
 - **`今すぐ修正`(または Other で blocker と解釈した処置)が 1 件でもあれば、フラグを立てない**: その must-fix 一覧を「次のアクション」として提示し、修正 → 再 `/self-review` を案内する。修正自体はこのスキルの外でメインが行う(本スキルの allowed-tools に Edit/Write は無い)。
 - **Tier 1 DECREASE / Tier 2 RESURRECT の ack は手順 4b で取得済み**。意図的でない・ack が得られなかった Tier が 1 つでもあれば、4b の時点で修正へ戻しているのでここには来ない(all-or-nothing)。reviewer の指摘ゼロでも ack ゲートは免除しない。
-- フラグは 4b で集めた Tier ack 理由 + 見送り処置を内容に記録する(`touch` ではなく内容書込。gate は `-f` 存在のみを見るため互換。説明責任ある証跡):
+- フラグは 1 行目にレビュー済み HEAD、その後に 4b で集めた Tier ack 理由 + 見送り処置を記録する:
+  - `head:` … スクリプトが `git rev-parse` から自動で書く(引数では渡さない)。gate はこの 1 行目を push 時の HEAD と突き合わせ、不一致ならブロックする。**この行があるので「commit したら再レビュー」は散文でなく構造で効く。**
   - `tier1-ack:` / `tier2-ack:` … 該当 Tier の ack 理由。**該当 Tier の理由が空ならフラグを書かず中断**(空理由での素通り防止)。
   - `triage:` … 見送った finding を `F-NNN [{severity}/{cat}] 確信度:{値} 見送り — 理由` の形で 1 行 1 件記録する(低確信の指摘まで人間に届ける設計なので、後から「何を捨てたか」を追えるようにする。スクリプトは行頭を `triage: ` に正規化するだけなので、この書式拡張にスクリプト変更は要らない)。
-  - 該当ゼロ(指摘ゼロ かつ Tier OK/SKIP)なら内容は空でよい(空ファイルを作る)。
+  - 該当ゼロ(指摘ゼロ かつ Tier OK/SKIP)なら `head:` 行 1 行だけのフラグになる。
 - トリアージ完了を確認したら次のスクリプトでフラグを立てる。第 1/2 引数は手順 1.5 で捕捉した各 Tier 出力の**最終行**、第 3/4 引数は 4b で人間が述べた ack 理由(該当 Tier 非該当なら空文字)、stdin は見送り triage 行(`triage: F-NNN [{severity}/{cat}] 確信度:{値} 見送り — 理由`、0 行以上)。cwd は手順冒頭の前提どおり対象 worktree であること。手順 1.5 と 4b の値はシェル変数として残っていない(別 Bash 呼び出しは状態を引き継がない)ため、**下のブロックは値をリテラルで書き写し 1 回の Bash 実行で完結させる**。`create-review-flag.sh` は ack 理由の空を弾くが、それは `tierN_last` が `DECREASE`/`RESURRECT` と読めた時だけ働く。`tierN_last` 自体が空だとその照合が外れ、実際は Tier が減少していても ack なしでフラグが立つ。
   ```sh
   # 手順 1.5 の Tier 出力最終行と 4b の人間の発話を、ここへ literal で書き写す。
@@ -274,12 +275,12 @@ Tier 3 所見(ack 不要): 宣言外ファイル {N} 件 — {一覧}
     | ~/.claude/skills/self-review/scripts/create-review-flag.sh \
         "$tier1_last" "$tier2_last" "$reason1" "$reason2"
   ```
-  スクリプトはフラグキーを `flag-paths.sh`(単一情報源)から引き(repo は `resolve-repo-key.sh` で導出)、`dir-ensure` で state dir を検証し、該当 Tier の ack 理由が空なら中断、既存フラグは中断、原子的作成(一時ファイル → `ln` で配置。既存なら失敗し、既存フラグを消さない)、作成失敗時は一時ファイルのみ消して中断する。成功で `pre-push-selfreview-gate.sh` が解除される。
+  スクリプトはフラグキーと head 行の書式を `flag-paths.sh`(単一情報源)から引き(repo は `resolve-repo-key.sh` で導出)、`dir-ensure` で state dir を検証し、該当 Tier の ack 理由が空なら中断、HEAD が引けなければ中断、既存フラグは中断(陳腐でも置換しない。中断メッセージにフラグのパスを出すので、陳腐なら人手で消してから再実行する)、原子的作成(一時ファイル → `ln` で配置。既存なら失敗し、既存フラグを消さない)、作成失敗時は一時ファイルのみ消して中断する。成功で `pre-push-selfreview-gate.sh` が解除される。
 - レビュー未実施・トリアージ未了ならフラグを書かない。
 
 ## 原則
 
-- フラグは「現在の HEAD をレビュー済」の意味。`git commit` 後は `postcommit-invalidate-review.sh` がフラグを無効化するので、新規コミット後は再レビュー必須。
+- フラグは 1 行目の `head:` 行で HEAD に束縛されている。commit / amend / rebase / reset のいずれで HEAD が動いても gate が不一致でブロックするので、新規コミット後は再レビュー必須。`git commit` 直後は `postcommit-invalidate-review.sh` がフラグ自体も消す(独立した二重の無効化)。
 - 保護ブランチ(`main`/`master`/`develop`/`epic/*`)では gate が無効。push/merge の可否判断は `block-protected-branch-push.sh` と人間判断に委ねる。
 - CodeRabbit は **このスキルでは使わない**(ローカル実行は遅く、PR を出せば PR 側で CodeRabbit GitHub App が走って二重になるため)。PR 上の CodeRabbit 収穫は push 後の姉妹スキル `ci-watch` が担う。
 - **リポ固有レビュー資産は固定コアへの追加のみ**(置換不可)。固定コアのうち 2 Agent(code-reviewer / security-reviewer)は資産の有無に依らず常に走り、Codex は best-effort(未導入なら skip)。安全網の本体は常時走る 2 Agent で、リポ側が security 検査を無効化して push ゲートを抜ける穴を塞ぐ。起動する子 reviewer は read-only・体数上限付き(手順 2b)。

@@ -19,6 +19,10 @@
 #   cs-injected-${ctx}--${scope}
 #   decision-nudged-${ctx}                           (判断記録ナッジ: 1 ctx 1 回)
 #   design-gate-warned-${ctx}--${repo_key}           (Gate 2 未通過の警告注入: 1 ctx 1 repo 1 回)
+#
+# フラグ内容の書式(キーと同じく writer / reader の完全一致が生命線なのでここが正典):
+#   review-passed の 1 行目 = `head: <sha>`(レビュー済み HEAD)。2 行目以降は
+#   tier1-ack: / tier2-ack: / triage: の記録。読み手は 1 行目しか見ない。
 # safe_branch = branch を '/'→'-' サニタイズ + 元 branch の SHA-256 先頭16桁サフィックス
 #   (不可逆置換による feature/a-b ≡ feature-a/b 衝突を解消。#49 B-1)。
 # ctx = transcript_path(無ければ session_id)の basename から末尾 .jsonl を除去。
@@ -79,6 +83,28 @@ flag_safe_branch() {
 
 review_passed_flag() {
   printf '%s/review-passed-%s--%s' "$(claude_flag_dir)" "${1:-}" "$(flag_safe_branch "${2:-}")"
+}
+
+# review-passed フラグ 1 行目の生成。末尾改行は付けない(直接実行ディスパッチャが足す)。
+review_flag_head_line() {
+  printf 'head: %s' "${1:-}"
+}
+
+# review-passed フラグの 1 行目から sha を取り出す。`head: <hex40|hex64>` でなければ空を返す
+# (旧形式・破損・head 欠落は「不明」= 呼び出し側が fail-closed で扱う)。
+# 1 行目だけを見るのは、ack 理由(人間の自由文)に改行が混ざっても後続行の偽 head を
+# 拾わないため。symlink は読まない(予測可能パスへの symlink 設置での解錠を防ぐ)。
+review_flag_head_of() {
+  local f="${1:-}" line sha
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  IFS= read -r line < "$f" 2>/dev/null || true
+  line="${line%$'\r'}"
+  case "$line" in
+  "head: "*) sha="${line#head: }" ;;
+  *) return 0 ;;
+  esac
+  printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}([0-9a-f]{24})?$' || return 0
+  printf '%s' "$sha"
 }
 
 design_reviewed_flag() {
@@ -166,6 +192,8 @@ design_scope_pending_flag() {
 
 # 直接実行(SKILL 等の非 source 文脈)用ディスパッチャ。
 #   flag-paths.sh review-passed <repo_key> <branch>
+#   flag-paths.sh review-head-line <sha>       (review-passed の 1 行目を組み立てる)
+#   flag-paths.sh review-head-of <flag_file>   (同 1 行目から sha を取り出す。不正は空)
 #   flag-paths.sh design-reviewed <repo_key> <branch>
 #   flag-paths.sh design-reviewed-pending <repo_key>
 #   flag-paths.sh trivial-override-pending <repo_key>
@@ -178,6 +206,8 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
   set -euo pipefail
   case "${1:-}" in
   review-passed) review_passed_flag "${2:-}" "${3:-}" ;;
+  review-head-line) review_flag_head_line "${2:-}" ;;
+  review-head-of) review_flag_head_of "${2:-}" ;;
   design-reviewed) design_reviewed_flag "${2:-}" "${3:-}" ;;
   design-reviewed-pending) design_reviewed_pending_flag "${2:-}" ;;
   trivial-override-pending) trivial_override_pending_flag "${2:-}" ;;
@@ -190,6 +220,8 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
     cat >&2 <<'USAGE'
 Usage: flag-paths.sh <subcommand> <args>
   review-passed            <repo_key> <branch>
+  review-head-line         <sha>
+  review-head-of           <flag_file>
   design-reviewed          <repo_key> <branch>
   design-scope             <repo_key> <branch>
   design-reviewed-pending  <repo_key>

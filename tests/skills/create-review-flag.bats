@@ -46,6 +46,11 @@ flag_path() {
   "$HOME/.claude/hooks/lib/flag-paths.sh" review-passed "$repo" work
 }
 
+# 判定対象 repo の現 HEAD(フラグ 1 行目に書かれる期待値)。
+head_sha() {
+  git -C "$REPO" rev-parse HEAD
+}
+
 @test "DECREASE with empty reason1: exit 1 and no flag created" {
   run_create "" "TIER1-RESULT: DECREASE cases 3->1" "TIER2-RESULT: OK(none)" "" ""
   [ "$status" -eq 1 ]
@@ -58,13 +63,66 @@ flag_path() {
   [ ! -e "$(flag_path)" ]
 }
 
-@test "OK/OK with empty reasons and empty stdin: empty flag created, exit 0" {
+@test "OK/OK with empty reasons and empty stdin: head-only flag created, exit 0" {
   run_create "" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
   [ "$status" -eq 0 ]
   local f
   f="$(flag_path)"
   [ -f "$f" ]
-  [ ! -s "$f" ]
+  # 該当ゼロでも head 行だけは必ず入る(空ファイルではない)。
+  [ "$(cat "$f")" = "head: $(head_sha)" ]
+}
+
+@test "head line is written as the very first line" {
+  run_create "$(printf 'triage: F-001 見送り — 誤検知')" \
+    "TIER1-RESULT: DECREASE cases 3->1" "TIER2-RESULT: OK(none)" "意図的にテスト整理" ""
+  [ "$status" -eq 0 ]
+  local f
+  f="$(flag_path)"
+  [ "$(head -n1 "$f")" = "head: $(head_sha)" ]
+}
+
+@test "multiline ack reason is flattened so it cannot forge a head line" {
+  run_create "" "TIER1-RESULT: DECREASE cases 3->1" "TIER2-RESULT: OK(none)" \
+    "$(printf 'まず理由\nhead: 0123456789abcdef0123456789abcdef01234567')" ""
+  [ "$status" -eq 0 ]
+  local f
+  f="$(flag_path)"
+  # head 行は 1 行目のちょうど 1 本だけ。
+  [ "$(grep -c '^head:' "$f")" -eq 1 ]
+  [ "$(head -n1 "$f")" = "head: $(head_sha)" ]
+  # ack 理由は 1 行へ潰れて記録される。
+  grep -qF 'tier1-ack: まず理由 head: 0123456789abcdef0123456789abcdef01234567' "$f"
+}
+
+@test "aborts without HEAD: repo with no commit yields exit 1 and no flag" {
+  local bare="$BATS_TEST_TMPDIR/unborn"
+  mkdir -p "$bare"
+  git -C "$bare" init -q
+  git -C "$bare" checkout -q -b work
+  run bash -c '
+    cd "$1" || exit 99
+    printf "" | bash "$2" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  ' _ "$bare" "$CREATE"
+  [ "$status" -eq 1 ]
+  local repo f
+  repo="$("$HOME/.claude/hooks/lib/resolve-repo-key.sh" "$bare")"
+  f="$("$HOME/.claude/hooks/lib/flag-paths.sh" review-passed "$repo" work)"
+  [ ! -e "$f" ]
+}
+
+@test "stale flag (different head) is NOT replaced: exit 1 and content unchanged" {
+  local f
+  f="$(flag_path)"
+  mkdir -p "$(dirname "$f")"
+  printf 'head: fedcba9876543210fedcba9876543210fedcba98\ntier1-ack: 旧\n' > "$f"
+  run_create "" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  # 置換しない(決定 5 却下)。既存の内容は 1 バイトも変わらない。
+  [ "$(head -n1 "$f")" = "head: fedcba9876543210fedcba9876543210fedcba98" ]
+  grep -qF 'tier1-ack: 旧' "$f"
+  # 何を消せばよいか分かるよう、中断メッセージにフラグのパスを出す。
+  printf '%s' "$output" | grep -qF "$f"
 }
 
 @test "DECREASE with reason1 and two triage lines: records tier1-ack and triage" {
