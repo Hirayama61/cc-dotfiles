@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash): 未コミット作業を復元不能に破棄しうる git 操作をブロックする(dotfiles#72)。
 # 対象: reset --hard / clean -f系 / stash drop・clear / branch 強制削除(-D とその等価形)/
-#       restore(worktree 接触)/ checkout の変更破棄(-- / -f)/ switch の変更破棄
+#       restore(worktree 接触)/ checkout の変更破棄(-- / pathspec / -f)/ switch の変更破棄
 #       (--discard-changes とその別名 --force / -f)/ worktree remove --force。
 # delegate 規約緩和(二段階の自己分類化)の補償として、客観条件を hook 層で担保する。
 # 既存 block 系と同じ best-effort 字句検査(難読化は対象外)。人間は ! バイパスで実行可能。
 # 対象範囲は「未コミット作業の破棄」に限る。ブランチ先端の付け替え(switch -C / checkout -B)は
 # コミット済みの ref を壊す別分類なので見ない(branch -D を止めるのとは非対称)。
 # 既知の限界(受容): long オプションの前方略記(--ha 等)・バックスラッシュ行継続は検出しない。
-# 既知の限界(未決): checkout は `--` トークンか -f がある時しか止めない。`git checkout .` /
-# `git checkout <path>` は同じ変更破棄だが素通りする(restore は引数無しでも止めるので非対称)。
+# 既知の限界(受容): checkout の pathspec は ref 名として不正な形(先頭 `.` / `/`、`..`、
+# `*` を含む)だけを見る。`git checkout src/main.sh` のように ref 名としても妥当な形は
+# pathspec と区別できないため通す(過剰遮断へ倒すと `git checkout <branch>` が巻き込まれる)。
 # 既知の限界(受容): heredoc を stdin として実行する形(`bash <<EOF` / `cat <<EOF | bash` /
 # `ssh h <<EOF`)の本文は実行されるコマンドだが、strip_heredocs はデータと区別せず落とす。
 # 安全側設計: jq 無し / 空コマンド / lib 不在なら exit 0(通す)。
@@ -70,10 +71,20 @@ while IFS= read -r seg; do
     fi
     ;;
   checkout)
-    # ブランチ切替・-b は許可。パス指定の変更破棄(--)と -f/--force のみ止める。
+    # ブランチ切替・-b は許可。パス指定の変更破棄(-- / pathspec)と -f/--force を止める。
     norm="$(normalized_words_of_segment "$seg")"
     if printf '%s' " $norm " | grep -qE '[[:space:]]--[[:space:]]'; then
       block "git checkout -- <path>(変更破棄)"
+    fi
+    # ref 名は先頭の `.` / `/`、`..`、`*` を許さない(git check-ref-format)。この形の引数は
+    # pathspec 確定なので、`--` が無くても worktree の変更破棄になる。
+    # 走査は `checkout` より後ろに限る。前置グローバルオプションの引数(`git -C /abs/path`
+    # の /abs/path 等)を巻き込むと、ただのブランチ切替が止まる。
+    if [[ "$norm" == *" checkout "* ]]; then
+      if printf '%s' "${norm#* checkout }" | tr ' ' '\n' |
+        grep -qE '^(\.\.?|\.\.?/.*|/.*|.*\*.*)$'; then
+        block "git checkout <path>(変更破棄)"
+      fi
     fi
     segment_has_option "$seg" --force f && block "git checkout -f"
     ;;
