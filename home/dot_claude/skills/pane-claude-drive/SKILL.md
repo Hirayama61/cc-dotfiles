@@ -303,9 +303,10 @@ tmux-claude-drive を参照し、次を渡す:
 ## 7. 状態真実源(handoff doc)と並列 Monitor
 
 案件の状態真実源は現場監督が持つ handoff doc 1 ファイルで、タスク単位のレコードを並べる。
-統括の fleet 状態ディレクトリ(home-claude-drive §2)とは層が別 — fleet JSON の 1 レコード =
+配車側の fleet 状態ディレクトリ(home-claude-drive §2)とは層が別 — fleet JSON の 1 レコード =
 この window 1 つ = この handoff doc 1 ファイルで、handoff の中がその window 内の作業者 pane 群を
-持つ。fleet JSON 側の `status` を書くのは現場監督で、handoff の個別タスク status とは別物。
+持つ。**現場監督は fleet JSON を書かない**(2026-07-26 変更。writer は配車側の単一 writer で、
+完了も配車側が裁定する。判定条件は home-claude-drive §4)。現場監督が書くのは handoff doc だけ。
 
 - **命名**: `~/obsidian/brain/Tasks/<repo>/<fleet-id>-handoff.md`(1 案件 1 ファイル)。
   `<fleet-id>` は filesystem-safe ID(branch 名の `/` 等を変換。表示名とは別に持つ)。

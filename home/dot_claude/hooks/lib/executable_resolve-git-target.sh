@@ -192,6 +192,10 @@ segment_has_option() {
 # のように、多語サブコマンド(gh pr merge / git worktree add)を検出する hook が、既存の
 # 練られた ERE(BORDER/FLAGS/ENV)を温存したまま正規化後文字列にマッチできるようにする
 # (トークン照合への作り替えは差分・退行リスクが大きいので grep -E 継続を選択)。
+#
+# 制約: here-string の `read` は1行目で止まるため、**入力の2行目以降は捨てられる**。
+# 複数行コマンド全体を渡すと改行以降が照合対象から消える(D-36 の原因)。呼び出し側は
+# 1セグメント / 1行を渡すこと。
 normalized_words_of_segment() {
   local seg="${1:-}"
   local -a words=()
@@ -209,22 +213,70 @@ normalized_words_of_segment() {
 # `<<TAG` / `<<-TAG` / `<<'TAG'` / `<<"TAG"` / `<<\TAG` の開始を検出し、終端 TAG 行
 # (`<<-` のみ行頭タブ許容)までの本文行を落とす。字句 grep 型 hook が heredoc 内の
 # 説明文(issue 本文中のコマンド例等)に誤爆するのを防ぐ。herestring(<<<)は \001 に
-# 退避して誤検出しない。既知の限界(best-effort で受容):
+# 退避して誤検出しない。
+#
+# 開始を誤認しても、復帰つき版(strip_heredocs_lenient)なら検出漏れにはしない(D-38):
+# 終端タグ行が来ないまま EOF に達したら捨てた行を出し直す。本物でない heredoc
+# (クォート内の `<< 語`・算術シフト `$((1<<b))`)は終端が一致しないのでこの経路に入り、
+# 以降の行が照合対象に残る。倒れる先は過剰遮断側。
+# 復帰行は元の行順を保つ。捨てた行は「最後の未終端開始以降の連続した末尾」なので、
+# 出力は常に入力行の部分列になる(消費側が行順に依存していても壊れない)。
+# タグ文字クラスにハイフンを含めるのは `<<END-OF` を正しく終端させるため(狭めると
+# シェル的に正しく閉じた heredoc の本文が復帰して誤爆する)。この文字クラスは終端判定も
+# 変えるので、復帰を使わない消費側では検出漏れ方向にも振れる(`<<END-OF` を `END` で
+# 閉じた形は実シェルでも閉じないが、以前はここで捕捉できていた)。
+#
+# 既知の限界(best-effort で受容):
 #   - 1行内の複数 heredoc は最初のタグのみ追跡(漏れた本文は照合対象に残る=ブロック過剰側)
-#   - タグは [A-Za-z_][A-Za-z_0-9]* のみ(`<<END-OF` は部分捕捉し以降を飲み込む=fail-open)
-#   - 算術シフト等の heredoc でない `<<`+英字も開始と誤認しうる(fail-open)
-strip_heredocs() {
-  printf '%s\n' "${1:-}" | awk '
+#   - タグは `[A-Za-z_]` 始まりのみ検出する。シェルは `<<1` のような数字始まりも受けるが、
+#     その本文は落ちずに照合対象へ残る(ブロック過剰側)
+#   - 上の「復帰つき版なら検出漏れにしない」は無条件ではない。誤認した開始のタグ語が
+#     後続行に単独で現れると偶発的に終端一致し、その間の行はバッファ破棄で消える
+#     (例 `echo "cat << EOF で書く"` ⏎ 対象コマンド ⏎ `EOF`)。タグが `shift` / `done` の
+#     ような実スクリプトに現れる語でも成立する。この形だけは復帰版でも検出漏れ側に倒れる
+strip_heredocs() { _strip_heredocs_impl "${1:-}" 0; }
+
+# 復帰つき版(D-38)。終端タグ行が来ないまま EOF に達したら捨てた行を出し直す。
+# **遮断側パターンしか持たない hook 専用**。許可側パターン(early-exit / continue)を
+# コマンド全文に掛ける hook が使うと、復帰した本文が許可判定に当たって遮断が消える
+# (block-nested-worktree の `wt.sh` / block-defer-phrases の `(#NNN)` で実測)。
+strip_heredocs_lenient() { _strip_heredocs_impl "${1:-}" 1; }
+
+# 遮断側 hook が使う heredoc 除去。復帰つき版を優先し、それが無い旧 lib と組んだ時だけ
+# 厳格版へ落ちる(除去ゼロへ後退すると heredoc 本文のコマンド例で誤ブロックする。
+# 代わりに D-38 の穴が開く=検出漏れ側)。どちらも無ければ入力をそのまま返す(過剰遮断側)。
+# 除去結果が空になる入力では元のコマンドを返す(判定対象そのものを消さない)。
+# **strip_heredocs_lenient と同じ制約**: 許可側パターン(early-exit / continue)を
+# コマンド全文へ掛ける hook は使わないこと。復帰した本文が許可判定に当たって遮断が消える。
+strip_heredocs_block_side() {
+  local cmd="${1:-}" stripped=""
+  if type strip_heredocs_lenient >/dev/null 2>&1; then
+    stripped="$(strip_heredocs_lenient "$cmd" 2>/dev/null || true)"
+  elif type strip_heredocs >/dev/null 2>&1; then
+    stripped="$(strip_heredocs "$cmd" 2>/dev/null || true)"
+  fi
+  if [[ -n "$stripped" ]]; then
+    printf '%s' "$stripped"
+  else
+    printf '%s' "$cmd"
+  fi
+}
+
+_strip_heredocs_impl() {
+  printf '%s\n' "${1:-}" | awk -v restore="${2:-0}" '
     skip {
       line = $0
       if (dash) sub(/^\t+/, "", line)
-      if (line == tag) skip = 0
+      # n が buf の唯一の有効長(delete は POSIX awk に無いので古い要素は残る)。
+      # END 側を for (k in buf) に書き換えると破棄済み本文が復帰する。
+      if (line == tag) { skip = 0; n = 0; next }
+      buf[++n] = $0
       next
     }
     {
       probe = $0
       gsub(/<<</, "\001", probe)
-      if (match(probe, /<<-?[[:space:]]*["'\''\\]?[A-Za-z_][A-Za-z_0-9]*/)) {
+      if (match(probe, /<<-?[[:space:]]*["'\''\\]?[A-Za-z_][A-Za-z_0-9-]*/)) {
         tag = substr(probe, RSTART, RLENGTH)
         dash = (substr(tag, 3, 1) == "-")
         sub(/^<<-?[[:space:]]*/, "", tag)
@@ -232,7 +284,8 @@ strip_heredocs() {
         skip = 1
       }
       print
-    }'
+    }
+    END { if (skip && restore) for (i = 1; i <= n; i++) print buf[i] }'
 }
 
 # 相対パスを base(cwd)基準で物理絶対パス化。解決不能なら空を返す。

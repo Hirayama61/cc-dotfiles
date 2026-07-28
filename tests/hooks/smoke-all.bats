@@ -84,6 +84,14 @@ assert_no_block_for() {
     '{"tool_name":"Bash","tool_input":{"command":"git push --force"},"cwd":"/tmp"}'
 }
 
+@test "corrupt flag-paths.sh: no hook blocks (gate head binding fail-open)" {
+  # push ゲートは flag-paths.sh の関数(review_flag_head_of)に依存して HEAD を照合する。
+  # lib が構文破損しても source_hook_lib の subshell 試験が握り、どの hook も exit 2 を出さない。
+  printf '%s' '{ broken bash (' >"$HOME/.claude/hooks/lib/flag-paths.sh"
+  assert_no_block_for "corrupt-flag-paths" \
+    '{"tool_name":"Bash","tool_input":{"command":"git push"},"cwd":"/tmp"}'
+}
+
 @test "corrupt context-paths.sh: no hook blocks (context-pressure fail-open)" {
   # context-pressure 系 6 hook が source する context-paths.sh の構文破損でも、
   # source_hook_lib の subshell 試験が握りどの hook も exit 2 を出さない。
