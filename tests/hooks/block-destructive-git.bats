@@ -271,6 +271,20 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+# 入力リダイレクトの分離形。飛ばす語の列挙が出力側だけだと、リダイレクト先が pathspec に
+# 見えて破棄性ゼロのブランチ切替が止まる。
+@test "allows git checkout of a branch with a numbered input redirect" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout main 2< ./in"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "allows git checkout of a branch with a read-write redirect" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout main <> ./f"}}'
+  [ "$status" -eq 0 ]
+}
+
 @test "allows git checkout of a branch with a trailing comment containing a path" {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout main # ./scripts は後で見る"}}'
