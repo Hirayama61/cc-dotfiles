@@ -185,7 +185,7 @@ setup() {
   [ "$status" -ne 2 ]
 }
 
-# `--` の無い pathspec。ref 名として不正な形(先頭 `.` / `/` / `~`、グロブ文字)だけを
+# `--` の無い pathspec。ref 名として不正な形(先頭 `.` / `/` / `~`、末尾 `/`、`*`、`?`)だけを
 # 見るので、下の allows 群は巻き込まない。隣接分岐(`--` / `-f`)が代わりに発火した型の
 # 退行を status だけでは検知できないため、ヘッダの規約どおりメッセージも突き合わせる。
 @test "blocks git checkout . (pathspec without --)" {
@@ -222,6 +222,7 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git checkout .github/workflows/ci.yml"}}'
   [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
 }
 
 @test "blocks git checkout with an absolute pathspec" {
@@ -238,7 +239,31 @@ setup() {
   printf '%s' "$output" | grep -qF 'git checkout <path>'
 }
 
-# リダイレクト先と行末コメントは引数ではない。ここを走査すると破棄性ゼロの
+# 語走査は normalized_words_of_segment のクォート 1 段除去を経た語を見る。除去が効かないと
+# `"./src"` が `.` 始まりに見えず素通りする。
+@test "blocks git checkout with a quoted pathspec" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout \"./src\""}}'
+  [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
+}
+
+# リダイレクトは pathspec より前にも置ける。ここで走査を打ち切ると、語順だけで結果が割れる。
+@test "blocks git checkout . with a leading attached redirect" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout >/dev/null ."}}'
+  [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
+}
+
+@test "blocks git checkout . with a leading spaced redirect" {
+  run_hook block-destructive-git.sh \
+    '{"tool_name":"Bash","tool_input":{"command":"git checkout > /dev/null ."}}'
+  [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
+}
+
+# リダイレクト先と行末コメント以降は引数ではない。ここを走査すると破棄性ゼロの
 # ブランチ切替が止まる。
 @test "allows git checkout of a branch with a spaced redirect" {
   run_hook block-destructive-git.sh \
@@ -282,6 +307,7 @@ setup() {
   run_hook block-destructive-git.sh \
     '{"tool_name":"Bash","tool_input":{"command":"git -C /tmp/repo checkout ."}}'
   [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'git checkout <path>'
 }
 
 # 走査を始める前の guard(`checkout` の後ろに語があるか)を固定する。guard を外すと
