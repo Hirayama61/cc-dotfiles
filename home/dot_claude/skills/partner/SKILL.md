@@ -98,7 +98,8 @@ tmux list-windows -F '#{window_id}	#{window_name}	#{window_panes}' \
                 { print "?\t<形が検証できない行>\t?" }'
 
 # バックログ(fleet は台帳としてのみ使う。進捗欄は持たない)
-# FLEET_DIR の canon は次の 1 行(他所に写しを作らない)。
+# FLEET_DIR の定義を書き換えるのはこの 1 行だけ。Bash 呼び出しごとに shell は新しいので、
+# 下の台帳を読み書きする時はこの 1 行を同じ呼び出しの先頭に置いてから使う。
 FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
 find "$FLEET_DIR/tasks" -name '*.json' -type f 2>/dev/null
 
