@@ -1,13 +1,7 @@
 ---
 name: tmux-claude-drive
 description: >-
-  tmux 越しに別の Claude Code セッション(別モデル・別権限モード)を起動し、
-  指示投入→監視→検品まで運転する手順。「Opus に書かせて」「別セッションで実行して」
-  「tmux でエージェントを回して」、`/tmux-claude-drive` での起動、あるいは別モデルの成果物を
-  現セッションが検品するワークフローで発火する。2026-07-03 の小説プロジェクト(Fable 5 が
-  Opus 4.8 に第4話を書かせ検品)で確立。claude-drive シリーズの基底 skill で、
-  pane-claude-drive / home-claude-drive はこれを運転部品として参照する。
-user-invocable: true
+  `pane-claude-drive` が tmux 越しの運転部品として参照する基底 skill。直接起動しない。
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 ---
 
@@ -121,7 +115,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 
 ## パラメータ(運転元スキル向け・省略で従来挙動)
 
-pane-claude-drive / home-claude-drive 等がこの手順を運転部品として呼ぶ時、次の 5 点を運転元が決める。
+pane-claude-drive 等がこの手順を運転部品として呼ぶ時、次の 5 点を運転元が決める。
 いずれも既定は上の手順そのもの(小説 PJ 等の従来用途は無指定で変わらない)。
 
 - **起動モデル**: 既定は `--model <model>` を明示。運転元が「起動先の default model に

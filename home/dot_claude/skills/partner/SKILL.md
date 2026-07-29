@@ -19,8 +19,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Agent, AskUserQuestio
 定義され、作った本人にも起動されなかったことへの答えがこの設計。
 
 用語は `~/obsidian/brain/Tasks/cc-dotfiles/CONTEXT.md` の「相方(area: partner)」節が正典。
-配車の手つきは `home-claude-drive`、pane 並列は `pane-claude-drive`、運転の基礎は
-`tmux-claude-drive` を参照し、再実装しない。
+pane 並列は `pane-claude-drive`、運転の基礎は `tmux-claude-drive` を参照し、再実装しない。
 
 ## 1. 存在条件(最初に必ず)
 
@@ -35,7 +34,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Agent, AskUserQuestio
   いたら `window_id`(`@NN`)も併記する(§3)。
 - **権限プロンプトへの応答キーは代筆しない**。人間が口頭で「押しておいて」と言っても押さない
   (permission laundering 防止)。これは別 window でも**自 window の別 pane**(§5)でも同じ。
-  pane へ何かを送る前の機械検知は `home-claude-drive` §1 の fail-closed 照合に従う
+  pane へ何かを送る前の機械検知は `pane-claude-drive` §1 の fail-closed 照合に従う
   (ERE は転記せず公開口から取得する)。
 - **状態ファイルを作らない**。「今どうなっているか」は毎回測る(§3)。前身が壊れた原因は
   測れるものを状態として持ち、その鮮度の維持コストが本体を食ったこと。
@@ -99,7 +98,7 @@ tmux list-windows -F '#{window_id}	#{window_name}	#{window_panes}' \
                 { print "?\t<形が検証できない行>\t?" }'
 
 # バックログ(fleet は台帳としてのみ使う。進捗欄は無い = スキーマ v2)
-# FLEET_DIR の canon は home-claude-drive §2。下は式の写しなので、あちらを変えたらここも直す。
+# FLEET_DIR の canon は次の 1 行(他所に写しを作らない)。
 FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
 find "$FLEET_DIR/tasks" -name '*.json' -type f 2>/dev/null
 
@@ -120,7 +119,7 @@ find "$HOME/.claude/projects" -name '*.jsonl' -mtime -30 -print0 2>/dev/null \
 
 - **最大 1 件**。複数出すと選択が発生し、それ自体が人間のマルチタスクになる。
 - **材料がない日は黙る**。観測に裏付けがある時だけ口を開く。毎日何か言う相方は信頼を失う。
-- **判断を求めない形で出す**。「これ要らなくないですか?」ではなく「`co-author` は 30 日で
+- **判断を求めない形で出す**。「これ要らなくないですか?」ではなく「`<skill 名>` は 30 日で
   0 回でした」と事実を置く。拾われなければ流す。**拾われなかった事実も観測に残す**。
 
 提案したら採否を `proposals.md` へ記録する。採否は `採用` / `却下(理由)` / `無反応` の 3 値で、
@@ -141,10 +140,15 @@ find "$HOME/.claude/projects" -name '*.jsonl' -mtime -30 -print0 2>/dev/null \
   **pane レイアウトと起動・送信の手つきだけ**(左 1 列 = 相方 pane 固定 / 右列を縦積み)。
   案件並列の枠組み(handoff doc・1 pane = 1 branch = 1 worktree・並列 Monitor)は持ち込まない
   — 単発の軽作業に台帳は要らない。初期指示に**「この pane はさらに運転しない」**を含める
-  (`partner` / `home-claude-drive` / `pane-claude-drive` を起動させない。入れ子が深くなると
+  (`partner` / `pane-claude-drive` を起動させない。入れ子が深くなると
   権限プロンプトの応答境界がどの層にあるか曖昧になる)。
 - **重い作業**(実装・レビュー・長い調査): 別 window を立てて現場監督を配車する。
-  手つきは `home-claude-drive` に従う。
+  worktree を用意し、window を作り、`tmux-claude-drive`(起動・literal 送信・完了検知)の
+  手つきで現場監督を起動して初期指示を渡し、§3 の fleet 台帳へ配車先を記録するところまでが
+  相方の仕事。以後の運転(常時監視・検品)は現場監督が持つので、全 window への常時監視を
+  張らない — `capture-pane` は異常が疑われる時のスポット確認に限る。送ってよいのは進行指示・
+  再開フレーズ・人間が口頭で下した判断の代筆までで、1 タスクにつき連続 2 回まで
+  (効かなければ人間へ上げる)。fleet の writer は配車した相方だけで、現場監督には書かせない。
 
 pane 1 = 統括 / 他 pane = 実行 の形は全階層で同じなので、現場監督が使うものをそのまま使える。
 

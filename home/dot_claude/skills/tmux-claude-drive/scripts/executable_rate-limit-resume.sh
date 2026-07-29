@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # レートリミット自動再開タイマー(経路 A)。tmux-claude-drive の付属部品で、
-# 運転元(pane-claude-drive / home-claude-drive 等)が pane ごとに起動する。
+# 運転元(pane-claude-drive 等)が pane ごとに起動する。
 #
 # 被運転セッションが usage limit で止まったとき、素のシェル(Claude のレートリミットを
 # 消費しない)が対象 pane を周期監視し、明けたら再開フレーズを 1 度送る。運転元が
@@ -122,7 +122,7 @@ if [ "${1:-}" = "--parse-reset" ]; then
 fi
 
 # 公開口: 権限プロンプト検知 ERE を 1 行で出力する(ループを回さない)。
-# home-claude-drive 等の運転元がナッジ送信前の機械照合に使う単一情報源。
+# 運転元がナッジ送信前の機械照合に使う単一情報源。
 # ERE を転記・grep 抽出で複製せず、必ずこの口から取得する。
 if [ "${1:-}" = "--print-permission-ere" ]; then
   printf '%s\n' "$PERMISSION_ERE"

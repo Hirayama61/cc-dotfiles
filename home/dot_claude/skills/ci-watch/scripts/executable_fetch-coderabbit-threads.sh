@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 # fetch-coderabbit-threads.sh — CodeRabbit 未解決レビュースレッドの取得(単一情報源)。
 #
-# ci-watch(push 後 assess-only)と pr-triage(実装前トリアージ)が共有する取得 primitive。
-# 両 skill が同一の GraphQL を SKILL.md 内に inline 複製していた(片方だけ直すと drift する
-# 実在リスク)ため scripts/ へ集約した。CodeRabbit の thread 取得経路だけを流用し、適用フロー
-# (coderabbit:autofix)は呼ばない。ci-watch が正典置き場、pr-triage はこのパスを参照する。
+# ci-watch(push 後 assess-only)の取得 primitive。GraphQL を SKILL.md 内へ inline せず
+# ここに集約する。CodeRabbit の thread 取得経路だけを流用し、適用フロー
+# (coderabbit:autofix)は呼ばない。
 #
 # やること: (1) in-progress マーカーを一度だけ確認 (2) 進行中でなければ reviewThreads を
 #   cursor pagination で全ページ取得し、未解決・非 outdated・CodeRabbit 作成の thread だけを
 #   JSON 配列で stdout に返す。
-# やらないこと: 判断・適用・返信。取得のみ(assess-only は両 skill 側が守る)。
+# やらないこと: 判断・適用・返信。取得のみ(assess-only は呼び出し側が守る)。
 #
 # 使い方: fetch-coderabbit-threads.sh <owner> <name> <pr>
 # 出力(stdout):
 #   - IN_PROGRESS  … CodeRabbit レビュー進行中。呼び出し側は数分後の再確認を促して打ち切る。
 #   - <JSON配列>   … 未解決 CodeRabbit thread(空なら [])。各要素の形は
 #                    {isResolved,isOutdated,comments:{nodes:[{databaseId,body,path,line,author{login}}]}}。
-#                    pr-triage は comments.nodes[0].databaseId を返信先(reply target)に使う。
 # 失敗時: stderr にメッセージ + 非ゼロ exit(gh/jq 未導入・認証・ネットワーク・API エラー)。
 #         set -e により gh api 失敗はそのまま非ゼロ終了へ伝播する(fail-closed)。
 #

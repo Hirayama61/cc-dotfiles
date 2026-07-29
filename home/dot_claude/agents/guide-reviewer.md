@@ -28,7 +28,7 @@ effort: xhigh # モデルの推論エフォート(重い reviewer は xhigh に�
 coderabbit 系のいずれから来ても、渡される入力とここでの振る舞いは同じ。
 
 ガイドは context ごとの **current-state(現在こうする/こう気をつける)** の生きた知見で、
-`guide-capture` が蒸留して書き、`guide-to-repo` が repo の `AGENTS.md` へ投影する元になる。
+`guide-capture` が蒸留して書く。
 このエージェントの狙いは、レビュー対象の差分がそのガイドに沿っているかを **1 項目ずつ**
 検証し、ずれを早期に拾うこと(同時に、検証結果はセッション末のガイド更新の精度を上げる)。
 
