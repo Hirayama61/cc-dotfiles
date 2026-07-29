@@ -202,16 +202,16 @@ pane 1 = 統括 / 他 pane = 実行 の形は全階層で同じなので、現�
 
 1. **worktree 準備**: `~/ghq/github.com/Hirayama61/dotfiles/bin/wt.sh "<branch>" "<base-ref>"` を
    base-ref 明示で呼ぶ。branch は非保護 feature ブランチに限る。
-2. **window 作成**: window 名 = タスク `id`(§3 の形検査を通した後の値)。tmux-claude-drive
-   手順 1 に従い、作成直前に状態を取り直す。台帳は `tmux_window`(`@NN`)も持つので、
-   pane id と併せて両方を受け取り、それぞれ形検査する:
-
-   ```bash
-   pane_id="$(tmux new-window -P -F '#{pane_id}' -t "$session": -n "$id" -c "$workdir" -d)"
-   case "$pane_id" in %[0-9]*) ;; *) echo "window 生成に失敗。配車を中止" >&2; exit 1 ;; esac
-   window_id="$(tmux display-message -p -t "$pane_id" '#{window_id}')"
-   case "$window_id" in @[0-9]*) ;; *) echo "window_id を取得できない。配車を中止" >&2; exit 1 ;; esac
-   ```
+2. **window 作成**: 手つきは tmux-claude-drive 手順 1 に従う(作成直前に状態を取り直す・
+   不変 pane id を受け取る形で作る・形検査する)。この skill が足す条件は 3 つ:
+   - window 名はタスク `id`(§3 の形検査を通した後の値)。
+   - **作業ディレクトリには手順 1 で作った worktree の実パスを渡す。**空文字を渡しても
+     tmux はエラーにせず、**呼び出し元の cwd に window を作る**(実測)。pane id の形検査は
+     通ってしまうので、この経路は fail-closed に倒れない — 現場監督が worktree の外
+     (相方の cwd)で起動し、しかも手順 5 はそれを「実測値」として台帳に正しく記録するため、
+     後から検出できない。パスが取れなければ配車を中止する。
+   - 台帳は `tmux_window`(`@NN`)も持つので、pane id(`%NN`)と併せて**両方を実測で受け取り、
+     それぞれ形を検査する**。window id は作成した pane から引く。
 3. **現場監督を起動**: `claude --model opus`(+ 必要なら `--effort`)。起動確認と auto mode
    表示の完全一致確認は tmux-claude-drive 手順 1 のとおり。
 4. **初期指示を literal 送信**(tmux-claude-drive 手順 2 の作法)。**送る文字列は単一行・
@@ -237,9 +237,13 @@ pane 1 = 統括 / 他 pane = 実行 の形は全階層で同じなので、現�
    - **送信に失敗したら running にせず**、status=backlog のまま window を畳んで人間へ報告する
      (初期指示を受け取っていない現場監督を running として孤児化させない)。
    - **送信は成功したが書込に失敗したら window は畳まない**。現場監督は既に作業しているので
-     畳むのは作業の破棄になる。実測済みの id を手元に保持したまま再試行し、なお失敗するなら
-     その 2 つの id を添えて人間へ報告する(台帳に載らない window を黙って残すと、次の配車で
-     同名 window が並び、どちらが生きているか分からなくなる)。
+     畳むのは作業の破棄になる。実測済みの `tmux_window` / `tmux_pane` を手元に保持したまま
+     再試行し、なお失敗するならその 2 つを添えて人間へ報告する(台帳に載らない window を
+     黙って残すと、次の配車で同名 window が並び、どちらが生きているか分からなくなる)。
+
+   **畳む時も含め、window / pane を指す操作は手順 2 で実測した id 宛に固定する。**
+   window 名は `id` なので再配車で同名が並びうるうえ、名前は untrusted(§3)。名前や index 宛に
+   kill を出すと別 window を巻き添えにする。
 
 **ナッジ**: 送ってよいのは進行指示・再開フレーズ・人間が口頭で下した判断の代筆だけで、§1 の
 機械検知を必ず先に通す。1 タスクにつき連続 2 回まで(効かなければ人間へ上げる)。ただしこの
@@ -249,7 +253,9 @@ pane 1 = 統括 / 他 pane = 実行 の形は全階層で同じなので、現�
 **完了裁定も相方が行う**(writer が相方だけである以上、現場監督の done 書込は待たない)。
 `status=running` の各タスクについて次の順で見る:
 
-1. `tmux_window` が生きているか(`tmux list-windows -F '#{window_id}'` に一致があるか)。
+1. 台帳の `tmux_window`(`@NN`)が生きているか。現存する window id の一覧と突き合わせる
+   (名前で照合しない。同名が並びうる)。配車先が別 session なら、その session を対象に含めて
+   列挙する — カレント session だけを見ると、生きている window を消滅と読んで 3 に落ちる。
 2. 生きていれば pane 末尾を capture し、tmux-claude-drive 手順 3 の判定(**スピナー不在 AND
    完了フレーズの単独行一致**)にかける。完了と判定できた時だけ `status=done` にして
    `$FLEET_DIR/done/` へ mv する。
