@@ -151,6 +151,7 @@ find "$HOME/.claude/projects" -name '*.jsonl' -mtime -30 -print0 2>/dev/null \
 - **書込は原子的置換**(読み手の部分読みを防ぐ。bash 3.2 互換):
 
   ```bash
+  mkdir -p "$FLEET_DIR/tasks" || exit 1
   tmp="$(mktemp "$FLEET_DIR/tasks/.$id.XXXXXX")" || exit 1
   printf '%s\n' "$json" > "$tmp" && mv -f "$tmp" "$FLEET_DIR/tasks/$id.json" || { rm -f "$tmp"; exit 1; }
   ```
@@ -201,20 +202,33 @@ pane 1 = 統括 / 他 pane = 実行 の形は全階層で同じなので、現�
 1. **worktree 準備**: `~/ghq/github.com/Hirayama61/dotfiles/bin/wt.sh "<branch>" "<base-ref>"` を
    base-ref 明示で呼ぶ。branch は非保護 feature ブランチに限る。
 2. **window 作成**: window 名 = タスク `id`(§3 の形検査を通した後の値)。tmux-claude-drive
-   手順 1 に従い、作成直前に状態を取り直し、不変 pane id を受け取る形で作成・形検査する。
+   手順 1 に従い、作成直前に状態を取り直す。台帳は `tmux_window`(`@NN`)も持つので、
+   pane id と併せて両方を受け取り、それぞれ形検査する:
+
+   ```bash
+   pane_id="$(tmux new-window -P -F '#{pane_id}' -t "$session": -n "$id" -c "$workdir" -d)"
+   case "$pane_id" in %[0-9]*) ;; *) echo "window 生成に失敗。配車を中止" >&2; exit 1 ;; esac
+   window_id="$(tmux display-message -p -t "$pane_id" '#{window_id}')"
+   case "$window_id" in @[0-9]*) ;; *) echo "window_id を取得できない。配車を中止" >&2; exit 1 ;; esac
+   ```
 3. **現場監督を起動**: `claude --model opus`(+ 必要なら `--effort`)。起動確認と auto mode
    表示の完全一致確認は tmux-claude-drive 手順 1 のとおり。
 4. **初期指示を literal 送信**(tmux-claude-drive 手順 2 の作法)。**送る文字列は単一行・
    制御文字なしを保証してから送る**(`pane-claude-drive` §5-3 と同契約 — 改行の混入は
    `send-keys -l` の途中確定になり、premature submit とクロスセッション注入の経路になる)。
    長い指示はファイルへ書いてパスだけを送る。tmux-claude-drive 手順 2 の定型(承認範囲の区別・
-   対話不能分岐・完了フレーズ)に加え、次の 2 つを必ず含める:
+   対話不能分岐・完了フレーズ)に加え、次の 3 つを必ず含める:
    - **コンテキスト規律**: 使用率 50% 超で `compact-prep` → native `/compact`。逼迫が解消しない
      長期タスクは handoff を書いて新セッションへ退避する。
+   - **運転の入れ子はここで打ち止め**: 「この window はさらに配車しない(`partner` を起動しない)。
+     並列が要るなら `pane-claude-drive` の pane までで、その作業者 pane はもう運転しない」。
+     段を重ねると権限プロンプトの応答境界がどの層にあるか曖昧になる。
    - **反復レビューの打ち止め条件**(self-review 手順 5 と同じ規則。現場監督が自ブランチで
-     self-review を回す局面はこの経路を通るので、ここに無いと際限なく周回する):
+     self-review を回す局面はこの経路を通るので、ここに無いと指示側に打ち止めの出所が無くなる):
      「直すのは判断が `必須` の finding だけ。`推奨` 以下は `triage:` へ記録し、軽微を直すための
      commit を作らない。4 周目でも `必須` が残るなら止めて報告する」。
+     ただし**周回上限は目安で、執行する仕組みは無い** — 周回数を durable に持つ出所はどのレーンにも
+     無く(ナッジ回数と同じ best-effort)、効いているのは `必須` だけ直すという主条件の側。
    fleet への書込は求めない(writer は相方だけ)。
 5. **送信成功を確認してからタスク JSON を running に更新**: `tmux_window` / `window_name` /
    `tmux_pane` / `branch` / `worktree` を実測値で記録する(計画の文字列でなく作成済み実体から
