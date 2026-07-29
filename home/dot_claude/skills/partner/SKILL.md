@@ -117,7 +117,10 @@ find "$HOME/.claude/projects" -name '*.jsonl' -mtime -30 -print0 2>/dev/null \
 ### fleet 台帳の契約
 
 タスクは `$FLEET_DIR/tasks/<id>.json`(1 タスク = 1 ファイル)。完了は `$FLEET_DIR/done/` へ mv、
-壊れ JSON は読まずに `$FLEET_DIR/corrupt/` へ mv して先へ進む(1 件の破損で俯瞰を止めない)。
+壊れ JSON は読まずに `$FLEET_DIR/corrupt/` へ mv し、**その id を人間へ 1 行報告してから**
+先へ進む(1 件の破損で俯瞰は止めないが、黙って落とさない — 完了裁定は `running` の集合を
+走査するので、報告しないと壊れたタスクは二度と見られず、window では現場監督が誰にも
+見られないまま走り続ける)。
 サブディレクトリは書込時に `mkdir -p` で遅延作成する。
 
 ```json
@@ -211,7 +214,9 @@ pane 1 = 統括 / 他 pane = 実行 の形は全階層で同じなので、現�
      (相方の cwd)で起動し、しかも手順 5 はそれを「実測値」として台帳に正しく記録するため、
      後から検出できない。パスが取れなければ配車を中止する。
    - 台帳は `tmux_window`(`@NN`)も持つので、pane id(`%NN`)と併せて**両方を実測で受け取り、
-     それぞれ形を検査する**。window id は作成した pane から引く。
+     それぞれ形を検査する**。window id は**作成した pane を対象に指定して**引く — 対象を
+     指定しないと相方自身の window id が入り、完了裁定の生存確認が常に真になって、
+     落ちた現場監督が永久に `running` のまま残る。
 3. **現場監督を起動**: `claude --model opus`(+ 必要なら `--effort`)。起動確認と auto mode
    表示の完全一致確認は tmux-claude-drive 手順 1 のとおり。
 4. **初期指示を literal 送信**(tmux-claude-drive 手順 2 の作法)。**送る文字列は単一行・
@@ -253,9 +258,14 @@ pane 1 = 統括 / 他 pane = 実行 の形は全階層で同じなので、現�
 **完了裁定も相方が行う**(writer が相方だけである以上、現場監督の done 書込は待たない)。
 `status=running` の各タスクについて次の順で見る:
 
-1. 台帳の `tmux_window`(`@NN`)が生きているか。現存する window id の一覧と突き合わせる
-   (名前で照合しない。同名が並びうる)。配車先が別 session なら、その session を対象に含めて
-   列挙する — カレント session だけを見ると、生きている window を消滅と読んで 3 に落ちる。
+1. 台帳の `tmux_window`(`@NN`)が生きているか。**全 session の window を列挙して**突き合わせる
+   — カレント session だけを見ると、生きている window を消滅と読んで 3 に落ちる。
+   照合は **`tmux_window` と `window_name` の両方が一致すること**を条件にする。`@NN` は
+   tmux server 単位の採番で、server が落ちると振り直される。id だけで見ると、再起動後に
+   別用途の window がたまたま同じ番号を持っていた時に「生きている」と読み、2 で無関係な pane を
+   capture して完了フレーズが出ず、**タスクは `running` のまま居座って 3 の報告も出ない**
+   (同じ経路でナッジが無関係な pane へ入る)。名前は untrusted なので単独では使わず、
+   id との AND でのみ使う(同名の並列は id 側で切れる)。
 2. 生きていれば pane 末尾を capture し、tmux-claude-drive 手順 3 の判定(**スピナー不在 AND
    完了フレーズの単独行一致**)にかける。完了と判定できた時だけ `status=done` にして
    `$FLEET_DIR/done/` へ mv する。
