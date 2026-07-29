@@ -118,7 +118,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 ## パラメータ(運転元スキル向け・省略で従来挙動)
 
 pane-claude-drive 等がこの手順を運転部品として呼ぶ時、次の 5 点を運転元が決める。
-いずれも既定は上の手順そのもの(小説 PJ 等の従来用途は無指定で変わらない)。
+いずれも既定は上の手順そのもので、運転元が指定しなければ挙動は変わらない。
 
 - **起動モデル**: 既定は `--model <model>` を明示。運転元が「起動先の default model に
   任せたい」場合は `--model` を**省略**して `claude` 単体で起動する(起動先で default model が
