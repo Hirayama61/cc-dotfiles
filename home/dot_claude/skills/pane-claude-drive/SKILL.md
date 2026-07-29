@@ -325,7 +325,7 @@ tmux-claude-drive を参照し、次を渡す:
 配車側の fleet 状態ディレクトリ(`partner` §3)とは層が別 — fleet JSON の 1 レコード =
 この window 1 つ = この handoff doc 1 ファイルで、handoff の中がその window 内の作業者 pane 群を
 持つ。**現場監督は fleet JSON を書かない**(2026-07-26 変更。writer は配車側の単一 writer で、
-完了も配車側が裁定する。判定条件は tmux-claude-drive 手順 3)。現場監督が書くのは handoff doc だけ。
+完了も配車側が裁定する。判定条件は `partner` §5 の完了裁定)。現場監督が書くのは handoff doc だけ。
 
 - **命名**: `~/obsidian/brain/Tasks/<repo>/<fleet-id>-handoff.md`(1 案件 1 ファイル)。
   `<fleet-id>` は filesystem-safe ID(branch 名の `/` 等を変換。表示名とは別に持つ)。

@@ -1,7 +1,9 @@
 ---
 name: tmux-claude-drive
 description: >-
-  `pane-claude-drive` が tmux 越しの運転部品として参照する基底 skill。直接起動しない。
+  tmux 越しに別の Claude Code セッションを起動し、指示投入→監視→検品まで運転する手順の基底 skill。
+  `pane-claude-drive` / `partner` が運転部品として参照する。人間の直接起動を入口にしないため
+  `user-invocable` を持たない(欠落ではない)。
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 ---
 
