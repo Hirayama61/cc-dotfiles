@@ -65,8 +65,8 @@ pane-claude-drive)」節が正典。本文の「タスク pane」はシリーズ
 
   送信判定が否定形(「権限プロンプトでなければ送る」)である以上、検知漏れは誤送信 = 承認の
   肩代わりに直結するため**全段 fail-closed** に倒す(ERE 取得失敗・pane_id 不正・capture 失敗の
-  いずれでも送らない)。検知窓の 25 行は rate-limit-resume.sh 本体・tmux-claude-drive 手順 3・
-  home-claude-drive §1 と同幅。
+  いずれでも送らない)。検知窓の 25 行は rate-limit-resume.sh 本体・tmux-claude-drive 手順 3 と
+  同幅。
 - **代理応答境界の内容質問側**: 作業者からの内容質問は、承認済み分割計画の範囲内で確信が
   あれば現場監督が直接代理応答して並列を止めない。計画外・不確実・影響大は推奨案を
   添えて人間へ上げる(権限プロンプトは上記のとおり常に人間で、この代理応答の対象外)。
@@ -322,10 +322,10 @@ tmux-claude-drive を参照し、次を渡す:
 ## 7. 状態真実源(handoff doc)と並列 Monitor
 
 案件の状態真実源は現場監督が持つ handoff doc 1 ファイルで、タスク単位のレコードを並べる。
-配車側の fleet 状態ディレクトリ(home-claude-drive §2)とは層が別 — fleet JSON の 1 レコード =
+配車側の fleet 状態ディレクトリ(`partner` §3)とは層が別 — fleet JSON の 1 レコード =
 この window 1 つ = この handoff doc 1 ファイルで、handoff の中がその window 内の作業者 pane 群を
 持つ。**現場監督は fleet JSON を書かない**(2026-07-26 変更。writer は配車側の単一 writer で、
-完了も配車側が裁定する。判定条件は home-claude-drive §4)。現場監督が書くのは handoff doc だけ。
+完了も配車側が裁定する。判定条件は tmux-claude-drive 手順 3)。現場監督が書くのは handoff doc だけ。
 
 - **命名**: `~/obsidian/brain/Tasks/<repo>/<fleet-id>-handoff.md`(1 案件 1 ファイル)。
   `<fleet-id>` は filesystem-safe ID(branch 名の `/` 等を変換。表示名とは別に持つ)。

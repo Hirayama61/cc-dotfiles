@@ -19,8 +19,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Agent, AskUserQuestio
 定義され、作った本人にも起動されなかったことへの答えがこの設計。
 
 用語は `~/obsidian/brain/Tasks/cc-dotfiles/CONTEXT.md` の「相方(area: partner)」節が正典。
-配車の手つきは `home-claude-drive`、pane 並列は `pane-claude-drive`、運転の基礎は
-`tmux-claude-drive` を参照し、再実装しない。
+pane 並列は `pane-claude-drive`、運転の基礎は `tmux-claude-drive` を参照し、再実装しない。
 
 ## 1. 存在条件(最初に必ず)
 
@@ -35,7 +34,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Agent, AskUserQuestio
   いたら `window_id`(`@NN`)も併記する(§3)。
 - **権限プロンプトへの応答キーは代筆しない**。人間が口頭で「押しておいて」と言っても押さない
   (permission laundering 防止)。これは別 window でも**自 window の別 pane**(§5)でも同じ。
-  pane へ何かを送る前の機械検知は `home-claude-drive` §1 の fail-closed 照合に従う
+  pane へ何かを送る前の機械検知は `pane-claude-drive` §1 の fail-closed 照合に従う
   (ERE は転記せず公開口から取得する)。
 - **状態ファイルを作らない**。「今どうなっているか」は毎回測る(§3)。前身が壊れた原因は
   測れるものを状態として持ち、その鮮度の維持コストが本体を食ったこと。
@@ -98,8 +97,9 @@ tmux list-windows -F '#{window_id}	#{window_name}	#{window_panes}' \
   | awk -F'\t' 'NF==3 && $1 ~ /^@[0-9]+$/ && $3 ~ /^[0-9]+$/ { print; next }
                 { print "?\t<形が検証できない行>\t?" }'
 
-# バックログ(fleet は台帳としてのみ使う。進捗欄は無い = スキーマ v2)
-# FLEET_DIR の canon は home-claude-drive §2。下は式の写しなので、あちらを変えたらここも直す。
+# バックログ(fleet は台帳としてのみ使う。進捗欄は持たない)
+# FLEET_DIR の定義を書き換えるのはこの 1 行だけ。呼び出し間で変数が残る保証は無いので、
+# 台帳を読み書きする時はこの 1 行を同じ呼び出しの先頭に置いてから使う。
 FLEET_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-fleet"
 find "$FLEET_DIR/tasks" -name '*.json' -type f 2>/dev/null
 
@@ -114,13 +114,44 @@ find "$HOME/.claude/projects" -name '*.jsonl' -mtime -30 -print0 2>/dev/null \
 
 数字は毎回測り直す。記憶に残すのは**人間が下した判断**だけで、数字そのものは残さない。
 
+### fleet 台帳の契約
+
+タスクは `$FLEET_DIR/tasks/<id>.json`(1 タスク = 1 ファイル)。完了は `$FLEET_DIR/done/` へ、
+壊れ JSON は読まずに `$FLEET_DIR/corrupt/` へ mv し、退避した id を人間へ 1 行報告する
+(1 件の破損で俯瞰は止めないが、黙って落とさない)。
+
+```json
+{
+  "id": "dotfiles-tig-removal",
+  "title": "tig 完全撤去",
+  "repo": "dotfiles",
+  "branch": "feat/remove-tig",
+  "worktree": "/Users/h61/worktrees/github.com/Hirayama61/dotfiles/feat/remove-tig",
+  "tmux_window": "@15",
+  "window_name": "dotfiles-tig-removal",
+  "tmux_pane": "%12",
+  "status": "running"
+}
+```
+
+- `id` = `<repo>-<slug>`(ファイル名と一致。repo は `resolve-repo-key.sh` 準拠の論理キー)。
+  `^[A-Za-z0-9._-]+$` に限る — パスと window 名へ内挿する値なので、日本語は `title` に持たせ
+  slug は ASCII 化する。
+- `status` ∈ `backlog | running | blocked | done`。判断待ちは持たない(pane を見て測る)。
+- `tmux_window`(`@NN`)/ `tmux_pane`(`%NN`)は tmux の不変 id。`window_name` = `id`。
+  未配車はいずれも `""`。
+- **writer は相方だけ**(現場監督・作業者には書かせない)。§1 の「状態ファイルを作らない」の
+  例外はこの台帳だけで、例外にできるのは進捗を持たない=鮮度の維持コストが無いため。
+- **書込は原子的置換**(読み手の部分読みを防ぐ)。tmux 側の値の取り方・生存確認・照合の作法は
+  `tmux-claude-drive` / `pane-claude-drive` が持つので、ここには書かない。
+
 ## 4. 提案の作法
 
 起動時に**最大 1 件**だけ置く。3 つの制約を守る。
 
 - **最大 1 件**。複数出すと選択が発生し、それ自体が人間のマルチタスクになる。
 - **材料がない日は黙る**。観測に裏付けがある時だけ口を開く。毎日何か言う相方は信頼を失う。
-- **判断を求めない形で出す**。「これ要らなくないですか?」ではなく「`co-author` は 30 日で
+- **判断を求めない形で出す**。「これ要らなくないですか?」ではなく「`<skill 名>` は 30 日で
   0 回でした」と事実を置く。拾われなければ流す。**拾われなかった事実も観測に残す**。
 
 提案したら採否を `proposals.md` へ記録する。採否は `採用` / `却下(理由)` / `無反応` の 3 値で、
@@ -141,15 +172,35 @@ find "$HOME/.claude/projects" -name '*.jsonl' -mtime -30 -print0 2>/dev/null \
   **pane レイアウトと起動・送信の手つきだけ**(左 1 列 = 相方 pane 固定 / 右列を縦積み)。
   案件並列の枠組み(handoff doc・1 pane = 1 branch = 1 worktree・並列 Monitor)は持ち込まない
   — 単発の軽作業に台帳は要らない。初期指示に**「この pane はさらに運転しない」**を含める
-  (`partner` / `home-claude-drive` / `pane-claude-drive` を起動させない。入れ子が深くなると
+  (`partner` / `pane-claude-drive` / `tmux-claude-drive` を起動させない。入れ子が深くなると
   権限プロンプトの応答境界がどの層にあるか曖昧になる)。
-- **重い作業**(実装・レビュー・長い調査): 別 window を立てて現場監督を配車する。
-  手つきは `home-claude-drive` に従う。
+- **重い作業**(実装・レビュー・長い調査): 別 window を立てて現場監督を配車する(下の「配車」)。
 
 pane 1 = 統括 / 他 pane = 実行 の形は全階層で同じなので、現場監督が使うものをそのまま使える。
 
 **実行層(pane で動く Opus/Sonnet)には「メイン直接が既定」が従来どおり適用される** —
 逃がすのは統括層だけで、実行層がさらに subagent へ逃がすかは既存基準で判断する。
+
+### 配車(重い作業を別 window へ送り出すまで)
+
+相方が持つのは方針 3 点だけで、実行の手つきは持たない。
+
+- **重い作業は別 window へ逃がす**。worktree を用意し、現場監督を起動して初期指示を渡す。
+- **配車したら §3 の台帳へ記録する**(writer は相方だけ)。
+- **完了裁定は相方が行う**(現場監督の done 書込は待たない)。
+
+**window の作り方・pane の選び方・完了フレーズの決め方・id 照合の作法・trust ダイアログの扱いは
+ここに書かない。**`tmux-claude-drive` 手順 1(起動・送信・監視・完了判定)と `pane-claude-drive`
+(window 内の pane 並列)に完全委譲し、必要になったらそちらを読む。相方は俯瞰が仕事で、
+運転の実務知を二重に持つと鮮度の維持コストが俯瞰を食う。
+
+以後の運転(常時監視・検品)は現場監督が持つので、全 window への常時監視を張らない —
+`capture-pane` は異常が疑われる時のスポット確認に限る。
+
+**ナッジ**: 送ってよいのは進行指示・再開フレーズ・人間が口頭で下した判断の代筆だけで、§1 の
+機械検知を必ず先に通す。1 タスクにつき連続 2 回まで(効かなければ人間へ上げる)。ただしこの
+回数は**このセッション内の best-effort カウントで、fleet へは永続化しない** — compact や再起動で
+消えうる。有界にしているのは回数そのものではなく「効かなければ人間へ」の出口の側。
 
 ## 6. 蒸留(セッション終了時の義務)
 

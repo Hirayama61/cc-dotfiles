@@ -44,7 +44,7 @@ push **後**の CodeRabbit/CI **評価**隊。`self-review`(push 前ゲート)�
 3. **CodeRabbit の取得経路だけを流用し、適用フローは呼ばない。** `coderabbit:autofix` は
    per-change 承認 → commit → push → PR コメントまで進める適用 skill であり、assess-only の
    本スキルとは正反対。**autofix skill は起動しない。** thread 取得の GraphQL primitive だけを
-   共有 script(`fetch-coderabbit-threads.sh`。`pr-triage` と単一情報源)で実行する。
+   script(`fetch-coderabbit-threads.sh`。GraphQL の単一情報源)で実行する。
 
 ## 手順
 
@@ -123,10 +123,10 @@ gh pr checks "$pr" -R "$repo" --json name,bucket,state,link
 gh run view <run-id> -R "$repo" --log-failed
 ```
 
-#### 4b. 未解決 CodeRabbit thread(取得は共有 script。適用フローは呼ばない)
+#### 4b. 未解決 CodeRabbit thread(取得は script。適用フローは呼ばない)
 
-取得は `pr-triage` と共有の `fetch-coderabbit-threads.sh` に集約している(GraphQL の inline
-二重管理を避けるため。**この script が単一情報源**)。in-progress マーカー確認 + 全ページ取得 +
+取得は `fetch-coderabbit-threads.sh` に集約している(GraphQL を SKILL.md へ
+inline しないため。**この script が単一情報源**)。in-progress マーカー確認 + 全ページ取得 +
 未解決フィルタまでを一括で行う:
 
 ```bash
@@ -200,8 +200,8 @@ delegate 成果物: <Tasks/<repo>/ 配下の絶対パス>
 - **待機は bg ゼロトークン。** `poll-checks.sh` を `run_in_background:true` で起動し、
   完了で起床する。待機中トークンを消費しない。`timeout` には依存しない(macOS に無い)。
 - **CodeRabbit は取得経路だけ流用。** `coderabbit:autofix` skill は起動しない(適用フローを
-  避ける)。GraphQL primitive は共有 script(`fetch-coderabbit-threads.sh`)に集約し
-  `pr-triage` と単一情報源にする(inline 二重管理を避ける)。`coderabbit:autofix` を参照する
+  避ける)。GraphQL primitive は script(`fetch-coderabbit-threads.sh`)に集約し、
+  そこを単一情報源にする(SKILL.md へ inline しない)。`coderabbit:autofix` を参照する
   場合でも bare 名は使わない(プラグイン名前空間付き)。失敗調査は
   `Agent(subagent_type:"delegate")` で完全修飾起動する(description ベース router に
   ルーティングを奪われないため)。

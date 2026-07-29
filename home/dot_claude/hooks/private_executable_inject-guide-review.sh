@@ -20,8 +20,8 @@
 #   害は無い(注入は指示テキストのみ・副作用なし)。
 #
 # 対象は diff レビュー系のみ: self-review / code-review / review / security-review /
-# coderabbit 系。design-review(対象が Plan で diff でない)・ci-watch / pr-triage /
-# fe-qa(周辺工程)・simplify や coderabbit:autofix(修正 skill)は対象外。
+# coderabbit 系。design-review(対象が Plan で diff でない)・ci-watch / fe-qa(周辺工程)・
+# simplify や coderabbit:autofix(修正 skill)は対象外。
 #
 # 安全側設計: 注入の失敗でレビューを止めない。jq 不在 / ガイド不在 / repo キー解決失敗 /
 # 想定外のエラーはすべて exit 0 で無音素通り(PreToolUse なので誤 exit 2 = 誤ブロック)。
