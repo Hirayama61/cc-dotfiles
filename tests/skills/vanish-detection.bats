@@ -59,9 +59,9 @@ last_line() {
 }
 
 # 最終行の前方一致。bash 3.2 は `set -e` 下で非末尾の `[[ ]]` の失敗を伝播しない。
-# 引数を 1 個に固定するのは、空/未設定だと `""*` が全一致して常に成功するため。
+# 引数を 1 個の非空に固定するのは、空/未設定だと `""*` が全一致して常に成功するため。
 assert_last_line_prefix() {
-  [ "$#" -eq 1 ] || { printf 'usage: assert_last_line_prefix <prefix>\n' >&2; return 2; }
+  [ "$#" -eq 1 ] && [ -n "$1" ] || { printf 'usage: assert_last_line_prefix <non-empty-prefix>\n' >&2; return 2; }
   local actual
   actual="$(last_line)"
   case "$actual" in
@@ -244,7 +244,6 @@ EOF
   cat >"$LIB/test-patterns.sh" <<'EOF'
 #!/usr/bin/env bash
 test_file_ere() { printf '%s' '(\.(test|spec)\.[a-zA-Z]+|__tests__/|/tests?/)'; }
-test_assertion_ere() { printf '%s' 'x'; }
 test_case_ere() { printf '%s' '('; }
 test_assert_ere() { printf '%s' 'x'; }
 EOF
