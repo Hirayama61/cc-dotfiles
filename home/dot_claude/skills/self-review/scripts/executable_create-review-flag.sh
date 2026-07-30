@@ -2,9 +2,8 @@
 # create-review-flag.sh — self-review skill 手順 5 の review-passed フラグ作成を移設。
 #
 # Usage: create-review-flag.sh <tier1_lastline> <tier2_lastline> <reason1> <reason2>
-#   stdin: 見送り triage 行(0 行以上)。本スクリプトは書式を検証せず行頭前置のみ行うため
-#          書式非依存。書式の正典は SKILL.md 手順 5
-#          (現行: `triage: F-NNN [{severity}/{cat}] 確信度:{値} 見送り — 理由`)。
+#   stdin: triage 行(0 行以上)。本スクリプトは書式を検証せず行頭前置のみ行うため
+#          書式非依存。書式の正典は SKILL.md 手順 5(ここに例を写すと陳腐化する)。
 #   レビュー対象 repo 内($PWD = 対象 worktree)で呼ばれる前提。gate / postcommit は
 #   フラグキーを push 実対象 dir 起点で引くため、別 cwd で実行するとキー基点がずれて
 #   恒久ブロックになりうる。
@@ -13,7 +12,7 @@
 # 出力の最終行、reasonN は 4b で人間が述べた ack 理由(非該当なら空文字)。
 #
 # フラグの書き方: 1 行目に `head: <現 HEAD>` を書き、その後に 4b で集めた Tier ack 理由 +
-# 見送り処置を記録する。gate はこの 1 行目を push 対象の HEAD と突き合わせるので、HEAD が
+# triage 行を記録する。gate はこの 1 行目を push 対象の HEAD と突き合わせるので、HEAD が
 # 動いたフラグは自動的に無効になる(書式の正典は flag-paths.sh)。ack 理由は改行を潰して
 # 1 行に収める(後続行に偽の head 行を作らせない)。該当 Tier の理由が空ならフラグを書かず
 # 中断する(空理由での素通り防止)。既存フラグは子/別経路の自力作成を疑う異常として中断する
@@ -35,7 +34,7 @@ reason2="${4-}"
 # (フラグの行構造を壊させない = 後続行に偽の head 行を作らせない)。
 oneline() { printf '%s' "${1-}" | tr '\n\r' '  '; }
 
-# 見送り triage 行(0 行以上)。stdin は先に読み切る。各行を検証し、`triage: ` で始まらない
+# triage 行(0 行以上)。stdin は先に読み切る。各行を検証し、`triage: ` で始まらない
 # 行には `triage: ` を前置してから記録する(ack 行の偽装・行構造注入を構造的に防ぐ)。空行は捨てる。
 triage_out=""
 while IFS= read -r line || [ -n "$line" ]; do
