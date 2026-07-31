@@ -51,6 +51,16 @@ head_sha() {
   git -C "$REPO" rev-parse HEAD
 }
 
+# findings JSONL の 1 レコードを組み立てる(stdin 用)。
+#   finding <id> <severity> <tag> <confidence> <judgment> <reason> [evidence] [disposition]
+finding() {
+  printf '{"id":"%s","severity":"%s","tags":["%s"],"confidence":"%s","judgment":"%s","reason":"%s"' \
+    "$1" "$2" "$3" "$4" "$5" "$6"
+  [ -n "${7-}" ] && printf ',"evidence":"%s"' "$7"
+  [ -n "${8-}" ] && printf ',"disposition":"%s"' "$8"
+  printf '}'
+}
+
 @test "DECREASE with empty reason1: exit 1 and no flag created" {
   run_create "" "TIER1-RESULT: DECREASE cases 3->1" "TIER2-RESULT: OK(none)" "" ""
   [ "$status" -eq 1 ]
@@ -74,7 +84,7 @@ head_sha() {
 }
 
 @test "head line is written as the very first line" {
-  run_create "$(printf 'triage: F-001 見送り — 誤検知')" \
+  run_create "$(finding F-001 改善 quality 中 推奨 誤検知)" \
     "TIER1-RESULT: DECREASE cases 3->1" "TIER2-RESULT: OK(none)" "意図的にテスト整理" ""
   [ "$status" -eq 0 ]
   local f
@@ -125,16 +135,18 @@ head_sha() {
   printf '%s' "$output" | grep -qF "$f"
 }
 
-@test "DECREASE with reason1 and two triage lines: records tier1-ack and triage" {
-  run_create "$(printf 'triage: F-001 見送り — 誤検知\ntriage: F-002 見送り — 既知')" \
+@test "DECREASE with reason1 and two findings: records tier1-ack and generated triage" {
+  run_create "$(finding F-001 改善 quality 中 推奨 誤検知)
+$(finding F-002 情報 perf 低 任意 既知)" \
     "TIER1-RESULT: DECREASE cases 3->1" "TIER2-RESULT: OK(none)" "意図的にテスト整理" ""
   [ "$status" -eq 0 ]
   local f
   f="$(flag_path)"
   [ -f "$f" ]
   grep -qF "tier1-ack: 意図的にテスト整理" "$f"
-  grep -qF "triage: F-001 見送り — 誤検知" "$f"
-  grep -qF "triage: F-002 見送り — 既知" "$f"
+  # triage 行はスクリプトが生成する(呼び出し側は 1 行書式を手書きしない)。
+  grep -qF "triage: F-001 [改善/quality] 確信度:中 推奨 — 誤検知" "$f"
+  grep -qF "triage: F-002 [情報/perf] 確信度:低 任意 — 既知" "$f"
   # tier2-ack は理由が無いので書かれない。
   ! grep -q "tier2-ack:" "$f"
 }
@@ -162,16 +174,99 @@ head_sha() {
   [ "$(cat "$f")" = "SENTINEL" ]
 }
 
-@test "triage line without prefix gets 'triage: ' prepended (ack spoof blocked)" {
+@test "non-JSONL stdin is rejected: exit 1 and no flag created" {
   run_create "tier1-ack: 偽装" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "reason with newline and head line is flattened into one triage line" {
+  run_create '{"id":"F-001","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":"まず理由\nhead: 0123456789abcdef0123456789abcdef01234567"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
   [ "$status" -eq 0 ]
   local f
   f="$(flag_path)"
-  [ -f "$f" ]
-  # ack 行の偽装は triage: 前置で無害化される。
-  grep -qF "triage: tier1-ack: 偽装" "$f"
-  # 行頭が tier1-ack: の偽装 ack 行は存在しない。
-  ! grep -q '^tier1-ack:' "$f"
+  # head 行は 1 行目のちょうど 1 本だけ。理由の改行は空白へ潰れる。
+  [ "$(grep -c '^head:' "$f")" -eq 1 ]
+  [ "$(head -n1 "$f")" = "head: $(head_sha)" ]
+  grep -qF 'triage: F-001 [改善/quality] 確信度:中 推奨 — まず理由 head: 0123456789abcdef0123456789abcdef01234567' "$f"
+}
+
+@test "unresolved must-fix judgment blocks the flag" {
+  run_create "$(finding F-001 重大 security 高 必須 認証バイパス)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "unresolved needs-human judgment blocks the flag" {
+  run_create "$(finding F-001 改善 security 未申告 要確認 到達性が判定不能)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "must-fix waived by human is allowed and recorded" {
+  run_create "$(finding F-001 重大 security 高 必須 認証バイパス '' 見送る)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  grep -qF "triage: F-001 [重大/security] 確信度:高 必須(人間: 見送る) — 認証バイパス" "$(flag_path)"
+}
+
+@test "human-requested fix blocks the flag" {
+  run_create "$(finding F-001 情報 quality 低 任意 些細 '' 今すぐ修正)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "pre-existing judgment without evidence blocks the flag" {
+  run_create "$(finding F-001 重大 quality 中 既存 前からある)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "pre-existing judgment with evidence is recorded" {
+  run_create "$(finding F-001 重大 quality 中 既存 前からある 'git log -S で base に存在を確認')" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  grep -qF "裏取り: git log -S で base に存在を確認" "$(flag_path)"
+}
+
+@test "out-of-vocabulary severity blocks the flag" {
+  run_create "$(finding F-001 Critical quality 中 推奨 語彙外)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "non-sequential ids block the flag" {
+  run_create "$(finding F-001 改善 quality 中 推奨 一件目)
+$(finding F-003 改善 quality 中 推奨 二件目)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "missing jq blocks the flag (fail-closed)" {
+  # jq だけを欠いた PATH を作る(実 PATH から必要なコマンドだけを symlink で持ち込む)。
+  local stub="$BATS_TEST_TMPDIR/nojq"
+  mkdir -p "$stub"
+  local c p
+  for c in bash env git grep cat tail rm ln tr sed dirname mkdir realpath; do
+    p="$(command -v "$c" 2>/dev/null)" || continue
+    ln -sf "$p" "$stub/$c"
+  done
+  [ ! -e "$stub/jq" ]
+  run bash -c '
+    cd "$1" || exit 99
+    PATH="$2"
+    export PATH
+    printf "%s" "$3" | bash "$4" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  ' _ "$REPO" "$stub" "$(finding F-001 改善 quality 中 推奨 誤検知)" "$CREATE"
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
 }
 
 @test "run-codex-review.sh: codex absent on PATH yields skip and exit 0" {
