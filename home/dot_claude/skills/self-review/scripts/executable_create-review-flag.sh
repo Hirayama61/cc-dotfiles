@@ -30,7 +30,7 @@
 #   - 語彙違反(型違いを含む)・必須フィールド欠落・id 重複・1 行 1 オブジェクトでない
 #   - 同一レコードに同じフィールド名が 2 回現れる(重複キーは後勝ちで判定を上書きする)
 #   - judgment=既存 の evidence に裏取りコマンドの痕跡(git log / git blame / git show /
-#     commit <sha>)が無い
+#     git bisect / commit <sha>)が無い
 #   - jq が無い(検証できないなら作らない)
 #
 # 検査できないこと(散文の主張と取り違えない)。ここは「渡された内容の整合性検査」であって
@@ -192,7 +192,7 @@ EOF_FINDINGS_LINES
           ( if ($f.judgment == "既存")
                 and (((($f.evidence // "") | tostring)
                       | test("git +(log|blame|show|bisect)|commit +[0-9a-f]{7,40}")) | not) then
-              "レコード \($n) (\($f.id // "?")): judgment=既存 の evidence に base 側の裏取りコマンドが無い(git log -S / git blame / git show / commit <sha> のいずれかを含めること。裸の 16 進列だけでは通らない)"
+              "レコード \($n) (\($f.id // "?")): judgment=既存 の evidence に base 側の裏取りコマンドが無い(git log -S / git blame / git show / git bisect / commit <sha> のいずれかを含めること。裸の 16 進列だけでは通らない)"
             else empty end ),
           ( if (($f.tags // []) | any(. == "security"))
                 and ((["必須","要確認","既存"] | any(. == ($f.judgment // ""))) | not) then
@@ -261,10 +261,12 @@ esac
 # tierN_lastline は呼び出し側が最終行を渡す界面だが、呼び出し側依存を排するため最終行だけを
 # 自衛で取り直す(余分な行があっても最終行のみで判定)。ここもパイプを使わない — 判定が
 # SIGPIPE で偽に化けると「該当 Tier なし」と読まれ、ack 理由が空のままフラグが立つ。
-# 末尾の改行を先に落とす。落とさないと `##*\n` が空文字を返し、空はどの case にも当たらず
-# 「該当 Tier なし」と読まれて ack 理由が空のまま通る(Tier 出力を丸ごと貼られた時に踏む)。
-tier1_last="${tier1_lastline%$'\n'}"; tier1_last="${tier1_last##*$'\n'}"
-tier2_last="${tier2_lastline%$'\n'}"; tier2_last="${tier2_last##*$'\n'}"
+# 末尾の改行を先に落とす。`%$'\n'` は 1 個しか落とさないため、改行が 2 個以上ある引数だと
+# `##*\n` が空文字を返し、空はどの case にも当たらず「該当 Tier なし」と読まれて ack 理由が
+# 空のまま通る(Tier 出力を丸ごと貼られた時に踏む)。コマンド置換 `$(...)` は末尾改行を
+# 全部落とす性質があるのでそれを使う。
+tier1_last="$(printf '%s' "$tier1_lastline")"; tier1_last="${tier1_last##*$'\n'}"
+tier2_last="$(printf '%s' "$tier2_lastline")"; tier2_last="${tier2_last##*$'\n'}"
 case "$tier1_last" in
 'TIER1-RESULT: DECREASE'*)
   [ -n "$reason1" ] || { echo "Tier 1 DECREASE の ack 理由が空。中断" >&2; exit 1; } ;;

@@ -150,7 +150,8 @@ $(finding F-002 情報 perf 低 任意 既知)" \
   grep -qF "triage: F-001 [改善/quality] 確信度:中 推奨 — 誤検知" "$f"
   grep -qF "triage: F-002 [情報/perf] 確信度:低 任意 — 既知" "$f"
   # tier2-ack は理由が無いので書かれない。
-  ! grep -q "tier2-ack:" "$f"
+  run grep -q "tier2-ack:" "$f"
+  [ "$status" -ne 0 ]
 }
 
 @test "RESURRECT with reason2: records tier2-ack, exit 0" {
@@ -161,7 +162,8 @@ $(finding F-002 情報 perf 低 任意 既知)" \
   [ -f "$f" ]
   grep -qF "tier2-ack: 意図的な復活" "$f"
   # tier1-ack は理由が無いので書かれない。
-  ! grep -q "tier1-ack:" "$f"
+  run grep -q "tier1-ack:" "$f"
+  [ "$status" -ne 0 ]
 }
 
 @test "pre-existing flag: exit 1 and content unchanged (no rm collateral)" {
@@ -416,7 +418,8 @@ $(finding F-001 改善 quality 中 推奨 二件目)" \
   local f
   f="$(flag_path)"
   # ESC はそのまま書かれない(端末表示の細工・記録の隠蔽を防ぐ)。
-  ! LC_ALL=C grep -q '[^[:print:][:space:]]' "$f"
+  run env LC_ALL=C grep -q '[[:cntrl:]]' "$f"
+  [ "$status" -ne 0 ]
   grep -qF 'triage: F-001 [改善/quality] 確信度:中 推奨 — 前 [2J後' "$f"
 }
 
@@ -428,7 +431,8 @@ $(finding F-001 改善 quality 中 推奨 二件目)" \
   [ "$status" -eq 0 ]
   local f
   f="$(flag_path)"
-  ! LC_ALL=C grep -q '[^[:print:][:space:]]' "$f"
+  run env LC_ALL=C grep -q '[[:cntrl:]]' "$f"
+  [ "$status" -ne 0 ]
   grep -qF 'tier1-ack: ack [2K [Aほんとは未確認' "$f"
 }
 
@@ -505,6 +509,15 @@ $(finding F-001 改善 quality 中 推奨 二件目)" \
   # 末尾改行を落とさずに最終行を取ると空文字になり、空はどの case にも当たらないので
   # 「該当 Tier なし」と読まれて ack 理由が空のまま通る。Tier 出力を丸ごと貼ると踏む。
   run_create "" "TIER1-RESULT: DECREASE(2)"$'\n' "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "DECREASE with multiple trailing newlines still demands an ack reason" {
+  # `%$'\n'` は 1 個しか落とさないため、改行が 2 個以上あると最終行の取り出しが空文字に
+  # なり、空はどの case にも当たらないので「該当 Tier なし」と読まれて ack 理由が空のまま
+  # 通ってしまう(fail-open)回帰を防ぐ。
+  run_create "" "TIER1-RESULT: DECREASE(2)"$'\n\n' "TIER2-RESULT: OK(none)" "" ""
   [ "$status" -eq 1 ]
   [ ! -e "$(flag_path)" ]
 }
