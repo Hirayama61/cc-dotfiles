@@ -280,6 +280,49 @@ $(finding F-001 改善 quality 中 推奨 二件目)" \
   [ ! -e "$(flag_path)" ]
 }
 
+@test "escaped duplicate key blocks the flag (raw grep would miss it)" {
+  # キーを JSON エスケープすると生文字列の突き合わせからは別語に見えるが、
+  # jq は同じキーとして後勝ちで採る。検出はデコード後のキー列で行う。
+  local esc payload
+  esc="$(printf '\\u006d')"
+  payload="{\"id\":\"F-001\",\"severity\":\"重大\",\"tags\":[\"quality\"],\"confidence\":\"高\",\"judgment\":\"必須\",\"reason\":\"r\",\"judg${esc}ent\":\"見送り可\"}"
+  run_create "$payload" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "duplicate key with a nested value blocks the flag (leaf paths differ)" {
+  # リーフのパスだけを突き合わせると ["judgment","x"] と ["judgment"] が別物になり抜ける。
+  # トップレベル項目数とキー数の比較なら型が違っても捕まる。
+  run_create '{"id":"F-001","severity":"重大","tags":["security"],"confidence":"高","judgment":{"x":"必須"},"judgment":"推奨","reason":"r"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "duplicate key with an empty-array value blocks the flag" {
+  run_create '{"id":"F-001","severity":"改善","tags":[],"tags":["quality"],"confidence":"中","judgment":"推奨","reason":"r"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "two records on one line block the flag" {
+  run_create "$(printf '%s %s' \
+    '{"id":"F-001","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":"r"}' \
+    '{"id":"F-002","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":"r"}')" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "nested objects and arrays alone do not trip the duplicate check" {
+  run_create "$(finding F-001 改善 quality 中 推奨 r)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  grep -qF "triage: F-001 [改善/quality]" "$(flag_path)"
+}
+
 @test "out-of-vocabulary disposition blocks the flag" {
   run_create "$(finding F-001 改善 quality 中 推奨 些細 '' '今すぐ修正(F-002 と併せて)')" \
     "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
@@ -308,11 +351,41 @@ $(finding F-001 改善 quality 中 推奨 二件目)" \
   [ ! -e "$(flag_path)" ]
 }
 
+@test "bare hex evidence blocks the flag (no verification command)" {
+  # 7 文字以上の 16 進列だけを見ると英単語 defaced も 1234567 も通る。
+  # 裏取りは「コマンドを打った痕跡」を要求する。
+  run_create "$(finding F-001 改善 quality 中 既存 前からある 'defaced')" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "evidence naming a commit sha with a verb is allowed" {
+  run_create "$(finding F-001 改善 quality 中 既存 前からある 'commit 0e21db5 で既に存在')" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  grep -qF '裏取り: commit 0e21db5 で既に存在' "$(flag_path)"
+}
+
 @test "empty reason blocks the flag" {
   run_create '{"id":"F-001","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":""}' \
     "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
   [ "$status" -eq 1 ]
   [ ! -e "$(flag_path)" ]
+}
+
+@test "whitespace-only reason blocks the flag" {
+  run_create '{"id":"F-001","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":"   "}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "duplicate tags are collapsed in the triage line" {
+  run_create '{"id":"F-001","severity":"改善","tags":["quality","quality"],"confidence":"中","judgment":"推奨","reason":"r"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  grep -qF 'triage: F-001 [改善/quality] 確信度:中 推奨 — r' "$(flag_path)"
 }
 
 @test "tags as non-array blocks the flag" {
@@ -345,6 +418,18 @@ $(finding F-001 改善 quality 中 推奨 二件目)" \
   # ESC はそのまま書かれない(端末表示の細工・記録の隠蔽を防ぐ)。
   ! LC_ALL=C grep -q '[^[:print:][:space:]]' "$f"
   grep -qF 'triage: F-001 [改善/quality] 確信度:中 推奨 — 前 [2J後' "$f"
+}
+
+@test "control characters in an ack reason are stripped" {
+  # ack 理由は argv 経由で findings の jq を通らない。改行だけ潰すと ESC が残り、
+  # フラグを cat した端末表示を書き換えられる(findings 経路と守りを揃える)。
+  run_create "" "TIER1-RESULT: DECREASE(1)" "TIER2-RESULT: OK(none)" \
+    "ack$(printf '\033')[2K$(printf '\033')[Aほんとは未確認" ""
+  [ "$status" -eq 0 ]
+  local f
+  f="$(flag_path)"
+  ! LC_ALL=C grep -q '[^[:print:][:space:]]' "$f"
+  grep -qF 'tier1-ack: ack [2K [Aほんとは未確認' "$f"
 }
 
 @test "missing jq blocks the flag (fail-closed)" {
@@ -449,6 +534,9 @@ EOF
   run_codex "$shim" HEAD
   [ "$status" -eq 0 ]
   [ -f "$SHIM_ARGV_OUT" ]
+  # 契約は 4 条項。1 つでも指示文から落ちたらここで気づけるよう全部を固定する。
   grep -qF '壊れ方' "$SHIM_ARGV_OUT"
+  grep -qF '命名からの推測だけで断定するな' "$SHIM_ARGV_OUT"
+  grep -qF '数行に収めよ' "$SHIM_ARGV_OUT"
   grep -qF '全件' "$SHIM_ARGV_OUT"
 }

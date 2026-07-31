@@ -29,12 +29,20 @@
 #     (Rule R2 は [security] をこの 3 つのどれかへ倒す。素通りは判定の取り違え)
 #   - 語彙違反(型違いを含む)・必須フィールド欠落・id 重複・1 行 1 オブジェクトでない
 #   - 同一レコードに同じフィールド名が 2 回現れる(重複キーは後勝ちで判定を上書きする)
-#   - judgment=既存 の evidence に裏取りの痕跡(git log / git blame / commit sha)が無い
+#   - judgment=既存 の evidence に裏取りコマンドの痕跡(git log / git blame / git show /
+#     commit <sha>)が無い
 #   - jq が無い(検証できないなら作らない)
 #
-# 検査できないこと(散文の主張と取り違えない): **渡されなかった finding は検出できない**。
-# reviewer の実出力と findings を結び付けるものが無いので、blocker になる finding を
-# 1 件書かなければ通る。ここは「渡された内容の整合性検査」であって網羅性の保証ではない。
+# 検査できないこと(散文の主張と取り違えない)。ここは「渡された内容の整合性検査」であって
+# 網羅性・真正性の保証ではない:
+#   - **渡されなかった finding は検出できない**。reviewer の実出力と findings を結び付ける
+#     ものが無いので、blocker になる finding を 1 件書かなければ通る。
+#   - **disposition は統合層の自己申告**。`"見送る"` と書けば blocker が通るが、その値は
+#     AskUserQuestion を実際に出したことも人間がそう答えたことも裏付けない。
+#   - **tags も自己申告**。[security] の到達点検査はタグが付いている前提で働くので、認証
+#     バイパスの指摘を `tags:["quality"]` にすれば検査ごと外れる。
+#   - **evidence は形しか見ていない**。裏取りコマンドの語が含まれるかを見るだけで、その
+#     コマンドを実際に実行したことも、出力が主張を支持することも確かめていない。
 #
 # 界面は固定(Tier 判定を再実行しない)。tierN_lastline は skill 手順 1.5 で捕捉した各 Tier
 # 出力の最終行、reasonN は 4b で人間が述べた ack 理由(非該当なら空文字)。
@@ -58,9 +66,11 @@ tier2_lastline="${2-}"
 reason1="${3-}"
 reason2="${4-}"
 
-# ack 理由は人間の自由文なので、改行・CR を空白へ潰してから 1 行として記録する
-# (フラグの行構造を壊させない = 後続行に偽の head 行を作らせない)。
-oneline() { printf '%s' "${1-}" | tr '\n\r' '  '; }
+# ack 理由は人間の自由文なので、C0 制御文字を空白へ潰してから 1 行として記録する。
+# 改行だけでなく全域を潰すのは、ESC を残すとフラグを `cat` した端末表示を書き換えられる
+# ため(findings 経路の gsub("[[:cntrl:]]") と守りの強さを揃える)。LC_ALL=C で byte 単位に
+# 固定する(UTF-8 の継続バイトは C ロケールの cntrl に入らないので日本語は壊れない)。
+oneline() { printf '%s' "${1-}" | LC_ALL=C tr '[:cntrl:]' ' '; }
 
 # findings JSONL を読み切り、検証してから triage 行を生成する。
 # 生成側で `triage: ` を前置し、値の改行・CR は空白へ潰す(後続行に偽の head 行を作らせない)。
@@ -75,19 +85,35 @@ if printf '%s' "$findings_in" | grep -q '[^[:space:]]'; then
   # 複数行に整形した 1 オブジェクトも通ってしまい、エラーメッセージが実際の受理条件と食い違う。
   # あわせて**重複キー**を弾く: JSON として正当な `{"judgment":"必須",…,"judgment":"見送り可"}` は
   # jq が後勝ちで黙って採用するため、reviewer 由来テキストのエスケープ漏れが判定の上書きに化ける。
-  # 生の行でフィールド名の出現回数を数えるので、値の中に `"judgment":` 等が現れる行も弾く
-  # (正当な理由文がその並びを含むことはまず無く、含むなら注入を疑う側で正しい)。
+  # 重複の検出は**デコード後のキー列**で行う。生文字列の grep で数えると `judgment` の
+  # ようなエスケープ済みキーで回避される(grep からは別語に見えるが jq は同じキーとして
+  # 後勝ちで採る)。リーフのパスを直接突き合わせるのも不十分で、値の型が違う重複
+  # (`{"judgment":{"x":"必須"},"judgment":"推奨"}` / `{"tags":[],"tags":["quality"]}`)は
+  # パスが別物になってすり抜ける。**書かれたトップレベル項目の個数**を数えて、デコード後の
+  # キー数と突き合わせる:
+  #   トップレベル項目 = (パス長 1 のリーフ) + (パス長 2 の close イベント)
+  # スカラ値は前者、配列/オブジェクト値は後者に 1 回ずつ現れる。
+  #
+  # レコード番号は空白行を除いた通し番号で数える(jq -s のインデックスと一致させる。
+  # 物理行番号で報告すると、下の slurp 側の「レコード N」と指す先がずれる)。
   findings_lineno=0
+  findings_recno=0
   while IFS= read -r fline || [ -n "$fline" ]; do
     findings_lineno=$((findings_lineno + 1))
     printf '%s' "$fline" | grep -q '[^[:space:]]' || continue
+    findings_recno=$((findings_recno + 1))
+    where="レコード ${findings_recno}(findings ${findings_lineno} 行目)"
     jq_err="$(printf '%s' "$fline" | jq -e 'type == "object"' 2>&1 >/dev/null)" \
-      || { echo "findings ${findings_lineno} 行目が 1 行 1 個の JSON オブジェクトでない: ${jq_err}。中断" >&2; exit 1; }
-    for fkey in id severity tags confidence judgment reason evidence disposition; do
-      fcount="$(printf '%s' "$fline" | grep -o "\"${fkey}\"[[:space:]]*:" | wc -l | tr -d ' ')"
-      [ "${fcount:-0}" -le 1 ] \
-        || { echo "findings ${findings_lineno} 行目にフィールド \"${fkey}\" が複数回現れる(重複キーは後勝ちで判定を上書きする / 理由文のエスケープ漏れを疑う)。中断" >&2; exit 1; }
-    done
+      || { echo "${where}が 1 行 1 個の JSON オブジェクトでない: ${jq_err}。中断" >&2; exit 1; }
+    top_count="$(printf '%s' "$fline" | jq -n --stream -r '
+      [inputs] as $e
+      | (([$e[] | select(length == 2) | select((.[0] | length) == 1)] | length)
+       + ([$e[] | select(length == 1) | select((.[0] | length) == 2)] | length))' 2>&1)" \
+      || { echo "${where}の重複キー検査に失敗: ${top_count}。中断" >&2; exit 1; }
+    key_count="$(printf '%s' "$fline" | jq -r 'keys | length' 2>&1)" \
+      || { echo "${where}の重複キー検査に失敗: ${key_count}。中断" >&2; exit 1; }
+    [ "$top_count" = "$key_count" ] \
+      || { echo "${where}のトップレベル項目数(${top_count})とキー数(${key_count})が一致しない。同じフィールドが複数回現れる(重複キーは後勝ちで判定を上書きする)か、1 行に 2 レコード以上書かれている。理由文のエスケープ漏れも疑う。中断" >&2; exit 1; }
   done <<EOF_FINDINGS_LINES
 $findings_in
 EOF_FINDINGS_LINES
@@ -137,8 +163,8 @@ EOF_FINDINGS_LINES
               "レコード \($n): tags に語彙外の値"
             else empty end ),
           ( if (($f.reason // null) | type) != "string" then "レコード \($n): reason が文字列でない"
-            elif ($f.reason | length) > 0 then empty
-            else "レコード \($n): reason が空" end ),
+            elif ($f.reason | test("[^[:space:]]")) then empty
+            else "レコード \($n): reason が空(空白のみも空として扱う)" end ),
           ( if ($f | has("evidence")) and (($f.evidence | type) != "string") then
               "レコード \($n): evidence が文字列でない" else empty end ),
           ( if ($f | has("disposition")) then
@@ -147,8 +173,9 @@ EOF_FINDINGS_LINES
                 else "レコード \($n): disposition が語彙外(\($f.disposition))。人間の処置は 見送る / 今すぐ修正 の 2 語で記録する" end )
             else empty end ),
           ( if ($f.judgment == "既存")
-                and (((($f.evidence // "") | tostring) | test("git log|git blame|[0-9a-f]{7,40}")) | not) then
-              "レコード \($n) (\($f.id // "?")): judgment=既存 の evidence に base 側の裏取り根拠が無い(git log -S / git blame / commit sha のいずれかを含めること)"
+                and (((($f.evidence // "") | tostring)
+                      | test("git +(log|blame|show|bisect)|commit +[0-9a-f]{7,40}")) | not) then
+              "レコード \($n) (\($f.id // "?")): judgment=既存 の evidence に base 側の裏取りコマンドが無い(git log -S / git blame / git show / commit <sha> のいずれかを含めること。裸の 16 進列だけでは通らない)"
             else empty end ),
           ( if (($f.tags // []) | any(. == "security"))
                 and ((["必須","要確認","既存"] | any(. == ($f.judgment // ""))) | not) then
@@ -178,7 +205,7 @@ EOF_FINDINGS_LINES
   triage_out="$(printf '%s' "$findings_json" | jq -r '
     def oneline: tostring | gsub("[[:cntrl:]]"; " ");
     .[]
-    | "triage: \(.id) [\(.severity)/\(.tags | join(","))] 確信度:\(.confidence) \(.judgment)"
+    | "triage: \(.id) [\(.severity)/\(.tags | unique | join(","))] 確信度:\(.confidence) \(.judgment)"
       + (if (.disposition // "") != "" then "(人間: \(.disposition | oneline))" else "" end)
       + " — \(.reason | oneline)"
       + (if (.evidence // "") != "" then " / 裏取り: \(.evidence | oneline)" else "" end)
