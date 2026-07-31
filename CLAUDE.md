@@ -41,6 +41,11 @@ mise run apply:cc-dotfiles
 - **dot_ プレフィックス**: `home/dot_claude/settings.json` → `~/.claude/settings.json` に展開される。
 - **適用は dotfiles 経由で**: このリポ単独で `chezmoi apply` を直接呼ばない。snapshot 削除自動化を経由しないと孤児が残る。
 - **ランタイム系ファイルを誤って source に置かない**: 上の表を確認してから追加する。
+- **このリポは PUBLIC**。ゲート類(push ゲート・設計レビューゲート・消失検知)について、
+  **何が保証されないか**は書く(誤読すると防御を過大評価するため)。**解除に必要な具体条件**
+  — どのファイルに何を書けば通るか、どの既存 agent がその能力を持つか — は書かない。
+  SKILL.md / hook ヘッダ / テスト名 / PR 本文のいずれも同じ。必要になったら hook と
+  agent 定義を読めば分かるので、説明として書き足さない。
 
 ## hooks / lib / 参謀ゲートの全体像
 
