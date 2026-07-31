@@ -36,6 +36,9 @@ prompt_json() {
   echo "$output" | grep -qF '"hookEventName": "PreToolUse"'
   # 出力は untrusted 扱いの指示を含む(finding のみ取り込む)
   echo "$output" | grep -qF 'untrusted'
+  # guide-reviewer にも他 reviewer と同じ出力契約が渡ることを固定する。注入文はここが
+  # 唯一の正典なので、この句が消えても他のテストは全部緑のまま通ってしまう。
+  echo "$output" | grep -qF '出力契約'
 }
 
 @test "PreToolUse Skill self-review without guide: silent passthrough" {
