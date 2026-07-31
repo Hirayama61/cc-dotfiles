@@ -432,6 +432,83 @@ $(finding F-001 改善 quality 中 推奨 二件目)" \
   grep -qF 'tier1-ack: ack [2K [Aほんとは未確認' "$f"
 }
 
+@test "a large findings payload is still validated (no SIGPIPE fail-open)" {
+  # 非空判定を `printf … | grep -q` で書くと、pipefail 下で grep -q の早期終了が printf に
+  # SIGPIPE を返し pipeline が 141 になる。findings は「空」と読まれて検証も blocker 検査も
+  # 飛び、head 行だけのフラグが立つ。実測: この payload を修正前のスクリプトへ食わせると
+  # exit 0 でフラグが作られる(未決着の `必須` + `[security]` を先頭に置いてある)。
+  # **パイプバッファを確実に超えること**が要件。macOS のパイプバッファは条件により
+  # 16KB〜64KB で変わるので固定の閾値を信じない。バイトで測る(`${#var}` は UTF-8 では
+  # 文字数を返すので、理由文の日本語比率が変わるだけで意図した領域から外れる)。
+  local payload
+  payload="$(finding F-001 重大 security 高 必須 認証バイパス)"
+  local i
+  for i in $(seq 2 900); do
+    payload="${payload}"$'\n'"$(finding "F-$(printf '%03d' "$i")" 情報 quality 低 見送り可 些細な指摘であり対応不要と判断した)"
+  done
+  [ "$(printf '%s' "$payload" | wc -c)" -gt 100000 ]
+  run_create "$payload" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "a large findings payload with no blocker still creates the flag" {
+  # 上の裏返し。パイプバッファ超えでも正常系が壊れていないこと(検証が走ったうえで通る)。
+  local payload i
+  payload="$(finding F-001 情報 quality 低 見送り可 些細な指摘であり対応不要と判断した)"
+  for i in $(seq 2 900); do
+    payload="${payload}"$'\n'"$(finding "F-$(printf '%03d' "$i")" 情報 quality 低 見送り可 些細な指摘であり対応不要と判断した)"
+  done
+  [ "$(printf '%s' "$payload" | wc -c)" -gt 100000 ]
+  run_create "$payload" "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  grep -qF 'triage: F-400 ' "$(flag_path)"
+}
+
+@test "DECREASE with a multi-line tier argument still demands an ack reason" {
+  # 最終行の取り出しにパイプを使うと、SIGPIPE で判定が偽に化けて
+  # 「該当 Tier なし」と読まれ、ack 理由が空のままフラグが立つ(fail-open)。
+  run_create "" "TIER1-RESULT: SKIP(前段)"$'\n'"TIER1-RESULT: DECREASE(2)" \
+    "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "id with a trailing newline blocks the flag" {
+  # jq(Oniguruma)の `$` は末尾改行の直前にも当たるので `^F-[0-9]{3}$` は "F-001\n" を通す。
+  # 通ると triage 行が 2 物理行に割れ、後半が `triage: ` 接頭辞を持たない継続行になる。
+  run_create '{"id":"F-001\n","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":"r"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "every triage line starts with the triage prefix" {
+  # 記録は 1 件 1 行が前提(件数を数える読み手が居る)。どの値が来ても行が割れないことを固定する。
+  run_create "$(finding F-001 改善 quality 中 推奨 r)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  local f
+  f="$(flag_path)"
+  # 1 行目の head 行を除く全行が triage 行であること。
+  [ "$(tail -n +2 "$f" | wc -l | tr -d ' ')" = "$(grep -c '^triage: ' "$f" | tr -d ' ')" ]
+}
+
+@test "an unknown field blocks the flag (it would vanish from the record)" {
+  run_create '{"id":"F-001","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":"r","note":"重要な補足"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "DECREASE with a trailing newline still demands an ack reason" {
+  # 末尾改行を落とさずに最終行を取ると空文字になり、空はどの case にも当たらないので
+  # 「該当 Tier なし」と読まれて ack 理由が空のまま通る。Tier 出力を丸ごと貼ると踏む。
+  run_create "" "TIER1-RESULT: DECREASE(2)"$'\n' "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
 @test "missing jq blocks the flag (fail-closed)" {
   # jq 不在 PATH の組み立ては common.bash の helper が正典(ホワイトリストを二重化しない)。
   local stub

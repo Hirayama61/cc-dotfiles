@@ -67,9 +67,12 @@ reason1="${3-}"
 reason2="${4-}"
 
 # ack 理由は人間の自由文なので、C0 制御文字を空白へ潰してから 1 行として記録する。
-# 改行だけでなく全域を潰すのは、ESC を残すとフラグを `cat` した端末表示を書き換えられる
-# ため(findings 経路の gsub("[[:cntrl:]]") と守りの強さを揃える)。LC_ALL=C で byte 単位に
-# 固定する(UTF-8 の継続バイトは C ロケールの cntrl に入らないので日本語は壊れない)。
+# 改行だけでなく C0 全域を潰すのは、ESC を残すとフラグを `cat` した端末表示を書き換え
+# られるため。LC_ALL=C で byte 単位に固定する(UTF-8 の継続バイトは C ロケールの cntrl に
+# 入らないので日本語は壊れない)。
+# **findings 経路の gsub("[[:cntrl:]]") とは射程が違う**: こちらは C0 + DEL だけ、
+# あちらは Unicode Cc なので C1(U+0080-U+009F)も潰す。UTF-8 端末は C1 を制御列として
+# 解釈しないので実害は薄いが、「守りを揃えた」とは書かない。どちらも U+2028/U+2029 は残す。
 oneline() { printf '%s' "${1-}" | LC_ALL=C tr '[:cntrl:]' ' '; }
 
 # findings JSONL を読み切り、検証してから triage 行を生成する。
@@ -77,7 +80,15 @@ oneline() { printf '%s' "${1-}" | LC_ALL=C tr '[:cntrl:]' ' '; }
 findings_in="$(cat)"
 triage_out=""
 
-if printf '%s' "$findings_in" | grep -q '[^[:space:]]'; then
+# 非空判定にパイプを使わない。`printf … | grep -q` は pipefail 下で fail-open になる:
+# grep -q が先頭行の一致で早期終了すると printf が SIGPIPE で 141 を返し、pipefail が
+# それを pipeline の値に採るため「非空の findings が空と判定される」。そうなると検証も
+# blocker 検査も丸ごと飛んで head 行だけのフラグが立つ。
+# 再発するのは **findings がパイプバッファに収まらない**時(書き切れずに printf が
+# 残るため)。macOS のバッファは条件により 16KB〜64KB で変わるので固定の閾値で
+# 安全域を見積もらない。`[[ =~ ]]` はパイプを介さないのでサイズに依存しない。
+# 同じ罠は pane-claude-drive §1 にも明記がある。
+if [[ "$findings_in" =~ [^[:space:]] ]]; then
   command -v jq >/dev/null 2>&1 \
     || { echo "jq が無く findings を検証できない。フラグは作らない(fail-closed)。中断" >&2; exit 1; }
 
@@ -100,7 +111,7 @@ if printf '%s' "$findings_in" | grep -q '[^[:space:]]'; then
   findings_recno=0
   while IFS= read -r fline || [ -n "$fline" ]; do
     findings_lineno=$((findings_lineno + 1))
-    printf '%s' "$fline" | grep -q '[^[:space:]]' || continue
+    [[ "$fline" =~ [^[:space:]] ]] || continue
     findings_recno=$((findings_recno + 1))
     where="レコード ${findings_recno}(findings ${findings_lineno} 行目)"
     jq_err="$(printf '%s' "$fline" | jq -e 'type == "object"' 2>&1 >/dev/null)" \
@@ -144,8 +155,14 @@ EOF_FINDINGS_LINES
       | .value as $f
       | if ($f | type) != "object" then "レコード \($n): JSON オブジェクトでない"
         else
+          # triage 行は既知フィールドしか出さないので、未知フィールドは黙って記録から
+          # 落ちる。フラグは唯一の durable な記録なので、落ちるより弾く。
+          ( ($f | keys) - ["id","severity","tags","confidence","judgment","reason","evidence","disposition"] ) as $unknown
+          | ( if ($unknown | length) > 0 then
+                "レコード \($n): 未知のフィールド(\($unknown | join(", ")))。記録に出ないので受け付けない"
+              else empty end ),
           ( if (($f.id // null) | type) != "string" then "レコード \($n): id が文字列でない"
-            elif ($f.id | test("^F-[0-9]{3}$")) then empty
+            elif ($f.id | test("^F-[0-9]{3}\\z")) then empty
             else "レコード \($n): id が F-NNN 形式でない" end ),
           ( if (($f.severity // null) | type) != "string" then "レコード \($n): severity が文字列でない"
             elif (sev | any(. == $f.severity)) then empty
@@ -205,7 +222,7 @@ EOF_FINDINGS_LINES
   triage_out="$(printf '%s' "$findings_json" | jq -r '
     def oneline: tostring | gsub("[[:cntrl:]]"; " ");
     .[]
-    | "triage: \(.id) [\(.severity)/\(.tags | unique | join(","))] 確信度:\(.confidence) \(.judgment)"
+    | "triage: \(.id | oneline) [\(.severity)/\(.tags | unique | join(","))] 確信度:\(.confidence) \(.judgment)"
       + (if (.disposition // "") != "" then "(人間: \(.disposition | oneline))" else "" end)
       + " — \(.reason | oneline)"
       + (if (.evidence // "") != "" then " / 裏取り: \(.evidence | oneline)" else "" end)
@@ -241,16 +258,21 @@ esac
   || { echo "flag state dir の検証に失敗。中断" >&2; exit 1; }
 
 # Tier 連結の非空チェックは片方の理由だけで素通りするため、該当 Tier ごとに理由必須を個別検証。
-# tierN_lastline は呼び出し側が最終行を渡す界面だが、呼び出し側依存を排するため grep 前に
-# 自衛の tail -n1 を掛ける(fail-closed 方向は不変: 余分な行があっても最終行のみで判定)。
-if printf '%s\n' "$tier1_lastline" | tail -n1 | grep -q '^TIER1-RESULT: DECREASE' \
-  && [ -z "$reason1" ]; then
-  echo "Tier 1 DECREASE の ack 理由が空。中断" >&2; exit 1
-fi
-if printf '%s\n' "$tier2_lastline" | tail -n1 | grep -q '^TIER2-RESULT: RESURRECT' \
-  && [ -z "$reason2" ]; then
-  echo "Tier 2 RESURRECT の ack 理由が空。中断" >&2; exit 1
-fi
+# tierN_lastline は呼び出し側が最終行を渡す界面だが、呼び出し側依存を排するため最終行だけを
+# 自衛で取り直す(余分な行があっても最終行のみで判定)。ここもパイプを使わない — 判定が
+# SIGPIPE で偽に化けると「該当 Tier なし」と読まれ、ack 理由が空のままフラグが立つ。
+# 末尾の改行を先に落とす。落とさないと `##*\n` が空文字を返し、空はどの case にも当たらず
+# 「該当 Tier なし」と読まれて ack 理由が空のまま通る(Tier 出力を丸ごと貼られた時に踏む)。
+tier1_last="${tier1_lastline%$'\n'}"; tier1_last="${tier1_last##*$'\n'}"
+tier2_last="${tier2_lastline%$'\n'}"; tier2_last="${tier2_last##*$'\n'}"
+case "$tier1_last" in
+'TIER1-RESULT: DECREASE'*)
+  [ -n "$reason1" ] || { echo "Tier 1 DECREASE の ack 理由が空。中断" >&2; exit 1; } ;;
+esac
+case "$tier2_last" in
+'TIER2-RESULT: RESURRECT'*)
+  [ -n "$reason2" ] || { echo "Tier 2 RESURRECT の ack 理由が空。中断" >&2; exit 1; } ;;
+esac
 
 # 既存は手順 2b(子 reviewer read-only)を破った自力作成を疑う異常として中断。HEAD が commit
 # 以外で動いた後の陳腐フラグもここに来る(置換はしない)。何を消せばよいか分かるよう、記録
