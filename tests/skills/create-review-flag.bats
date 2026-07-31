@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
 # self-review skill の移設スクリプトを固定する:
-#   - create-review-flag.sh(手順 5 のフラグ作成: ack ゲート / 空フラグ / triage / 既存中断 /
-#     RESURRECT 正経路 / 競合時の巻き添え防止 / triage 行の prefix 強制)
+#   - create-review-flag.sh(手順 5 のフラグ作成: ack ゲート / 空フラグ / 既存中断 /
+#     RESURRECT 正経路 / 競合時の巻き添え防止 / findings JSONL の検証と triage 行の生成 —
+#     語彙・型・重複キー・id 重複・blocker 残留・[security] の到達点・裏取り根拠・
+#     制御文字の除去・jq 不在の fail-closed)
 #   - run-codex-review.sh(手順 2 の Codex 起動: 未導入 skip / base_ref 空 skip /
-#     空応答 skip / 実行失敗 skip / 本文そのまま出力)
+#     空応答 skip / 実行失敗 skip / 本文そのまま出力 / 出力契約が指示文に入っていること)
 #
 # common.bash の install_hooks で一時 HOME に hooks/lib(executable_ を剥がす)を複製し、
 # HOME を差し替える(create-review-flag.sh は $HOME/.claude/hooks/lib の
@@ -241,23 +243,114 @@ $(finding F-002 情報 perf 低 任意 既知)" \
   [ ! -e "$(flag_path)" ]
 }
 
-@test "non-sequential ids block the flag" {
+@test "gaps in ids are allowed (fixed findings are not recorded)" {
   run_create "$(finding F-001 改善 quality 中 推奨 一件目)
 $(finding F-003 改善 quality 中 推奨 二件目)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  grep -qF "triage: F-003 " "$(flag_path)"
+}
+
+@test "duplicate ids block the flag" {
+  run_create "$(finding F-001 改善 quality 中 推奨 一件目)
+$(finding F-001 改善 quality 中 推奨 二件目)" \
     "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
   [ "$status" -eq 1 ]
   [ ! -e "$(flag_path)" ]
 }
 
+@test "array-valued judgment blocks the flag (jq index subsequence bypass)" {
+  run_create '{"id":"F-001","severity":"重大","tags":["security"],"confidence":"高","judgment":["要確認","推奨"],"reason":"認証バイパスの疑い"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "array-valued severity blocks the flag" {
+  run_create '{"id":"F-001","severity":["重大"],"tags":["quality"],"confidence":"高","judgment":"推奨","reason":"r"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "duplicate field in one record blocks the flag (last-wins override)" {
+  run_create '{"id":"F-001","severity":"重大","tags":["quality"],"confidence":"高","judgment":"必須","reason":"認証バイパス","judgment":"見送り可"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "out-of-vocabulary disposition blocks the flag" {
+  run_create "$(finding F-001 改善 quality 中 推奨 些細 '' '今すぐ修正(F-002 と併せて)')" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "security tag with non-blocking judgment blocks the flag" {
+  run_create "$(finding F-001 重大 security 高 見送り可 誤検知だと思う)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "security tag with verified pre-existing judgment is allowed" {
+  run_create "$(finding F-001 重大 security 高 既存 前からある 'git blame で base 側に存在を確認')" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  grep -qF "triage: F-001 [重大/security]" "$(flag_path)"
+}
+
+@test "token-only evidence blocks the flag" {
+  run_create "$(finding F-001 改善 quality 中 既存 前からある -)" \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "empty reason blocks the flag" {
+  run_create '{"id":"F-001","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":""}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "tags as non-array blocks the flag" {
+  run_create '{"id":"F-001","severity":"改善","tags":"quality","confidence":"中","judgment":"推奨","reason":"r"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "empty tags array blocks the flag" {
+  run_create '{"id":"F-001","severity":"改善","tags":[],"confidence":"中","judgment":"推奨","reason":"r"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "out-of-vocabulary tag blocks the flag" {
+  run_create '{"id":"F-001","severity":"改善","tags":["obsidian"],"confidence":"中","judgment":"推奨","reason":"r"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 1 ]
+  [ ! -e "$(flag_path)" ]
+}
+
+@test "control characters in reason are stripped from the triage line" {
+  run_create '{"id":"F-001","severity":"改善","tags":["quality"],"confidence":"中","judgment":"推奨","reason":"前\u001b[2J後"}' \
+    "TIER1-RESULT: OK(none)" "TIER2-RESULT: OK(none)" "" ""
+  [ "$status" -eq 0 ]
+  local f
+  f="$(flag_path)"
+  # ESC はそのまま書かれない(端末表示の細工・記録の隠蔽を防ぐ)。
+  ! LC_ALL=C grep -q '[^[:print:][:space:]]' "$f"
+  grep -qF 'triage: F-001 [改善/quality] 確信度:中 推奨 — 前 [2J後' "$f"
+}
+
 @test "missing jq blocks the flag (fail-closed)" {
-  # jq だけを欠いた PATH を作る(実 PATH から必要なコマンドだけを symlink で持ち込む)。
-  local stub="$BATS_TEST_TMPDIR/nojq"
-  mkdir -p "$stub"
-  local c p
-  for c in bash env git grep cat tail rm ln tr sed dirname mkdir realpath; do
-    p="$(command -v "$c" 2>/dev/null)" || continue
-    ln -sf "$p" "$stub/$c"
-  done
+  # jq 不在 PATH の組み立ては common.bash の helper が正典(ホワイトリストを二重化しない)。
+  local stub
+  stub="$(make_no_jq_path)"
   [ ! -e "$stub/jq" ]
   run bash -c '
     cd "$1" || exit 99
@@ -336,4 +429,26 @@ EOF
   run_codex "$shim" HEAD
   [ "$status" -eq 0 ]
   [ "$output" = "CODEX-BODY-MARKER" ]
+}
+
+@test "run-codex-review.sh: the output contract is present in the prompt argument" {
+  # Codex は Agent ではないので skill が起動時に契約を足せない。指示文が唯一の注入点なので、
+  # 契約が指示文から消えたらここで落ちるようにする(消えても他のテストは全部緑になる)。
+  local shim="$BATS_TEST_TMPDIR/codex-argv"
+  mkdir -p "$shim"
+  cat > "$shim/codex" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null 2>&1 || true
+printf '%s' "$*" > "$SHIM_ARGV_OUT"
+printf 'ok\n'
+exit 0
+EOF
+  chmod +x "$shim/codex"
+  SHIM_ARGV_OUT="$BATS_TEST_TMPDIR/codex-argv.txt"
+  export SHIM_ARGV_OUT
+  run_codex "$shim" HEAD
+  [ "$status" -eq 0 ]
+  [ -f "$SHIM_ARGV_OUT" ]
+  grep -qF '壊れ方' "$SHIM_ARGV_OUT"
+  grep -qF '全件' "$SHIM_ARGV_OUT"
 }
