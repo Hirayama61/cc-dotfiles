@@ -19,9 +19,13 @@
 #   両方が同時に発火することは想定していないが、仮に二重注入されても内容が同じで
 #   害は無い(注入は指示テキストのみ・副作用なし)。
 #
-# 対象は diff レビュー系のみ: self-review / code-review / review / security-review /
-# coderabbit 系。design-review(対象が Plan で diff でない)・ci-watch / fe-qa(周辺工程)・
-# simplify や coderabbit:autofix(修正 skill)は対象外。
+# 対象は diff レビュー系: leaf 名に review を含む skill(部分一致。職場リポの独自
+# レビュー skill も拾う)+ coderabbit(review を名に含まない唯一の既知対象)。
+# design-review(対象が Plan で diff でない)だけ明示除外する。ci-watch / fe-qa
+# (周辺工程)・simplify / coderabbit:autofix(修正 skill)は review を含まないので
+# 自然に外れる。誤発火は注入文の「diff レビューを行うなら」の条件付けで無害な一方、
+# 発火漏れはガイド観点レビューの丸ごと欠落なので、判定は緩い側に倒す。
+# review を含まない独自 skill 名は拾えない(既知の残存制限。現れたら明示追加)。
 #
 # 安全側設計: 注入の失敗でレビューを止めない。jq 不在 / ガイド不在 / repo キー解決失敗 /
 # 想定外のエラーはすべて exit 0 で無音素通り(PreToolUse なので誤 exit 2 = 誤ブロック)。
@@ -75,10 +79,10 @@ esac
 leaf="${name##*:}"
 leaf="$(printf '%s' "$leaf" | tr '[:upper:]' '[:lower:]' 2>/dev/null || printf '%s' "$leaf")"
 
-# diff レビュー系だけを対象にする(完全一致。design-review・simplify・autofix 等は
-# ここに載らないので素通り)。
+# diff レビュー系だけを対象にする(判定方針はファイル冒頭ヘッダ)。除外を先に見る。
 case "$leaf" in
-self-review | code-review | review | security-review | coderabbit | coderabbit-review) ;;
+design-review) exit 0 ;;
+*review* | coderabbit) ;;
 *) exit 0 ;;
 esac
 

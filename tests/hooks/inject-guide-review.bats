@@ -68,6 +68,27 @@ prompt_json() {
   [ -z "$output" ]
 }
 
+@test "PreToolUse Skill pr-review: partial match on review, injects" {
+  make_guide
+  run_hook inject-guide-review.sh "$(pretooluse_json pr-review)"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'guide-reviewer'
+}
+
+@test "PreToolUse Skill PR-Review: case-insensitive partial match, injects" {
+  make_guide
+  run_hook inject-guide-review.sh "$(pretooluse_json PR-Review)"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'guide-reviewer'
+}
+
+@test "PreToolUse Skill check-pr: no review in name, silent (known limitation)" {
+  make_guide
+  run_hook inject-guide-review.sh "$(pretooluse_json check-pr)"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "subagent origin (agent_id present): silent" {
   make_guide
   run_hook inject-guide-review.sh \
