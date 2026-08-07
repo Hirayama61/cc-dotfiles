@@ -21,9 +21,11 @@
 #
 # 対象は diff レビュー系: leaf 名に review を含む skill(部分一致。職場リポの独自
 # レビュー skill も拾う)+ coderabbit(review を名に含まない唯一の既知対象)。
-# design-review(対象が Plan で diff でない)だけ明示除外する。ci-watch / fe-qa
-# (周辺工程)・simplify / coderabbit:autofix(修正 skill)は review を含まないので
-# 自然に外れる。誤発火は注入文の「diff レビューを行うなら」の条件付けで無害な一方、
+# 明示除外は design-review 系(対象が Plan で diff でない)と preview 系(review を
+# 部分文字列に含むが別物)。ci-watch / fe-qa(周辺工程)・simplify /
+# coderabbit:autofix(修正 skill)は review を含まないので自然に外れる。
+# UserPromptSubmit 経路は第 1 語に / を含む入力(パス貼り付け)を弾く。
+# 誤発火は注入文の「diff レビューを行うなら」の条件付けで実害が小さい一方、
 # 発火漏れはガイド観点レビューの丸ごと欠落なので、判定は緩い側に倒す。
 # review を含まない独自 skill 名は拾えない(既知の残存制限。現れたら明示追加)。
 #
@@ -69,6 +71,9 @@ UserPromptSubmit)
   /*) name="${first#/}" ;;
   *) exit 0 ;;
   esac
+  # スラッシュコマンド名に / は含まれない。第 1 語が絶対パスの貼り付け
+  # (/Users/…/review-memo.md 等)だと leaf が *review* に誤一致するので弾く。
+  case "$name" in */*) exit 0 ;; esac
   ;;
 *) exit 0 ;;
 esac
@@ -80,8 +85,9 @@ leaf="${name##*:}"
 leaf="$(printf '%s' "$leaf" | tr '[:upper:]' '[:lower:]' 2>/dev/null || printf '%s' "$leaf")"
 
 # diff レビュー系だけを対象にする(判定方針はファイル冒頭ヘッダ)。除外を先に見る。
+# preview は文字列として review を含むが別物なので明示除外する。
 case "$leaf" in
-design-review) exit 0 ;;
+design-review* | *preview*) exit 0 ;;
 *review* | coderabbit) ;;
 *) exit 0 ;;
 esac

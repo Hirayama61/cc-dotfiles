@@ -19,7 +19,8 @@
 #   judgment   必須 / 要確認 / 推奨 / 任意 / 既存 / 見送り可
 #   reason     非空の自由文
 #   evidence   judgment=既存 のとき必須(base 側の裏取り根拠)。他は任意
-#   disposition 任意。人間が 4b で決めた処置("見送る" / "今すぐ修正")
+#   disposition 任意。人間が 4b/4c の個別対話で決めた処置("見送る" / "今すぐ修正")。
+#               4c で指名されなかった finding には付けない(個別決定の記録のみ)
 #
 # gate 判定(fail-closed。1 つでも該当すればフラグを作らない):
 #   - judgment が 必須 / 要確認 のまま disposition が "見送る" でないレコードがある

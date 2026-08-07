@@ -72,7 +72,7 @@ self-review と同じ統合規約(severity 正規化・重複統合・`F-NNN` �
 判断 `語:理由` を右端)で提示する。design-reviewer の `VERDICT` 行は総評に転記する。
 
 **提示の型は次の縮約例に従う**(概要ヘッダーで全体像 → 記録テーブルで決定を残す。
-self-review 4a/4c の設計版。詳細な対話トリアージの作法は self-review を参照):
+self-review 4a/4d の設計版。詳細な対話トリアージの作法は self-review を参照):
 
 ```text
 ## 設計レビュー結果サマリー
@@ -95,7 +95,7 @@ reviewer: design-reviewer / Codex({実施 or skip 理由})
 ```
 
 指摘ゼロの severity はそのセクションを `(なし)` の 1 行にする。対話トリアージ
-(1 問 1 件・`今すぐ修正`/`見送る`)は self-review 4b と同型で行う。
+(1 問 1 件・`今すぐ修正`/`見送る`)は self-review 4b の個別対話と同型で行う(design-review では折衷トリアージの 4c 指名式は使わず、**全 finding を個別に**回す。Plan の指摘は件数が少なく、実装前に全件の決定が要るため)。
 
 ### 4. 人間トリアージとフラグ
 

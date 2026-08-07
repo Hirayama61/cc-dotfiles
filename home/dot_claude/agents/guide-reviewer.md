@@ -3,8 +3,8 @@ name: guide-reviewer
 description: >-
   対象 repo の「生きたガイド」(vault ~/obsidian/brain/Guides/<repo>/ の運用知)に
   書かれた観点で差分をレビューする専門エージェント。ガイドを項目チェックリスト化し、
-  1 項目ずつ diff と突合する。diff レビュー系 skill(self-review / code-review /
-  security-review / coderabbit 系)の発動を inject-guide-review.sh hook が検知し、
+  1 項目ずつ diff と突合する。diff レビュー系 skill(名前に review を含むもの +
+  coderabbit 系。design-review / preview 系は除外)の発動を inject-guide-review.sh hook が検知し、
   ガイドが存在する repo でのみ「差分 + 変更ファイル + ガイドのパスを渡して並列起動せよ」と
   注入する(実装意図・会話履歴は渡さない=コンテキスト隔離)。
   全項目の遵守/違反/未遵拠/該当なしを出力し、修正はしない。常に網羅的。

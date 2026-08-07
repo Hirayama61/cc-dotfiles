@@ -89,6 +89,27 @@ prompt_json() {
   [ -z "$output" ]
 }
 
+@test "PreToolUse Skill preview: review substring but excluded, silent" {
+  make_guide
+  run_hook inject-guide-review.sh "$(pretooluse_json preview)"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "PreToolUse Skill design-review-lite: design-review prefix excluded, silent" {
+  make_guide
+  run_hook inject-guide-review.sh "$(pretooluse_json design-review-lite)"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "UserPromptSubmit path paste with review in filename: not a command, silent" {
+  make_guide
+  run_hook inject-guide-review.sh "$(prompt_json '/Users/h61/notes/review-memo.md を見て')"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "subagent origin (agent_id present): silent" {
   make_guide
   run_hook inject-guide-review.sh \
