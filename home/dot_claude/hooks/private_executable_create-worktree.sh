@@ -15,7 +15,8 @@
 #   しない)。だから wt.sh をそのまま呼べず、パス導出の純関数だけを共有する。
 #
 # パス導出は dotfiles 側の単一情報源 lib を絶対パスで source する(決定 a1)。dotfiles は
-# 基盤リポで常在前提(グローバル CLAUDE.md も wt.sh を dotfiles 絶対パスで参照している)。
+# 基盤リポで常在前提(block-main-clone-edit.sh / main-clone-warn.sh のブロック文言も
+# wt.sh を dotfiles 絶対パスで案内している)。
 #
 # 安全側設計: 導出に失敗(lib 不在 / jq 不在 / origin 無し / git 外 / パース不能)した場合は
 # 既定 worktree_path をそのまま echo + exit 0(= 従来挙動へフォールバック)。作成中止
