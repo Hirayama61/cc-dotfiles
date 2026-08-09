@@ -60,7 +60,7 @@ hook が強制すること・skill が手順を持つこと・外部脳の Tier0
   `git -C` で別リポを触っている間は `$PWD` 依存 skill を回さない — フラグが cwd 側のキーで
   立ち、別ブランチのゲートを解除する。
 - **戻しにくい変更は worktree で**: 履歴改変・大量書換など影響の大きい変更は単独作業でも隔離する。
-  worktree 隔離は混線防止であり権限境界ではない。hook の停止も当てにしない(fail-open する)。
+  worktree 隔離は混線防止であり権限境界ではない(object store・stash・remote は共有)。
 - **`EnterWorktree({path})` で入場してから作業する**: `$PWD` 依存の skill(self-review /
   design-review / guide-capture / obsidian-memory)は cwd がずれるとキー基点がずれ、恒久ブロックや
   別ブランチの誤解除になりうる。**起動リポと別リポの worktree には入場できない** — その時は
