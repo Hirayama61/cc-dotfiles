@@ -26,6 +26,9 @@ setup() {
 
   install_hooks
   unset XDG_STATE_HOME
+  # スクリプトは mktemp で untracked 一覧等を作る。実 TMPDIR に残骸を残さないよう
+  # bats のテスト専用一時領域へ寄せる(common.bash の「本物の環境に触れない」作法)。
+  export TMPDIR="$BATS_TEST_TMPDIR"
 
   SHIM="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$SHIM"
@@ -83,12 +86,31 @@ untracked_path() {
 }
 
 # 出力全体の部分一致(LAUNCH-CMD の中身検査などに使う)。
+# `case` のパターン内でも二重引用符で囲んだ展開は glob 展開されず literal 照合になる
+# (bash 3.2 で実測)。needle に `?` `*` `[` が入っても意図どおり効く。
 assert_output_contains() {
   case "$output" in
   *"$1"*) return 0 ;;
   esac
   printf 'expected substring: %s\n' "$1" >&2
   printf 'actual output     :\n%s\n' "$output" >&2
+  return 1
+}
+
+# 出力に「この 1 行」が丸ごと在ることを固定する(全文一致)。部分一致だと LAUNCH-CMD の
+# 引数順の入れ替えや `&&` → `;` の書式退化を素通しするので、機械解釈される行はこちらで見る。
+# while 本体はリダイレクト先が here-string でも現シェルで走るため、中の return が効く。
+assert_output_has_line() {
+  [ "$#" -eq 1 ] && [ -n "$1" ] || {
+    printf 'usage: assert_output_has_line <non-empty-line>\n' >&2
+    return 2
+  }
+  local line
+  while IFS= read -r line; do
+    [ "$line" = "$1" ] && return 0
+  done <<<"$output"
+  printf 'expected line: %s\n' "$1" >&2
+  printf 'actual output:\n%s\n' "$output" >&2
   return 1
 }
 
@@ -127,7 +149,9 @@ advance_branch() {
   run --separate-stderr bash "$BUILD" "$REPO" branch HEAD main
   [ "$status" -eq 0 ]
   assert_last_line_prefix "LAUNCH-RESULT: READY mode=branch"
-  assert_output_contains "--merge-base"
+  # 全文一致。target/base の入れ替え(difit は base が第 2 引数)、`&&` → `;` の退化
+  # (cd が失敗しても difit が呼び出し側の cwd で走る)、--merge-base の脱落を同時に塞ぐ。
+  assert_output_has_line "LAUNCH-CMD: cd '$REPO' && difit 'HEAD' 'main' --merge-base --clean"
 }
 
 @test "build-launch rejects a rev that does not exist" {
@@ -151,6 +175,45 @@ advance_branch() {
   assert_last_line_prefix "LAUNCH-RESULT: ERROR"
 }
 
+@test "build-launch rejects commit mode and a lone target rev" {
+  # SKILL.md の手順が渡すのは repo / worktree / branch / branch <target> <base> の 4 形だけ。
+  # 入口の無い mode を受理すると、呼ばれない分岐が腐って残る。
+  advance_branch
+  run --separate-stderr bash "$BUILD" "$REPO" commit HEAD
+  [ "$status" -ne 0 ]
+  assert_last_line_prefix "LAUNCH-RESULT: ERROR"
+  run --separate-stderr bash "$BUILD" "$REPO" auto HEAD
+  [ "$status" -ne 0 ]
+  assert_last_line_prefix "LAUNCH-RESULT: ERROR"
+}
+
+@test "build-launch rejects a dot target because worktree mode is spelled out" {
+  printf 'dirty\n' >>"$REPO/a.txt"
+  run --separate-stderr bash "$BUILD" "$REPO" auto "."
+  [ "$status" -ne 0 ]
+  assert_last_line_prefix "LAUNCH-RESULT: ERROR"
+}
+
+# ---- build-launch: --clean の抑止 ----
+
+@test "build-launch drops the clean flag in worktree mode when asked" {
+  # 落とし穴 10(--clean が preload コメントを消す疑い)の回避経路。SKILL.md は
+  # LAUNCH-CMD 行をそのまま実行する契約なので、手で削らせず組み立て側で落とす。
+  printf 'dirty\n' >>"$REPO/a.txt"
+  run --separate-stderr bash "$BUILD" "$REPO" --no-clean
+  [ "$status" -eq 0 ]
+  assert_last_line_prefix "LAUNCH-RESULT: READY mode=worktree"
+  assert_output_has_line "LAUNCH-CMD: cd '$REPO' && difit . --include-untracked"
+}
+
+@test "build-launch drops the clean flag in branch mode when asked" {
+  advance_branch
+  run --separate-stderr bash "$BUILD" "$REPO" branch HEAD main --no-clean
+  [ "$status" -eq 0 ]
+  assert_last_line_prefix "LAUNCH-RESULT: READY mode=branch"
+  assert_output_has_line "LAUNCH-CMD: cd '$REPO' && difit 'HEAD' 'main' --merge-base"
+}
+
 # ---- build-launch: 状態判定 ----
 
 @test "build-launch resolves base for a clean tree with unpushed commits" {
@@ -161,6 +224,7 @@ advance_branch() {
   [ "$status" -eq 0 ]
   assert_last_line_prefix "LAUNCH-RESULT: READY mode=branch"
   assert_output_contains "untracked=-"
+  assert_output_has_line "LAUNCH-CMD: cd '$REPO' && difit 'HEAD' 'main' --merge-base --clean"
 }
 
 @test "build-launch picks worktree mode when only uncommitted changes exist" {
@@ -168,7 +232,7 @@ advance_branch() {
   run --separate-stderr bash "$BUILD" "$REPO"
   [ "$status" -eq 0 ]
   assert_last_line_prefix "LAUNCH-RESULT: READY mode=worktree"
-  assert_output_contains "--include-untracked"
+  assert_output_has_line "LAUNCH-CMD: cd '$REPO' && difit . --include-untracked --clean"
 }
 
 @test "build-launch reports ambiguous when both worktree and branch diffs exist" {
@@ -213,11 +277,23 @@ advance_branch() {
   run --separate-stderr bash "$BUILD" "$REPO"
   [ "$status" -eq 0 ]
   assert_last_line_prefix "LAUNCH-RESULT: READY mode=worktree"
+  # 件数の行と一覧パスの行でキー名が衝突していないこと。同名(untracked=)だと、
+  # 手順 5 へ渡す値として件数の方を拾って teardown が一覧不達で復元できない。
+  assert_output_contains "LAUNCH: untracked_count=1"
+  [ "$(printf '%s\n' "$output" | grep -c '^LAUNCH: untracked=')" -eq 0 ]
   local ul
   ul="$(untracked_path)"
   [ -n "$ul" ]
   [ "$ul" != "-" ]
   [ -f "$ul" ]
+  # 実 TMPDIR を汚さない(テストは一時領域だけで完結する)。
+  case "$ul" in
+  "$BATS_TEST_TMPDIR"/*) : ;;
+  *)
+    printf 'untracked list escaped the test tmpdir: %s\n' "$ul" >&2
+    return 1
+    ;;
+  esac
   run --separate-stderr tr '\0' '\n' <"$ul"
   assert_output_contains "u.txt"
 }
@@ -256,6 +332,74 @@ advance_branch() {
   assert_output_contains "A  s.txt"
 }
 
+@test "teardown treats recorded paths as literal instead of pathspec magic" {
+  # `git reset -- <path>` の `--` はオプション解釈を止めるだけで、先頭 `:` の pathspec
+  # magic は生きている。`:` という名の untracked が 1 つあると repo 全体が対象になり、
+  # difit と無関係な index まで巻き戻る(`:!keep.txt` なら「keep.txt 以外を全部」)。
+  printf 'k\n' >"$REPO/keep.txt"
+  printf 'o\n' >"$REPO/other.txt"
+  git -C "$REPO" add keep.txt other.txt
+  printf 'x\n' >"$REPO/:"
+  printf 'y\n' >"$REPO/:!keep.txt"
+  local ul="$BATS_TEST_TMPDIR/magic.list"
+  git -C "$REPO" ls-files -z --others --exclude-standard >"$ul"
+  # difit の --include-untracked 相当(記録した 2 本だけを intent-to-add)。
+  GIT_LITERAL_PATHSPECS=1 git -C "$REPO" add --intent-to-add -- ':' ':!keep.txt'
+  # 一覧に無い intent-to-add。magic が効くとここまで巻き添えで消える。
+  printf 'l\n' >"$REPO/later.txt"
+  git -C "$REPO" add --intent-to-add later.txt
+  run --separate-stderr bash "$TEARDOWN" "$REPO" "$ul" -
+  [ "$status" -eq 0 ]
+  assert_last_line_prefix "TEARDOWN-RESULT: DONE"
+  run --separate-stderr git -C "$REPO" status --porcelain
+  assert_output_has_line "A  keep.txt"
+  assert_output_has_line "A  other.txt"
+  assert_output_has_line " A later.txt"
+  assert_output_has_line "?? :"
+  assert_output_has_line "?? :!keep.txt"
+}
+
+@test "teardown keeps files the human staged after launch" {
+  # 一覧は起動時点の untracked。その後に人間が本当に `git add` したものまで unstage すると
+  # staged 内容が index から落ちる。porcelain の ` A`(intent-to-add)だけを戻す。
+  printf 'u\n' >"$REPO/u.txt"
+  printf 'n\n' >"$REPO/new.txt"
+  local ul="$BATS_TEST_TMPDIR/u.list"
+  git -C "$REPO" ls-files -z --others --exclude-standard >"$ul"
+  git -C "$REPO" add --intent-to-add u.txt new.txt
+  # 起動後に人間が意図して add した。
+  git -C "$REPO" add new.txt
+  run --separate-stderr bash "$TEARDOWN" "$REPO" "$ul" -
+  [ "$status" -eq 0 ]
+  assert_last_line_prefix "TEARDOWN-RESULT: DONE"
+  run --separate-stderr git -C "$REPO" status --porcelain
+  assert_output_has_line "?? u.txt"
+  assert_output_has_line "A  new.txt"
+}
+
+@test "teardown does not read a rename old path as an entry" {
+  # `git status --porcelain -z` の rename は「新パス\0旧パス\0」の 2 フィールド(両側が
+  # pathspec に入った時に出る)。旧パスを読み捨てないと、旧パスそのものが 1 エントリとして
+  # 解釈される。先頭 2 文字が " A" のパス名だと intent-to-add と誤認され、その 3 文字目
+  # 以降(ここでは x.txt)が巻き添えで unstage される。
+  printf 'v\n' >"$REPO/ A x.txt"
+  git -C "$REPO" add -- " A x.txt"
+  gcommit "$REPO" weird
+  printf 'x\n' >"$REPO/x.txt"
+  git -C "$REPO" add x.txt
+  printf 'u\n' >"$REPO/u.txt"
+  git -C "$REPO" add --intent-to-add u.txt
+  git -C "$REPO" mv -- " A x.txt" dest.txt
+  local ul="$BATS_TEST_TMPDIR/rename.list"
+  printf ' A x.txt\0dest.txt\0u.txt\0' >"$ul"
+  run --separate-stderr bash "$TEARDOWN" "$REPO" "$ul" -
+  [ "$status" -eq 0 ]
+  assert_last_line_prefix "TEARDOWN-RESULT: DONE"
+  run --separate-stderr git -C "$REPO" status --porcelain
+  assert_output_has_line "A  x.txt"
+  assert_output_has_line "?? u.txt"
+}
+
 @test "teardown skips index restore when the repo argument is empty" {
   cd "$REPO"
   local ul="$BATS_TEST_TMPDIR/u.list"
@@ -268,10 +412,13 @@ advance_branch() {
 # ---- teardown: サーバ停止 ----
 
 @test "teardown skips a non numeric port instead of running lsof" {
+  # 「pwn ファイルが無いこと」は主張にならない(port は一度もシェル評価されないので
+  # 元から作られえない)。数値ガードで弾いたという理由そのものを固定する。
+  # ガードを外すと lsof まで進み「listener なし」の別行になる。
   run --separate-stderr bash "$TEARDOWN" - - "abc; touch $BATS_TEST_TMPDIR/pwn"
   [ "$status" -eq 0 ]
   assert_last_line_prefix "TEARDOWN-RESULT: DONE"
-  [ ! -e "$BATS_TEST_TMPDIR/pwn" ]
+  assert_output_contains "TEARDOWN: server skip(port が不正"
 }
 
 @test "teardown does not kill a listener that is not difit" {

@@ -20,6 +20,35 @@ ulist="${2--}"
 port="${3--}"
 err=0
 
+# 記録した一覧のうち **intent-to-add のまま(porcelain の XY が ` A`)のものだけ**を
+# NUL 区切りで stdout に出す。
+#
+# 一覧は difit 起動時点の untracked なので、その後に人間が本当に `git add` したファイルが
+# 混ざる。実 add(`A `)まで reset すると staged 内容が index から落ちるため、ここで絞る。
+#
+# pathspec は GIT_LITERAL_PATHSPECS=1 で literal 固定にする。`--` はオプション解釈を
+# 止めるだけで先頭 `:` の pathspec magic は生きており、`:` という名の untracked が 1 つ
+# あるだけで repo 全体が対象になる(`:!keep.txt` なら「keep.txt 以外を全部」)。
+# git 側に渡すのは status も reset も同じ経路なので、両方に効かせる。
+select_intent_to_add() {
+  local raw entry xy path orig
+  raw="$1"
+  GIT_LITERAL_PATHSPECS=1 xargs -0 git -C "$repo" status --porcelain -z -- <"$ulist" >"$raw" 2>/dev/null || return 1
+  while IFS= read -r -d '' entry; do
+    xy="${entry:0:2}"
+    path="${entry:3}"
+    # -z の rename/copy は「新パス\0旧パス\0」の 2 フィールド。旧パスを読み捨てないと
+    # 次のエントリの XY 解釈が 1 つずれる。
+    case "$xy" in
+    R? | C?) IFS= read -r -d '' orig || orig="" ;;
+    esac
+    if [ "$xy" = " A" ]; then
+      printf '%s\0' "$path"
+    fi
+  done <"$raw"
+  return 0
+}
+
 # ---- index 復元 ----
 # difit の --include-untracked は `git add --intent-to-add` を撃つので、放置すると
 # `git status` に staged として残り次の commit に混ざる。
@@ -42,13 +71,31 @@ elif [ ! -s "$ulist" ]; then
   rm -f "$ulist"
 else
   n="$(tr -dc '\0' <"$ulist" | wc -c | tr -d ' ')"
-  if xargs -0 git -C "$repo" reset -q -- <"$ulist"; then
-    printf 'TEARDOWN: index 復元 files=%s\n' "$n"
+  raw="$(mktemp "${TMPDIR:-/tmp}/difit-status.XXXXXX" 2>/dev/null)" || raw=""
+  ia="$(mktemp "${TMPDIR:-/tmp}/difit-ia.XXXXXX" 2>/dev/null)" || ia=""
+  if [ -z "$raw" ] || [ -z "$ia" ]; then
+    printf 'TEARDOWN: index skip(一時ファイルを作れない recorded=%s)\n' "$n"
+    err=1
+  elif ! select_intent_to_add "$raw" >"$ia"; then
+    printf 'TEARDOWN: index 復元 失敗(status を取得できない recorded=%s)\n' "$n"
+    err=1
+  elif [ ! -s "$ia" ]; then
+    # 記録した全部が既に別の状態(人間が add した / 消した)。撃つ対象が無い。
+    # 空のまま reset を撃つと pathspec 無しの mixed reset になるのでここで止める。
+    printf 'TEARDOWN: index skip(intent-to-add なし recorded=%s)\n' "$n"
     rm -f "$ulist"
   else
-    printf 'TEARDOWN: index 復元 失敗(files=%s)\n' "$n"
-    err=1
+    m="$(tr -dc '\0' <"$ia" | wc -c | tr -d ' ')"
+    if GIT_LITERAL_PATHSPECS=1 xargs -0 git -C "$repo" reset -q -- <"$ia"; then
+      printf 'TEARDOWN: index 復元 files=%s recorded=%s\n' "$m" "$n"
+      rm -f "$ulist"
+    else
+      printf 'TEARDOWN: index 復元 失敗(files=%s recorded=%s)\n' "$m" "$n"
+      err=1
+    fi
   fi
+  [ -n "$raw" ] && rm -f "$raw"
+  [ -n "$ia" ] && rm -f "$ia"
 fi
 
 # ---- サーバ停止 ----

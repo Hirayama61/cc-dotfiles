@@ -72,14 +72,18 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, AskUserQuestion
 
 | 最終行 | 次にやること |
 |---|---|
-| `LAUNCH-RESULT: READY mode=<mode> untracked=<path\|->` | `LAUNCH-CMD:` 行を手順 2 で起動する。`untracked=` の値は手順 5 で使うので控える |
+| `LAUNCH-RESULT: READY mode=<mode> untracked=<path\|->` | `LAUNCH-CMD:` 行を手順 2 で起動する。**この最終行の** `untracked=` の値(一覧ファイルのパス)は手順 5 で使うので控える。途中に出る `LAUNCH: untracked_count=<件数>` は件数であって渡す値ではない |
 | `LAUNCH-RESULT: AMBIGUOUS(…)` | 未コミット変更と未 push コミットが両方ある。1 画面には出せないので **AskUserQuestion** で選ばせ、`build-launch.sh "<repo>" worktree` / `… branch` と mode を明示して呼び直す |
 | `LAUNCH-RESULT: EMPTY(…)` | 起動しない。「差分が無い」と返して終わる |
 | `LAUNCH-RESULT: ERROR(…)`(exit 1) | 起動しない。理由を人間へ返す |
 
 人間が range を引数で渡した場合は第 3・第 4 引数に載せる
-(`build-launch.sh "<repo>" branch <target> <base>`)。`main...HEAD` のような range 記法は
-difit が 2 引数形しか取らないのでスクリプトが弾く。分解して渡し直す。
+(`build-launch.sh "<repo>" branch <target> <base>`)。rev は **2 個セットでのみ**受ける
+(1 個だけ渡すとスクリプトが弾く)。`main...HEAD` のような range 記法も
+difit が 2 引数形しか取らないので弾かれる。分解して渡し直す。
+
+`--no-clean` を足すと、組み立てるコマンドから `--clean` が落ちる(落とし穴 10)。
+位置はどこでもよい。
 
 ### 2. 起動して port を控える
 
@@ -147,6 +151,8 @@ difit comment get --port "<手順 2 の port>" --format json
 
 index 復元(`--include-untracked` が撃った `git add --intent-to-add` の巻き戻し)と
 サーバ停止(port の listener が difit のときだけ kill)を行う。要らない引数は `-` を渡す。
+巻き戻すのは **intent-to-add のままのものだけ**なので、起動後に人間が本当に `git add` した
+ファイルは staged のまま残る。
 最終行が `TEARDOWN-RESULT: DONE` 以外なら、出力行を読んで人間へ返す。
 
 preload に使った一時ファイルはここで `rm -f "<cf の実パス>"` する。
@@ -179,7 +185,8 @@ preload に使った一時ファイルはここで `rm -f "<cf の実パス>"` �
 10. **未検証**: `--clean` と `--comment` を併用した時、ブラウザが開いた瞬間にクライアント側の
     全消去が preload を消すかどうかは確かめていない(サーバ側では両立を確認済み)。
     「変更を見せる」役割で初めて使う時に、人間に preload が見えているか確認する。
-    消えていたら `--clean` を落として再起動し、その回は前回の残骸が混ざる前提で手順 4 を扱う。
+    消えていたら `build-launch.sh "<repo>" --no-clean` で組み立て直して再起動する
+    (`LAUNCH-CMD:` 行を手で書き換えない)。その回は前回の残骸が混ざる前提で手順 4 を扱う。
 
 ## 原則
 

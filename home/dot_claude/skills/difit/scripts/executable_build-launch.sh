@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # build-launch.sh — difit skill 手順 1: 見せる range を決めて difit の起動コマンドを組み立てる。
 #
-# Usage: build-launch.sh <repo> [<mode>] [<target> [<base>]]
+# Usage: build-launch.sh <repo> [<mode>] [<target> <base>] [--no-clean]
 #   repo   … 対象 repo の絶対パス(必須・非空)。`git -C ""` は rc=0 で cwd に
 #            フォールバックするので、空文字は cwd の別リポを黙って対象にしてしまう。
-#   mode   … auto(既定) | worktree | branch | commit
-#   target/base … 人間が明示した rev。base を渡すと branch 形(二点差分を
-#            --merge-base で三点にする)、target だけなら commit 形(`<rev>^..<rev>`)。
+#   mode   … auto(既定) | worktree | branch
+#   target/base … 人間が明示した rev。**2 個セットでのみ**受ける(branch 形。二点差分を
+#            --merge-base で三点にする)。1 個だけの形は skill の手順に入口が無い。
+#   --no-clean … 組み立てる difit コマンドから --clean を落とす(位置はどこでもよい)。
+#            落とし穴 10(--clean が preload コメントを消す疑い)の回避用。呼び出し側に
+#            LAUNCH-CMD 行を手で書き換えさせないため、抑止はここで行う。
 #
 # 状態判定・base 解決・rev 検証・untracked 一覧の採取をここで完結させる。シェル変数は
 # Bash 呼び出しをまたいで持続しないので、後始末に要る値(untracked 一覧のパス)は
@@ -36,17 +39,37 @@ shq() {
   printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
+# --no-clean は位置に依らず取り除いてから位置引数を解釈する(rev は先頭 `-` の時点で
+# 弾くので、フラグ名と値が衝突する余地は無い)。
+noclean=0
+argc=$#
+scanned=0
+while [ "$scanned" -lt "$argc" ]; do
+  a="$1"
+  shift
+  scanned=$((scanned + 1))
+  if [ "$a" = "--no-clean" ]; then
+    noclean=1
+    continue
+  fi
+  set -- "$@" "$a"
+done
+
 repo="${1-}"
 mode="${2:-auto}"
 target="${3-}"
 base_arg="${4-}"
+
+# 全 mode 共通。--clean は difit 側 localStorage の全消去。
+clean=" --clean"
+[ "$noclean" -eq 1 ] && clean=""
 
 [ -n "$repo" ] || fail "repo 未指定"
 git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "git work tree ではない: $repo"
 command -v difit >/dev/null 2>&1 || fail "difit 未導入(mise install で入れる。npx へ落とさない)"
 
 case "$mode" in
-auto | worktree | branch | commit) : ;;
+auto | worktree | branch) : ;;
 *) fail "未知の mode: $mode" ;;
 esac
 
@@ -76,19 +99,9 @@ if [ -n "$base_arg" ]; then
   *) fail "mode=$mode に rev を 2 個は渡せない" ;;
   esac
 elif [ -n "$target" ]; then
-  if [ "$target" = "." ]; then
-    case "$mode" in
-    auto | worktree) mode=worktree ;;
-    *) fail "mode=$mode に '.' は渡せない" ;;
-    esac
-    target=""
-  else
-    case "$mode" in
-    auto | commit) mode=commit ;;
-    branch) fail "mode=branch には base も要る" ;;
-    *) fail "mode=$mode に rev は渡せない" ;;
-    esac
-  fi
+  # 1 個だけの rev(commit 単体形)も `.`(worktree の別名)も、SKILL.md の手順からは
+  # 呼ばれない。受理すると入口の無い分岐が腐って残るので、ここで断る。
+  fail "target だけでは範囲を決められない(branch <target> <base> の形で base も渡す。作業ツリーは mode=worktree)"
 fi
 
 # ---- 状態判定に要る材料を集める ----
@@ -181,8 +194,10 @@ worktree)
   git -C "$repo" ls-files -z --others --exclude-standard >"$ulist" 2>/dev/null \
     || fail "untracked 一覧を取得できない"
   un="$(tr -dc '\0' <"$ulist" | wc -c | tr -d ' ')"
-  printf 'LAUNCH: untracked=%s 件を無認証ポートへ配信する\n' "$un"
-  args=". --include-untracked --clean"
+  # キー名は untracked_count。最終行の untracked=<一覧パス>(手順 5 へ渡す値)と同名にすると
+  # 呼び出し側が件数の方を拾い、teardown が「一覧不達」で index を復元できない。
+  printf 'LAUNCH: untracked_count=%s 件を無認証ポートへ配信する\n' "$un"
+  args=". --include-untracked$clean"
   ;;
 branch)
   t="${target:-HEAD}"
@@ -192,11 +207,7 @@ branch)
   verify_rev "$b" || fail "base が rev として解決できない: $b"
   # --merge-base が無いと二点差分になり、分岐後に base へ入った他人のコミットが
   # 反転表示で混ざる。base は第 2 引数(多くのツールと逆)。
-  args="$(shq "$t") $(shq "$b") --merge-base --clean"
-  ;;
-commit)
-  verify_rev "$target" || fail "rev として解決できない: $target"
-  args="$(shq "$target") --clean"
+  args="$(shq "$t") $(shq "$b") --merge-base$clean"
   ;;
 esac
 
