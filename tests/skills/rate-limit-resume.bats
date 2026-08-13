@@ -307,6 +307,98 @@ EOF
   grep -q "RLR: resumed" "$sig"
 }
 
+# 空行を挟んだ 1 画面分のテキストを組み立てる。capture-pane は pane 高まで空行を詰めるため、
+# 有効行が末尾から数えた行数の窓の外へ押し出される状況をこれで再現する。
+blank_padded() {
+  local i out="$1"
+  for ((i = 0; i < $2; i++)); do out="$out"$'\n'; done
+  printf '%s%s' "$out" "$3"
+}
+
+@test "permission prompt buried under blank padding: detected, never sends" {
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 "$(blank_padded 'Do you want to proceed?' 30 'ready')"
+  step 2 node 100 "$(blank_padded 'Do you want to proceed?' 30 'ready')"
+  RLR_MAX_ITER=3 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"permission-prompt human-needed"* ]]
+  # 空行に埋もれたプロンプトを見落として送ると、再開フレーズが承認の肩代わりになる。
+  [ "$(sent_count)" -eq 0 ]
+}
+
+@test "usage limit banner buried under blank padding: keeps waiting, never sends" {
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 "$(blank_padded 'usage limit reached' 30 'x')"
+  RLR_MAX_ITER=2 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 3 ]
+  # banner を見落とすと「明けた」と誤認して送信し、運転元へ偽の resumed を返す。
+  [ "$(sent_count)" -eq 0 ]
+  [[ "$output" != *"RLR: resumed"* ]]
+}
+
+@test "capture returns empty text: unreadable, never sends" {
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 ""
+  step 2 node 100 ""
+  RLR_MAX_ITER=3 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"capture-unreadable human-needed"* ]]
+  [ "$(sent_count)" -eq 0 ]
+}
+
+@test "window build error: grep failure is treated as unreadable (never sends)" {
+  # 空行除去の照合だけを rc=2(照合エラー)に化けさせる grep shim。他の grep は実物へ委譲する。
+  # 実 grep は PATH 差し替え前に解決する(自己再帰の回避 + gnubin 等で grep を差し替えた
+  # 開発機で実装を固定しないため)。
+  # 出力を 1 行返してから rc=2 で落ちる。空を返すと -z のガードに救われ、rc 検査の有無を
+  # 区別できなくなる。
+  real_grep="$(command -v grep)"
+  shim="$BATS_TEST_TMPDIR/window-bin"
+  marker="$BATS_TEST_TMPDIR/window-shim-fired"
+  mkdir -p "$shim"
+  cat >"$shim/grep" <<EOF
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+  '^[[:space:]]*\$') : >"$marker"; printf 'assistant is thinking\n'; exit 2 ;;
+  esac
+done
+exec "$real_grep" "\$@"
+EOF
+  chmod +x "$shim/grep"
+
+  # 画面は権限プロンプトに一致しない文言にする。shim が発火しなくなった時に実 grep が
+  # 窓を返して送信に回り、テストが空洞化せず落ちるようにするため。
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 "assistant is thinking"
+  step 2 node 100 "assistant is thinking"
+  run env PATH="$shim:$PATH" RLR_MAX_ITER=3 bash "$SCRIPT" "sess:win.0"
+  [ -f "$marker" ]
+  [ "$status" -eq 3 ]
+  # 照合不能を「窓が取れた」に倒すと、読めていない画面へ再開フレーズを送ってしまう。
+  [ "$(sent_count)" -eq 0 ]
+  [[ "$output" == *"capture-unreadable human-needed"* ]]
+}
+
+@test "unreadable screen persists: gives up with exit 5 after RLR_PERMSTUCK_MAX_ITERS" {
+  step 0 node 100 ""
+  step 1 node 100 ""
+  step 2 node 100 ""
+  RLR_MAX_ITER=20 RLR_PERMSTUCK_MAX_ITERS=2 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 5 ]
+  [[ "$output" == *"RLR: permission-stuck"* ]]
+  [ "$(sent_count)" -eq 0 ]
+}
+
+@test "normal output with blank padding: sends once and resumes" {
+  step 0 node 100 "usage limit reached"
+  step 1 node 100 "$(blank_padded 'assistant is thinking' 30 'done')"
+  step 2 node 100 "$(blank_padded 'assistant is thinking' 30 'done')"
+  RLR_MAX_ITER=10 run bash "$SCRIPT" "sess:win.0"
+  [ "$status" -eq 0 ]
+  [ "$(sent_count)" -eq 1 ]
+}
+
 @test "--print-permission-ere: emits non-empty single-line ERE matching known prompts" {
   run bash "$SCRIPT" --print-permission-ere
   [ "$status" -eq 0 ]
