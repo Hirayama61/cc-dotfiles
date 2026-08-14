@@ -1,20 +1,23 @@
 name: test
 
 on:
+  # PR ブランチへの push は pull_request 側が検証する。両方を無条件に張ると 1 push で run が 2 本立つ。
   push:
+    branches: [main]
   pull_request:
 
 # 最小権限: テストは読み取りのみで足りる(fork PR 時の被害面も縮小する)。
 permissions:
   contents: read
 
-# 同一ブランチの古い実行はキャンセル
+# 同一ブランチの古い実行はキャンセル。pull_request.number は PR イベントでのみ値を持ち、
+# push では空になって github.ref へ落ちる。
 concurrency:
-  group: test-${{ github.ref }}
+  group: test-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
+  static:
     # macOS runner: 同梱 /bin/bash は 3.2 系。hooks の bash 3.2 互換を実機で担保する。
     runs-on: macos-latest
     steps:
@@ -24,7 +27,7 @@ jobs:
           # 読み取り専用 workflow ではトークン保持不要。fork PR の認証情報残留を防ぐ(zizmor artipacked)。
           persist-credentials: false
 
-      - name: Setup mise (bats / shellcheck / shfmt)
+      - name: Setup mise
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
           # mise 本体も固定し再現性を確保(ツールは mise.toml で pin 済み)。
@@ -36,5 +39,40 @@ jobs:
       - name: shellcheck (error level)
         run: mise run lint
 
-      - name: bats
-        run: mise run test
+  bats:
+    # macOS runner: 同梱 /bin/bash は 3.2 系。hooks の bash 3.2 互換を実機で担保する。
+    runs-on: macos-latest
+    strategy:
+      # 1 shard の失敗で他を巻き込むと、どのテストが落ちたかの全体像が取れない。
+      fail-fast: false
+      matrix:
+        # GitHub Free の macOS 同時実行上限に収まる分割数。値は 0 始まりの連番であること
+        # (剰余の担当と対応し、飛ばすとその shard が 0 件になって落ちる)。
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup mise
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          version: 2026.6.0
+
+      - name: bats (shard ${{ matrix.shard }})
+        env:
+          SHARD: ${{ matrix.shard }}
+          # 分割数は matrix の要素数を GitHub から受け取る。手書きするとリストとずれ、
+          # どの shard の担当でもないテストが黙って未実行になる。
+          SHARD_TOTAL: ${{ strategy.job-total }}
+        run: |
+          # 既定シェルは bash -e で pipefail が付かない。find の失敗が黙殺されると
+          # 部分実行のまま緑になる。
+          set -euo pipefail
+          files=$(find tests -name '*.bats' | sort | awk -v s="$SHARD" -v n="$SHARD_TOTAL" 'NR % n == s')
+          # 分割式が壊れて 0 件のまま緑になると、テストが走っていないことに気付けない。
+          [ -n "$files" ] || { echo "shard $SHARD の対象が 0 件。分割式が壊れている" >&2; exit 1; }
+          # 複数ファイルを引数へ渡すための意図的な非クォート展開。名前に [ ] * ? を含む
+          # テストが増えた時に別ファイルへ差し替わらないよう glob だけ止める。
+          set -f
+          mise exec -- bats $files
