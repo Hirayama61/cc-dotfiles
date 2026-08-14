@@ -11,19 +11,24 @@
 #     API のコンテキスト上限エラー復帰用であり、block すると当該リクエストが失敗する
 #   - 空(想定外入力): 素通し(fail-open)
 #
+# 「古い」の判定は context-paths.sh の claude_ctx_state_is_fresh に委ねる(閾値と判定は
+# stop-nudge と共有。片方だけずれると /compact が止まらないか、逆に止まり続ける)。
+#
 # block は 1 ctx 1 回まで(precompact-blocked marker)。2 回目は state file が
 # 無くても通す = 人間が意図的に素の compact を選んだと解釈する(恒久ブロックにしない)。
-# 構造検証は compact-prep skill の validate-state.sh を借用(不在なら mtime のみに縮退)。
+# 構造検証は compact-prep skill の validate-state.sh を借用(不在なら鮮度判定のみに縮退)。
 set -euo pipefail
 
 LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
-( . "$LIB" ) >/dev/null 2>&1 || exit 0
+(. "$LIB") >/dev/null 2>&1 || exit 0
+# shellcheck source=/dev/null
 . "$LIB" 2>/dev/null || exit 0
 hook_init || exit 0
 source_hook_lib context-paths.sh || exit 0
 type claude_ctx_key >/dev/null 2>&1 || exit 0
+type claude_ctx_state_is_fresh >/dev/null 2>&1 || exit 0
 
 trigger="$(hook_field '.trigger')"
 [[ "$trigger" == "manual" ]] || exit 0
@@ -36,17 +41,12 @@ blocked_marker="$(ctx_precompact_blocked_marker "$ctx")"
 
 state_file="$(ctx_state_file "$ctx")"
 state_ok=""
-if [[ -f "$state_file" ]]; then
-  mtime="$(stat -f '%m' "$state_file" 2>/dev/null || echo 0)"
-  now="$(date +%s)"
-  case "$mtime" in "" | *[!0-9]*) mtime=0 ;; esac
-  if (( now - mtime <= 900 )); then
-    validator="$HOME/.claude/skills/compact-prep/scripts/validate-state.sh"
-    if [[ -r "$validator" ]]; then
-      bash "$validator" "$state_file" >/dev/null 2>&1 && state_ok=1
-    else
-      state_ok=1
-    fi
+if claude_ctx_state_is_fresh "$ctx"; then
+  validator="$HOME/.claude/skills/compact-prep/scripts/validate-state.sh"
+  if [[ -r "$validator" ]]; then
+    bash "$validator" "$state_file" >/dev/null 2>&1 && state_ok=1
+  else
+    state_ok=1
   fi
 fi
 [[ -n "$state_ok" ]] && exit 0

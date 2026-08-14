@@ -2,6 +2,7 @@
 # precompact-gate.sh の characterization。
 # auto 無条件素通し / empty trigger 素通し / manual + 鮮度 + 構造 OK 素通し /
 # manual + state 不在・不鮮度・構造 NG でブロック(1 ctx 1 回のみ)。
+# 鮮度は state-stamp と現在ターン・使用率の差で決まる(判定は context-paths.sh が単独で持つ)。
 
 load ../helpers/common
 
@@ -55,8 +56,17 @@ EOF
   [ "$status" -ne 2 ]
 }
 
+# 鮮度スタンプと現在ターンを置く($1 = 現在 turn、$2 = stamp 行、$3 = 現在 pct)。
+seed_freshness() {
+  printf '%s' "$1" > "$CACHE/turn"
+  printf '%s' "$2" > "$CACHE/state-stamp"
+  printf '{"pct":%s,"transcript_path":"%s","updated_at":%s}' \
+    "${3:-40}" "$TP" "$(date +%s)" > "$CACHE/usage.json"
+}
+
 @test "manual with fresh valid state: allowed" {
   write_valid_state
+  seed_freshness 6 '5 40'
   run_hook precompact-gate.sh "$(compact_json manual)"
   [ "$status" -ne 2 ]
 }
@@ -70,15 +80,45 @@ EOF
   [ "$status" -ne 2 ]
 }
 
-@test "manual with stale state: blocked" {
+@test "manual with state stale by turns: blocked" {
   write_valid_state
-  touch -t 202001010000 "$CACHE/state.md"
+  seed_freshness 8 '5 40'
   run_hook precompact-gate.sh "$(compact_json manual)"
   [ "$status" -eq 2 ]
 }
 
+@test "manual with state stale by usage growth: blocked" {
+  write_valid_state
+  seed_freshness 5 '5 30' 45
+  run_hook precompact-gate.sh "$(compact_json manual)"
+  [ "$status" -eq 2 ]
+}
+
+@test "manual without a stamp: blocked (unknown counts as stale)" {
+  write_valid_state
+  printf '6' > "$CACHE/turn"
+  run_hook precompact-gate.sh "$(compact_json manual)"
+  [ "$status" -eq 2 ]
+}
+
+@test "manual with a stamp from the future: blocked" {
+  write_valid_state
+  seed_freshness 2 '9 40'
+  run_hook precompact-gate.sh "$(compact_json manual)"
+  [ "$status" -eq 2 ]
+}
+
+@test "manual after a compaction lowered usage: allowed" {
+  write_valid_state
+  seed_freshness 5 '5 60' 12
+  run_hook precompact-gate.sh "$(compact_json manual)"
+  [ "$status" -ne 2 ]
+}
+
 @test "manual with structurally broken state: blocked" {
   printf '# state file\n\n## Active Plan\nx\n' > "$CACHE/state.md"
+  # 鮮度を満たさないと構造検証まで到達せず、validator 呼び出しが消えても緑になる
+  seed_freshness 6 '5 40'
   run_hook precompact-gate.sh "$(compact_json manual)"
   [ "$status" -eq 2 ]
 }
@@ -93,9 +133,10 @@ EOF
   [ "$status" -ne 2 ]
 }
 
-@test "manual, validator missing: degrades to mtime only" {
+@test "manual, validator missing: degrades to the freshness check only" {
   rm -f "$VALID_DIR/validate-state.sh"
-  printf 'anything fresh\n' > "$CACHE/state.md"
+  printf 'structurally broken but stamped\n' > "$CACHE/state.md"
+  seed_freshness 6 '5 40'
   run_hook precompact-gate.sh "$(compact_json manual)"
   [ "$status" -ne 2 ]
 }
