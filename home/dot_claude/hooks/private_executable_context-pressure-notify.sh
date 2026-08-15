@@ -9,8 +9,10 @@
 #   1. compacted marker があれば復帰注入(PostCompact は additionalContext を返せない
 #      仕様のため、postcompact-marker.sh が書いた marker をここで拾う 2 段構成が唯一経路)
 #   2. 50% 以上: 最終通告(作業単位を閉じて compact-prep → 人間へ /compact 依頼)
-#   3. 30% 以上: compact-prep 提案。前回通知から +5 ポイントごとに再通知
-#      (1 回きりだと無視した瞬間に死ぬ通知になり、毎ターンはノイズ)
+#   3. 30% 以上: compact-prep の自動更新指示。前回通知から +5 ポイントごとに再通知
+#      (1 回きりだと無視した瞬間に死ぬ通知になり、毎ターンはノイズ)。ここは
+#      「人間に提案せよ」ではなく「承認なしで実行せよ」= 停止時ナッジ(stop-nudge)と
+#      同じ運用。人間への /compact 依頼は 50% 以上でだけ行う
 #
 # 設計判断の正典: Decisions/cc-dotfiles/2026-07-22-コンテキスト逼迫対策をcompact正で設計
 # 安全側設計: usage.json 不在 / stale(30 分超)/ 破損はすべて無言 exit 0(fail-open)。
@@ -19,11 +21,13 @@ set -euo pipefail
 LIB="$HOME/.claude/hooks/lib/hook-input.sh"
 [[ -r "$LIB" ]] || exit 0
 # shellcheck source=/dev/null
-( . "$LIB" ) >/dev/null 2>&1 || exit 0
+(. "$LIB") >/dev/null 2>&1 || exit 0
+# shellcheck source=/dev/null
 . "$LIB" 2>/dev/null || exit 0
 hook_init || exit 0
 source_hook_lib context-paths.sh || exit 0
 type claude_ctx_key >/dev/null 2>&1 || exit 0
+type claude_ctx_usage_stale_secs claude_ctx_auto_refresh_pct >/dev/null 2>&1 || exit 0
 
 ctx="$(claude_ctx_key "$(hook_field '.transcript_path')")"
 [[ -z "$ctx" ]] && exit 0
@@ -58,7 +62,7 @@ updated_at="$(jq -r '.updated_at // empty' "$usage_file" 2>/dev/null || true)"
 case "$pct" in "" | *[!0-9.]*) exit 0 ;; esac
 case "$updated_at" in "" | *[!0-9]*) exit 0 ;; esac
 now="$(date +%s)"
-(( now - updated_at > 1800 )) && exit 0
+((now - updated_at > $(claude_ctx_usage_stale_secs))) && exit 0
 pct_int="${pct%%.*}"
 case "$pct_int" in "" | *[!0-9]*) exit 0 ;; esac
 
@@ -68,7 +72,7 @@ state_file="$(ctx_state_file "$ctx")"
 decisions_file="$(ctx_decisions_file "$ctx")"
 
 # 2. 最終通告(50%)
-if (( pct_int >= 50 )); then
+if ((pct_int >= 50)); then
   inject "コンテキスト使用率が ${pct_int}% に達した(最終通告ライン)。このターンで現在の作業単位を閉じよ。新規の作業単位を開始してはならない。作業単位を閉じたら compact-prep skill を実行して state file(${state_file})を書き(決定ログ: ${decisions_file})、人間に /compact の実行を依頼せよ。次のターン以降、編集系ツールはブロックされる。" || true
   # 通知ターン = 猶予ターン。ここで grace を初期化しないと、このターンに編集が
   # 無かった場合に次ターンの初回編集が「検知ターン」扱いになり猶予が 1 ターン延びる
@@ -78,20 +82,20 @@ if (( pct_int >= 50 )); then
     turn="$(cat "$(ctx_turn_file "$ctx")" 2>/dev/null || true)"
     case "$turn" in
     "" | *[!0-9]*) : ;;
-    *) claude_ctx_cache_ensure "$ctx" && printf '%s' "$turn" > "$grace_file" 2>/dev/null || true ;;
+    *) claude_ctx_cache_ensure "$ctx" && printf '%s' "$turn" >"$grace_file" 2>/dev/null || true ;;
     esac
   fi
   exit 0
 fi
 
-# 3. 提案(30%、+5 ポイントごとに再通知)
-if (( pct_int >= 30 )); then
+# 3. 自動更新の指示(30%、+5 ポイントごとに再通知)
+if ((pct_int >= $(claude_ctx_auto_refresh_pct))); then
   notified_file="$(ctx_notified_pct_file "$ctx")"
   notified="$(cat "$notified_file" 2>/dev/null || echo 0)"
   case "$notified" in "" | *[!0-9]*) notified=0 ;; esac
-  if (( notified == 0 || pct_int - notified >= 5 )); then
-    if inject "コンテキスト使用率が ${pct_int}% を超えた(提案ライン)。判断力が保たれている今のうちに、作業の区切りで compact-prep skill を実行して state file(${state_file})を書き(決定ログ: ${decisions_file})、人間に /compact を提案せよ。大量出力を伴う調査はサブエージェントへの委譲を検討せよ。50% に達すると編集がブロックされる。"; then
-      claude_ctx_cache_ensure "$ctx" && printf '%s' "$pct_int" > "$notified_file" 2>/dev/null || true
+  if ((notified == 0 || pct_int - notified >= 5)); then
+    if inject "コンテキスト使用率が ${pct_int}% を超えた(自動更新ライン)。このターンの作業を終えたら compact-prep skill を実行して state file(${state_file})を更新せよ(決定ログ: ${decisions_file})。この state file の更新に限り人間への確認は不要で、実行してよいか尋ねずに進めてよい(免除はここまで。skill 内で行う他の判断・破壊的操作・外向き操作は従来どおり人間に確認せよ)。人間に /compact を依頼するのは使用率 50% 以上のときだけでよい。大量出力を伴う調査はサブエージェントへの委譲を検討せよ。50% に達すると編集がブロックされる。"; then
+      claude_ctx_cache_ensure "$ctx" && printf '%s' "$pct_int" >"$notified_file" 2>/dev/null || true
     fi
   fi
 fi

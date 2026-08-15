@@ -46,6 +46,13 @@ setup() {
   jq -e '.hooks.PostCompact[0].hooks | map(.command) | any(endswith("postcompact-marker.sh"))' "$RENDERED" >/dev/null
 }
 
+@test "Stop registers stop-nudge as its only hook" {
+  # 停止時ナッジは 1 本に統合されている。2 本並べると同時 block で片方の指示が消える。
+  local cmds
+  cmds="$(jq -r '.hooks.Stop[].hooks[].command' "$RENDERED" | xargs -n1 basename | tr '\n' ' ')"
+  [ "$cmds" = "stop-nudge.sh " ]
+}
+
 @test "UserPromptSubmit registers capture-transcript then notify" {
   # capture-transcript(turn++)が notify より先に走ること(同一イベント内の順序)
   local cmds

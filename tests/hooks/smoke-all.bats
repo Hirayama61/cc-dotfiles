@@ -93,9 +93,50 @@ assert_no_block_for() {
 }
 
 @test "corrupt context-paths.sh: no hook blocks (context-pressure fail-open)" {
-  # context-pressure 系 6 hook が source する context-paths.sh の構文破損でも、
+  # context-pressure 系 hook が source する context-paths.sh の構文破損でも、
   # source_hook_lib の subshell 試験が握りどの hook も exit 2 を出さない。
   printf '%s' '{ broken bash (' >"$HOME/.claude/hooks/lib/context-paths.sh"
   assert_no_block_for "corrupt-context-paths" \
     '{"tool_name":"Edit","transcript_path":"/tmp/ctx-x.jsonl","tool_input":{"file_path":"/tmp/f"},"cwd":"/tmp"}'
+}
+
+# Stop hook の遮断は exit 2 ではなく exit 0 + stdout の {"decision":"block"} なので、
+# assert_no_block_for(exit 2 のみ判定)では検出できない。stdout 側を直接見る。
+# 対になる肯定側(lib 破損でもタスク側ナッジは出ること)は stop-nudge.bats が固定する。
+assert_no_stop_decision_for() {
+  local label="$1" json="$2"
+  local hook offenders=""
+  while IFS= read -r hook; do
+    [[ -n "$hook" ]] || continue
+    run_hook "$hook" "$json"
+    case "$output" in
+    *'"decision"'*) offenders="$offenders $hook" ;;
+    esac
+  done < <(list_installed_hooks)
+  if [[ -n "$offenders" ]]; then
+    echo "[$label] decision を出した hook:$offenders"
+    return 1
+  fi
+}
+
+@test "no hook emits a stop decision for a bare Stop event" {
+  assert_no_stop_decision_for "bare-stop" \
+    '{"hook_event_name":"Stop","stop_hook_active":false}'
+}
+
+@test "no hook emits a stop decision when usage.json is absent" {
+  assert_no_stop_decision_for "stop-no-usage" \
+    '{"hook_event_name":"Stop","stop_hook_active":false,"session_id":"none","transcript_path":"/tmp/ctx-smoke.jsonl"}'
+}
+
+@test "no hook emits a stop decision with a corrupt context-paths.sh" {
+  printf '%s' '{ broken bash (' >"$HOME/.claude/hooks/lib/context-paths.sh"
+  assert_no_stop_decision_for "stop-corrupt-context-paths" \
+    '{"hook_event_name":"Stop","stop_hook_active":false,"session_id":"none","transcript_path":"/tmp/ctx-smoke.jsonl"}'
+}
+
+@test "no hook emits a stop decision with a corrupt hook-input.sh" {
+  printf '%s' '{ broken bash (' >"$HOME/.claude/hooks/lib/hook-input.sh"
+  assert_no_stop_decision_for "stop-corrupt-hook-input" \
+    '{"hook_event_name":"Stop","stop_hook_active":false,"session_id":"none","transcript_path":"/tmp/ctx-smoke.jsonl"}'
 }

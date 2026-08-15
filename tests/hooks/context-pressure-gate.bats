@@ -103,6 +103,26 @@ edit_json() {
   [ "$status" -ne 2 ]
 }
 
+@test "write into cache dir (decision log): allowed even after grace" {
+  write_usage 55
+  echo 8 > "$CACHE/turn"
+  echo 7 > "$CACHE/grace-turn"
+  run_hook context-pressure-gate.sh "$(edit_json "$CACHE/decisions.jsonl")"
+  [ "$status" -ne 2 ]
+}
+
+@test "write into cache dir (gate's own bookkeeping): still blocked" {
+  # 脱出経路は state file と決定ログの 2 パスだけ。ゲート自身の判断材料
+  # (鮮度スタンプ・打ち止め)まで編集系ツールで書けると deny 文の宣言と食い違う。
+  write_usage 55
+  echo 8 > "$CACHE/turn"
+  echo 7 > "$CACHE/grace-turn"
+  run_hook context-pressure-gate.sh "$(edit_json "$CACHE/state-stamp")"
+  [ "$status" -eq 2 ]
+  run_hook context-pressure-gate.sh "$(edit_json "$CACHE/stop-nudged-turn")"
+  [ "$status" -eq 2 ]
+}
+
 @test "no jq: allowed (fail-open)" {
   write_usage 55
   echo 8 > "$CACHE/turn"

@@ -30,12 +30,16 @@ prompt_json() {
   [ -z "$output" ]
 }
 
-@test "at 30: proposes compact-prep and records notified pct" {
+@test "at 30: orders compact-prep without asking and records notified pct" {
   write_usage 31
   run_hook context-pressure-notify.sh "$(prompt_json)"
   [ "$status" -ne 2 ]
-  echo "$output" | grep -qF 'compact-prep'
-  echo "$output" | grep -qF '提案ライン'
+  printf '%s' "$output" | grep -qF 'compact-prep'
+  printf '%s' "$output" | grep -qF '自動更新ライン'
+  # 30% 台では人間の承認を取りに行かせない(依頼は 50% 以上でだけ)
+  printf '%s' "$output" | grep -qF '尋ねずに進めてよい'
+  # 免除は state file の更新だけに掛かる(skill 全体への白紙委任にしない)
+  printf '%s' "$output" | grep -qF '免除はここまで'
   [ "$(cat "$CACHE/notified-pct")" = "31" ]
 }
 
@@ -46,7 +50,7 @@ prompt_json() {
   [ -z "$output" ]
   write_usage 38
   run_hook context-pressure-notify.sh "$(prompt_json)"
-  echo "$output" | grep -qF 'compact-prep'
+  printf '%s' "$output" | grep -qF 'compact-prep'
   [ "$(cat "$CACHE/notified-pct")" = "38" ]
 }
 
@@ -54,9 +58,9 @@ prompt_json() {
   write_usage 52
   echo 4 > "$CACHE/turn"
   run_hook context-pressure-notify.sh "$(prompt_json)"
-  echo "$output" | grep -qF '最終通告'
-  echo "$output" | grep -qF 'compact-prep'
-  echo "$output" | grep -qF "$CACHE/state.md"
+  printf '%s' "$output" | grep -qF '最終通告'
+  printf '%s' "$output" | grep -qF 'compact-prep'
+  printf '%s' "$output" | grep -qF "$CACHE/state.md"
   # 通知ターン = 猶予ターン(このターンに編集が無くても次ターンから deny)
   [ "$(cat "$CACHE/grace-turn")" = "4" ]
 }
@@ -74,9 +78,9 @@ prompt_json() {
   touch "$CACHE/compacted"
   run_hook context-pressure-notify.sh "$(prompt_json)"
   [ "$status" -ne 2 ]
-  echo "$output" | grep -qF 'state.md'
-  echo "$output" | grep -qF 'decisions.jsonl'
-  echo "$output" | grep -qF '仮説'
+  printf '%s' "$output" | grep -qF 'state.md'
+  printf '%s' "$output" | grep -qF 'decisions.jsonl'
+  printf '%s' "$output" | grep -qF '仮説'
   [ ! -f "$CACHE/compacted" ]
 }
 
