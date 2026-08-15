@@ -10,9 +10,10 @@
 # ctx キーはモデルに推測させない: 引数の state file が置かれたディレクトリ名を
 # ctx とみなす。書込に加えて削除も行うため、cache 直下であること・basename が
 # state.md であること・usage.json が読めるならその transcript_path が同じ ctx を
-# 指すことを検査してから使う。**取り違えを完全には防げない** — usage.json が無い
-# 窓(圧縮直後)では ctx の一致を確かめる材料が無く、cache 直下の別セッションの
-# ディレクトリを渡されれば受理する。
+# 指すことを検査してから使う。**取り違えを完全には防げない** — この検査で分かるのは
+# せいぜい dir 名と dir 内の usage.json が食い違っていないことまでで(transcript_path が
+# 空なら比較そのものが省かれる)、渡されたパスが現セッションのものかは判定できない。
+# 現セッションとの対応はモデルが渡すパスの正しさに依存する(SKILL.md 手順 0)。
 #
 # 出力: PASS / FAIL(理由付き)。exit 0 = PASS、exit 1 = FAIL。
 # validate-state.sh と同じく exit 2 は使わない(PreToolUse のブロックと紛れさせない)。

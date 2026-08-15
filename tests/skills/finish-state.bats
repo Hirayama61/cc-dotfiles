@@ -176,5 +176,14 @@ run_finish() {
   write_valid_state
   printf '7' > "$CACHE/turn"
   run_finish
-  [ ! -e "$CACHE/.state-stamp.tmp" ]
+  # 成果物が出たことを先に見る。見ないと、tmp 書込へ到達せず落ちた実装でも
+  # 「残骸なし」が成立してこのテストだけ緑になる。
+  [ "$status" -eq 0 ]
+  [ -e "$STAMP" ]
+  # 一時ファイル名で固定すると、実装が別名に変えた時に何も検証せず緑になる。
+  # find は cd を挟まないので、収集そのものの失敗を成功と取り違えない。
+  local leftovers
+  leftovers="$(find "$CACHE" -mindepth 1 -maxdepth 1 \
+    ! -name state.md ! -name turn ! -name state-stamp)"
+  [ -z "$leftovers" ]
 }

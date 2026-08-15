@@ -10,6 +10,11 @@
 # 停止では復帰チェックが一度も出ないまま停止できてしまう。
 #
 # 設計上の前提と限界:
+#   - block は Claude へ指示を返すだけで、compact-prep の実行を強制しない。従わずに再度
+#     停止すれば停止は通る。取りこぼしは /compact 時の precompact-gate が受けるが、それも
+#     1 ctx 1 回・manual trigger 限定なので、2 回目以降の /compact は素通しになる。
+#   - reason が返す「state file の更新に限り確認不要」も文面どまりで、権限機構は
+#     state file とそれ以外の書込を区別しない。免除の範囲は強制されていない。
 #   - block 形式は Stop の正典 top-level {"decision":"block","reason":...}
 #     (ralph-loop stop-hook.sh / hook-development advanced.md 準拠)。PreToolUse 系の
 #     hookSpecificOutput.decision は Stop では効かない。
