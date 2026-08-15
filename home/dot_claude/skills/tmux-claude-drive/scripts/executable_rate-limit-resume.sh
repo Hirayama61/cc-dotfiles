@@ -20,14 +20,14 @@
 #   2  経路 B が必要(pane が別プロセスに置換 / claude 消失 / pane 解決不能)
 #   3  タイムアウト(RLR_MAX_ITER 到達)
 #   4  再送上限到達(RLR_MAX_RESEND 回送っても banner が残る)
-#   5  権限プロンプト滞留(誰も答えないまま RLR_PERMSTUCK_MAX_ITERS 回。運転元へ委譲)
+#   5  送信不可の滞留(権限プロンプト放置 / 画面が読めない状態が RLR_PERMSTUCK_MAX_ITERS 回。運転元へ委譲)
 #   1  使用方法エラー
 #
 # 環境変数(既定は実運用値):
 #   RLR_POLL_INTERVAL       ポーリング間隔秒(既定 60)。テストは 0。
 #   RLR_MAX_ITER            最大反復(既定 0 = 無制限)。テストは有限。
 #   RLR_MAX_RESEND          ack 失敗時の再送上限(既定 3)。
-#   RLR_PERMSTUCK_MAX_ITERS 権限プロンプト連続滞留で exit 5 する反復上限(既定 120 ≒ 2h)。0 = 無制限。
+#   RLR_PERMSTUCK_MAX_ITERS 送信不可が連続して exit 5 する反復上限(既定 120 ≒ 2h)。0 = 無制限。
 #   RLR_SEND_DELAY          literal 送信と Enter の間の待ち秒(既定 1)。テストは 0。
 #   RLR_TMUX                tmux コマンド(既定 tmux)。テストは PATH shim か明示注入。
 #   RLR_RESET_PARSE         指定時、banner 全文を stdin で渡して「明けまでの sleep 秒」を
@@ -69,12 +69,30 @@ has_permission() {
   [ "$prc" -ne 1 ]
 }
 
+# 判定は pane 末尾だけを見る(banner・プロンプトは最下部に描画される)。全文を見ると過去会話の
+# 同種文言でリセット時刻・権限プロンプトを誤マッチする。
+TAIL_WINDOW_LINES=25
+
+# 送信可否の判定(権限プロンプト・banner・リセット時刻)が見る窓を stdout へ。
+# 窓を取れなければ rc=1(判定不能)。
+# capture-pane は pane 高まで空行を詰めるので、行数だけで切ると有効行が窓の外へ押し出される。
+# 空行を落としてから切り、それでも空なら画面を読めていないとして呼び出し側に送信を止めさせる。
+# grep の照合エラー(rc 2 以上)も判定不能へ倒す(不一致=送ってよい、に化けさせない)。
+send_gate_window() {
+  local rc=0 window
+  window="$(printf '%s\n' "$1" | grep -av '^[[:space:]]*$' | tail -n "$TAIL_WINDOW_LINES")" || rc=$?
+  if [ "$rc" -ge 2 ] || [ -z "$window" ]; then
+    return 1
+  fi
+  printf '%s' "$window"
+}
+
 default_reset_seconds() {
   # banner から「明けまでの秒数」を best-effort で読む。少しでも怪しければ 0 を返し、
   # 呼び出し側は POLL_INTERVAL にフォールバックする(バナー書式に hard 依存しない)。
   # 抽出値は必ず 10# で 10 進固定(先頭ゼロ 08/09 の 8 進クラッシュを防ぐ)。
   local t secs=0 n h m ampm clk now_hms now_sod tgt_sod
-  t="$(printf '%s' "$1" | tr 'A-Z' 'a-z')"
+  t="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   # 相対時刻は limit/reset 文脈に固定する(通常出力の "completed in 2 hours" 等の誤採用を防ぐ)。
   if printf '%s' "$t" | grep -qE '(again|retry|reset|try|limit|available)[^0-9]{0,20}in [0-9]+ ?(hour|hr)'; then
     n="$(printf '%s' "$t" | grep -oE 'in [0-9]+ ?(hour|hr)' | grep -oE '[0-9]+' | head -1)"
@@ -222,7 +240,7 @@ fi
 sent=0
 resend=0
 seen_limit=0
-perm_iters=0
+send_blocked_iters=0
 iter=0
 
 while :; do
@@ -253,23 +271,29 @@ while :; do
     sleep_poll
     continue
   fi
-  # 判定は pane 末尾のみ(banner・プロンプトは最下部に描画される)。過去会話の同種文言に
-  # よる権限誤検知・リセット時刻の誤マッチを避ける。
-  text="$(printf '%s\n' "$screen" | tail -n 25)"
+  # 権限プロンプトにも、画面を読めていない時にも送らない。読めないまま送るのは
+  # プロンプトへ送るのと同じで、承認の肩代わりになる。
+  if ! text="$(send_gate_window "$screen")"; then
+    send_block_state="capture-unreadable human-needed"
+  elif has_permission "$text"; then
+    send_block_state="permission-prompt human-needed"
+  else
+    send_block_state=""
+  fi
 
-  # 権限プロンプトには絶対に送らない。滞留し続けたら exit 5 で運転元へ委譲(無限ループ回避)。
-  if has_permission "$text"; then
-    perm_iters=$((perm_iters + 1))
-    if [ "$PERMSTUCK_MAX_ITERS" -gt 0 ] && [ "$perm_iters" -ge "$PERMSTUCK_MAX_ITERS" ]; then
-      emit "permission-stuck iters=$perm_iters"
+  # 送れないまま滞留し続けたら exit 5 で運転元へ委譲(無限ループ回避)。
+  if [ -n "$send_block_state" ]; then
+    send_blocked_iters=$((send_blocked_iters + 1))
+    if [ "$PERMSTUCK_MAX_ITERS" -gt 0 ] && [ "$send_blocked_iters" -ge "$PERMSTUCK_MAX_ITERS" ]; then
+      emit "permission-stuck iters=$send_blocked_iters"
       exit 5
     fi
-    emit_state "permission-prompt human-needed"
+    emit_state "$send_block_state"
     reset_deadline
     sleep_poll
     continue
   fi
-  perm_iters=0
+  send_blocked_iters=0
 
   if has_limit "$text"; then
     seen_limit=1
